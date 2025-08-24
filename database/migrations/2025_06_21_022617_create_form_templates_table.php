@@ -20,12 +20,22 @@ class CreateFormTemplatesTable extends Migration
             $table->text('description')->nullable();
             $table->string('version', 10)->default('1.0');
             $table->enum('category', [
-                'project_creation', 'contract_management', 'procurement', 
-                'monitoring', 'financial', 'custom'
+                // School Management Categories
+                'student_enrollment', 'student_registration', 'student_transfer',
+                'attendance', 'grades', 'academic_records', 'behavior_incident',
+                'parent_communication', 'teacher_evaluation', 'curriculum_planning',
+                'extracurricular', 'field_trip', 'parent_meeting', 'student_health',
+                'special_education', 'discipline', 'graduation', 'scholarship',
+
+                // // Legacy Project Categories
+                // 'project_creation', 'contract_management', 'procurement',
+                // 'monitoring', 'financial', 'custom',
+                // 'project', 'planning', 'execution', 'closure',
+                // 'risk_assessment', 'risk_mitigation', 'risk_monitoring', 'risk_report',
+                // 'indicator', 'evaluation', 'monitoring_report', 'dashboard',
+                // 'budget', 'transaction', 'expense', 'financial_report', 'audit',
+                // 'procurement_request', 'tender', 'contract', 'procurement_evaluation', 'supplier'
             ]);
-            $table->enum('methodology_type', [
-                'universal', 'usaid', 'world_bank', 'eu', 'custom'
-            ])->default('universal');
             $table->string('estimated_completion_time')->nullable();
             $table->boolean('is_multi_step')->default(false);
             $table->boolean('auto_save')->default(true);
@@ -42,10 +52,9 @@ class CreateFormTemplatesTable extends Migration
             $table->unsignedBigInteger('created_by');
             $table->timestamps();
             $table->softDeletes();
-            
+
             // Indexes
             $table->index(['tenant_id', 'category', 'is_active']);
-            $table->index(['methodology_type', 'is_active']);
             $table->index(['tenant_id', 'is_default']);
             $table->foreign('created_by')->references('id')->on('users');
         });

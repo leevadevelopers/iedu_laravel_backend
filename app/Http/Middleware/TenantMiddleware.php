@@ -17,21 +17,23 @@ class TenantMiddleware
     {
         try {
             $token = $this->extractToken($request);
-            
+
             if (!$token) {
                 return $this->unauthorizedResponse('Token not provided');
             }
 
             $user = $this->authenticateUser($token);
-            
+
             if (!$user) {
                 return $this->unauthorizedResponse('Invalid token');
             }
 
+            // Check if user is active
             if (!$user->isActive()) {
                 return $this->forbiddenResponse('User account is inactive');
             }
 
+            // Always establish tenant context for all users
             $this->establishTenantContext($user, $request);
 
             return $next($request);
@@ -49,7 +51,7 @@ class TenantMiddleware
                 'url' => $request->fullUrl(),
                 'user_agent' => $request->userAgent(),
             ]);
-            
+
             return $this->serverErrorResponse('Authentication service unavailable');
         }
     }
@@ -57,7 +59,7 @@ class TenantMiddleware
     private function extractToken(Request $request): ?string
     {
         $authHeader = $request->header('Authorization');
-        
+
         if (!$authHeader) {
             return null;
         }
@@ -77,7 +79,7 @@ class TenantMiddleware
     private function establishTenantContext($user, Request $request): void
     {
         $requestedTenantId = $request->header('X-Tenant-ID') ?? $request->get('tenant_id');
-        
+
         if ($requestedTenantId) {
             $this->handleTenantSwitch($user, (int)$requestedTenantId);
         } else {
@@ -85,7 +87,7 @@ class TenantMiddleware
         }
 
         $tenantId = session('tenant_id');
-        
+
         if (!$tenantId) {
             throw new \Exception('No tenant context available');
         }
@@ -107,7 +109,7 @@ class TenantMiddleware
         }
 
         $success = $user->switchTenant($tenantId);
-        
+
         if (!$success) {
             throw new \Exception('Failed to switch to tenant ID: ' . $tenantId);
         }
@@ -121,13 +123,13 @@ class TenantMiddleware
     private function setDefaultTenant($user): void
     {
         $currentTenantId = session('tenant_id');
-        
+
         if ($currentTenantId && $user->belongsToTenant($currentTenantId)) {
             return;
         }
 
         $tenant = $user->getCurrentTenant();
-        
+
         if (!$tenant) {
             throw new \Exception('No accessible tenants found for user');
         }

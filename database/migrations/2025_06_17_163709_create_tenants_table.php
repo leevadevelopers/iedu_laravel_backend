@@ -11,6 +11,7 @@ return new class extends Migration
         Schema::create('tenants', function (Blueprint $table) {
             $table->id();
             $table->string('name');
+            $table->foreignId('owner_id')->references('id')->on('users')->onDelete('cascade');;
             $table->string('slug')->unique();
             $table->string('domain')->nullable()->unique();
             $table->string('database')->nullable();
@@ -19,7 +20,7 @@ return new class extends Migration
             $table->unsignedBigInteger('created_by')->nullable();
             $table->timestamps();
             $table->softDeletes();
-            
+
             $table->index(['is_active', 'created_at']);
             $table->index('slug');
             $table->foreign('created_by')->references('id')->on('users')->onDelete('set null');

@@ -20,8 +20,24 @@ class User extends Authenticatable implements JWTSubject
         HasRoles::hasRole as hasRoleBase;
     }
 
+    protected $guard_name = 'api';
+
     protected $fillable = [
-        'name', 'identifier', 'type', 'verified_at', 'password', 'must_change', 'remember_token', 'created_at', 'updated_at',
+        'tenant_id',
+        'name',
+        'identifier',
+        'type',
+        'verified_at',
+        'password',
+        'must_change',
+        'remember_token',
+        'phone',
+        'company',
+        'job_title',
+        'bio',
+        'profile_photo_path',
+        'created_at',
+        'updated_at',
     ];
 
     protected $hidden = ['password', 'remember_token'];
@@ -41,7 +57,7 @@ class User extends Authenticatable implements JWTSubject
     public function getJWTCustomClaims()
     {
         return [
-            'email' => $this->email,
+            'identifier' => $this->identifier,
             'name' => $this->name,
         ];
     }
@@ -62,24 +78,24 @@ class User extends Authenticatable implements JWTSubject
 
     public function getCurrentTenant(): ?Tenant
     {
-        logger()->debug('User::getCurrentTenant called');
+        // logger()->debug('User::getCurrentTenant called');
         $tenantId = session('tenant_id');
-        
+
         if (!$tenantId) {
             $tenant = $this->tenants()->wherePivot('current_tenant', true)->first();
-                
+
             if ($tenant) {
                 session(['tenant_id' => $tenant->id]);
                 return $tenant;
             }
-            
+
             $tenant = $this->tenants()->first();
             if ($tenant) {
                 session(['tenant_id' => $tenant->id]);
                 return $tenant;
             }
         }
-        
+
         return $this->tenants()->find($tenantId);
     }
 
@@ -92,10 +108,10 @@ class User extends Authenticatable implements JWTSubject
         $this->tenants()->updateExistingPivot($this->tenants()->pluck('tenants.id'), [
             'current_tenant' => false
         ]);
-        
+
         $this->tenants()->updateExistingPivot($tenantId, ['current_tenant' => true]);
         session(['tenant_id' => $tenantId]);
-        
+
         return true;
     }
 
@@ -125,7 +141,7 @@ class User extends Authenticatable implements JWTSubject
 
     public function scopeForTenant($query, int $tenantId)
     {
-        return $query->whereHas('tenants', function($q) use ($tenantId) {
+        return $query->whereHas('tenants', function ($q) use ($tenantId) {
             $q->where('tenants.id', $tenantId)->wherePivot('status', 'active');
         });
     }

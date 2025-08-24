@@ -25,7 +25,8 @@ class TenantSeeder extends Seeder
                     'currency' => 'USD'
                 ]),
                 'is_active' => true,
-                'created_by' => 1
+                'created_by' => 1,
+                'owner_id' => 1
             ],
             [
                 'name' => 'TechStart Inc',
@@ -38,7 +39,8 @@ class TenantSeeder extends Seeder
                     'currency' => 'USD'
                 ]),
                 'is_active' => true,
-                'created_by' => 1
+                'created_by' => 1,
+                'owner_id' => 1
             ],
             [
                 'name' => 'Global Solutions Ltd',
@@ -51,7 +53,8 @@ class TenantSeeder extends Seeder
                     'currency' => 'GBP'
                 ]),
                 'is_active' => true,
-                'created_by' => 1
+                'created_by' => 1,
+                'owner_id' => 1
             ],
             [
                 'name' => 'Innovation Hub',
@@ -64,7 +67,8 @@ class TenantSeeder extends Seeder
                     'currency' => 'JPY'
                 ]),
                 'is_active' => true,
-                'created_by' => 1
+                'created_by' => 1,
+                'owner_id' => 1
             ]
         ];
 
@@ -72,4 +76,4 @@ class TenantSeeder extends Seeder
             Tenant::create($tenantData);
         }
     }
-} 
+}

@@ -6,12 +6,13 @@ use App\Models\Forms\FormInstance;
 use App\Models\Forms\FormTemplate;
 use App\Models\User;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
 
 class WorkflowIntegrationService
 {
     protected $ruleEngine;
 
-    public function __construct(FormRuleEngine $ruleEngine)
+    public function __construct(?FormRuleEngine $ruleEngine = null)
     {
         $this->ruleEngine = $ruleEngine;
     }

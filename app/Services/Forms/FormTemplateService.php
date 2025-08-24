@@ -13,27 +13,25 @@ use App\Models\User;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 class FormTemplateService
 {
-    protected $methodologyAdapter;
-
-    public function __construct(MethodologyAdapterService $methodologyAdapter)
-    {
-        $this->methodologyAdapter = $methodologyAdapter;
-    }
-
     /**
      * Get templates for organization with caching
      */
-    public function getOrgTemplates(int $tenantId, ?string $category = null, ?string $methodology = null): Collection
+    public function getOrgTemplates(int $tenantId, ?string $category = null): Collection
     {
-        $cacheKey = "org_templates_{$tenantId}_{$category}_{$methodology}";
-        
-        return Cache::remember($cacheKey, 3600, function () use ($tenantId, $category, $methodology) {
+        $cacheKey = "org_templates_{$tenantId}_{$category}";
+
+        // Track this cache key for later clearing
+        $this->trackCacheKey($tenantId, $cacheKey);
+
+        return Cache::remember($cacheKey, 3600, function () use ($tenantId, $category) {
             $query = FormTemplate::where('tenant_id', $tenantId)
-                ->active()
+                ->nonDeleted() // Use nonDeleted scope instead of active to avoid conflicts
+                ->where('is_active', true) // Explicitly check is_active
                 ->orderBy('is_default', 'desc')
                 ->orderBy('name');
 
@@ -41,15 +39,32 @@ class FormTemplateService
                 $query->where('category', $category);
             }
 
-            if ($methodology) {
-                $query->where(function ($q) use ($methodology) {
-                    $q->where('methodology_type', $methodology)
-                      ->orWhere('methodology_type', 'universal');
-                });
-            }
+            $templates = $query->with('creator')->get();
 
-            return $query->with('creator')->get();
+            // Debug logging to check what's being returned
+            Log::info("FormTemplateService::getOrgTemplates", [
+                'tenant_id' => $tenantId,
+                'category' => $category,
+                'total_templates' => $templates->count(),
+                'templates_with_deleted_at' => $templates->filter(fn($t) => !is_null($t->deleted_at))->count(),
+                'sql' => $query->toSql(),
+                'bindings' => $query->getBindings()
+            ]);
+
+            return $templates;
         });
+    }
+
+    /**
+     * Track cache keys for proper cache management
+     */
+    private function trackCacheKey(int $tenantId, string $cacheKey): void
+    {
+        $existingKeys = Cache::get('template_cache_keys_' . $tenantId, []);
+        if (!in_array($cacheKey, $existingKeys)) {
+            $existingKeys[] = $cacheKey;
+            Cache::put('template_cache_keys_' . $tenantId, $existingKeys, 86400); // 24 hours
+        }
     }
 
     /**
@@ -58,10 +73,95 @@ class FormTemplateService
     public function loadTemplate(int $templateId): FormTemplate
     {
         $cacheKey = "form_template_{$templateId}";
-        
+
+        // Track this cache key for later clearing
+        $this->trackCacheKey(1, $cacheKey); // Default tenant ID for individual templates
+
         return Cache::remember($cacheKey, 3600, function () use ($templateId) {
             return FormTemplate::with(['creator', 'versions'])
                 ->findOrFail($templateId);
+        });
+    }
+
+    /**
+     * Get deleted templates for admin purposes
+     */
+    public function getDeletedTemplates(int $tenantId, ?string $category = null): Collection
+    {
+        $cacheKey = "deleted_templates_{$tenantId}_{$category}";
+
+        // Track this cache key for later clearing
+        $this->trackCacheKey($tenantId, $cacheKey);
+
+        return Cache::remember($cacheKey, 1800, function () use ($tenantId, $category) { // 30 minutes cache
+            $query = FormTemplate::onlyTrashed()
+                ->where('tenant_id', $tenantId)
+                ->orderBy('deleted_at', 'desc');
+
+            if ($category) {
+                $query->where('category', $category);
+            }
+
+            return $query->with('creator')->get();
+        });
+    }
+
+    /**
+     * Get count of deleted templates for a tenant
+     */
+    public function getDeletedTemplatesCount(int $tenantId): int
+    {
+        $cacheKey = "deleted_templates_count_{$tenantId}";
+
+        return Cache::remember($cacheKey, 1800, function () use ($tenantId) { // 30 minutes cache
+            return FormTemplate::onlyTrashed()
+                ->where('tenant_id', $tenantId)
+                ->count();
+        });
+    }
+
+    /**
+     * Restore a soft-deleted template
+     */
+    public function restoreTemplate(int $templateId): FormTemplate
+    {
+        $template = FormTemplate::onlyTrashed()->findOrFail($templateId);
+
+        if (!$template->trashed()) {
+            throw new \Exception('Template is not deleted');
+        }
+
+        $template->restore();
+
+        // Clear template cache
+        $this->clearTemplateCache($template->tenant_id);
+
+        return $template;
+    }
+
+    /**
+     * Permanently delete a template (force delete)
+     */
+    public function forceDeleteTemplate(int $templateId): bool
+    {
+        $template = FormTemplate::withTrashed()->findOrFail($templateId);
+
+        return DB::transaction(function () use ($template) {
+            // Check if template is in use
+            if ($template->instances()->exists()) {
+                throw new \Exception('Cannot permanently delete template that has form instances');
+            }
+
+            // Delete all versions first
+            $template->versions()->delete();
+
+            // Force delete the template
+            $deleted = $template->forceDelete();
+
+            // Clear template cache
+            $this->clearTemplateCache($template->tenant_id);
+
+            return $deleted;
         });
     }
 
@@ -73,12 +173,7 @@ class FormTemplateService
         return DB::transaction(function () use ($tenantId, $templateData) {
             // Validate template structure
             $this->validateTemplateStructure($templateData);
-            
-            // Apply methodology adaptations if specified
-            if (!empty($templateData['methodology_type']) && $templateData['methodology_type'] !== 'universal') {
-                $templateData = $this->methodologyAdapter->adaptTemplate($templateData, $templateData['methodology_type']);
-            }
-            
+
             // Ensure default values
             $templateData = array_merge([
                 'tenant_id' => $tenantId,
@@ -87,17 +182,24 @@ class FormTemplateService
                 'is_default' => false,
                 'auto_save' => true,
                 'compliance_level' => 'standard',
-                'created_by' => auth()->id(),
+                'form_configuration' => [
+                    'layout' => 'vertical',
+                    'theme' => 'default',
+                    'show_progress' => true,
+                    'allow_save_draft' => true,
+                    'allow_preview' => false
+                ],
+                'created_by' => auth('api')->id(),
             ], $templateData);
-            
+
             $template = FormTemplate::create($templateData);
-            
+
             // Create initial version
-            $template->createVersion('Initial template creation', auth()->id());
-            
+            $template->createVersion('Initial template creation', auth('api')->id());
+
             // Clear template cache
             $this->clearTemplateCache($tenantId);
-            
+
             return $template;
         });
     }
@@ -111,28 +213,22 @@ class FormTemplateService
             // Create customized template data
             $templateData = $baseTemplate->toArray();
             unset($templateData['id'], $templateData['created_at'], $templateData['updated_at']);
-            
+
             // Apply customizations
             $templateData = array_merge($templateData, $customizations);
             $templateData['tenant_id'] = $tenantId;
             $templateData['name'] = $customizations['name'] ?? $baseTemplate->name . ' (Customized)';
             $templateData['is_default'] = false;
             $templateData['version'] = '1.0';
-            $templateData['created_by'] = auth()->id();
-            
-            // Apply methodology adaptations if changed
-            if (isset($customizations['methodology_type']) && 
-                $customizations['methodology_type'] !== $baseTemplate->methodology_type) {
-                $templateData = $this->methodologyAdapter->adaptTemplate($templateData, $customizations['methodology_type']);
-            }
-            
+            $templateData['created_by'] = auth('api')->id();
+
             $customizedTemplate = FormTemplate::create($templateData);
-            
+
             // Create version tracking
-            $customizedTemplate->createVersion('Customized from template: ' . $baseTemplate->name, auth()->id());
-            
+            $customizedTemplate->createVersion('Customized from template: ' . $baseTemplate->name, auth('api')->id());
+
             $this->clearTemplateCache($tenantId);
-            
+
             return $customizedTemplate;
         });
     }
@@ -144,23 +240,17 @@ class FormTemplateService
     {
         return DB::transaction(function () use ($template, $updates) {
             $originalData = $template->toArray();
-            
-            // Apply methodology adaptations if methodology changed
-            if (isset($updates['methodology_type']) && 
-                $updates['methodology_type'] !== $template->methodology_type) {
-                $updates = $this->methodologyAdapter->adaptTemplate($updates, $updates['methodology_type']);
-            }
-            
+
             $template->update($updates);
-            
+
             // Create version if significant changes
             if ($this->hasSignificantChanges($originalData, $template->toArray())) {
                 $changesSummary = $this->generateChangesSummary($originalData, $template->toArray());
-                $template->createVersion($changesSummary, auth()->id());
+                $template->createVersion($changesSummary, auth('api')->id());
             }
-            
+
             $this->clearTemplateCache($template->tenant_id);
-            
+
             return $template->fresh();
         });
     }
@@ -172,58 +262,43 @@ class FormTemplateService
     {
         return DB::transaction(function () use ($template, $changes) {
             $duplicated = $template->duplicate($changes);
-            
-            // Create initial version for duplicated template
-            $duplicated->createVersion('Duplicated from: ' . $template->name, auth()->id());
-            
-            $this->clearTemplateCache($duplicated->tenant_id);
-            
-            return $duplicated;
-        });
-    }
 
-    /**
-     * Get methodology-specific templates
-     */
-    public function getMethodologyTemplates(string $methodology): Collection
-    {
-        $cacheKey = "methodology_templates_{$methodology}";
-        
-        return Cache::remember($cacheKey, 7200, function () use ($methodology) {
-            return FormTemplate::where('methodology_type', $methodology)
-                ->where('is_default', true)
-                ->active()
-                ->get();
+            // Create initial version for duplicated template
+            $duplicated->createVersion('Duplicated from: ' . $template->name, auth('api')->id());
+
+            $this->clearTemplateCache($duplicated->tenant_id);
+
+            return $duplicated;
         });
     }
 
     /**
      * Generate template from project data
      */
-    public function generateTemplateFromProject(int $projectId, string $templateName): FormTemplate
-    {
-        $project = \App\Models\Projects\Project::with('formInstance.template')->findOrFail($projectId);
-        
-        if (!$project->formInstance) {
-            throw new \Exception('Project does not have associated form data');
-        }
-        
-        $baseTemplate = $project->formInstance->template;
-        $projectData = $project->formInstance->form_data;
-        
-        // Create template with pre-populated default values from project
-        $templateData = $baseTemplate->toArray();
-        unset($templateData['id'], $templateData['created_at'], $templateData['updated_at']);
-        
-        $templateData['name'] = $templateName;
-        $templateData['is_default'] = false;
-        $templateData['version'] = '1.0';
-        
-        // Add default values from successful project
-        $templateData['default_values'] = $this->extractDefaultValues($projectData, $baseTemplate);
-        
-        return $this->createTemplate($project->tenant_id, $templateData);
-    }
+    // public function generateTemplateFromProject(int $projectId, string $templateName): FormTemplate
+    // {
+    //     $project = \App\Models\Project\Project::with('formInstance.template')->findOrFail($projectId);
+
+    //     if (!$project->formInstance) {
+    //         throw new \Exception('Project does not have associated form data');
+    //     }
+
+    //     $baseTemplate = $project->formInstance->template;
+    //     $projectData = $project->formInstance->form_data;
+
+    //     // Create template with pre-populated default values from project
+    //     $templateData = $baseTemplate->toArray();
+    //     unset($templateData['id'], $templateData['created_at'], $templateData['updated_at']);
+
+    //     $templateData['name'] = $templateName;
+    //     $templateData['is_default'] = false;
+    //     $templateData['version'] = '1.0';
+
+    //     // Add default values from successful project
+    //     $templateData['default_values'] = $this->extractDefaultValues($projectData, $baseTemplate);
+
+    //     return $this->createTemplate($project->tenant_id, $templateData);
+    // }
 
     /**
      * Validate template structure
@@ -231,18 +306,18 @@ class FormTemplateService
     private function validateTemplateStructure(array $templateData): void
     {
         $required = ['name', 'category', 'steps'];
-        
+
         foreach ($required as $field) {
             if (empty($templateData[$field])) {
                 throw new \InvalidArgumentException("Template field '{$field}' is required");
             }
         }
-        
+
         // Validate steps structure
         if (!is_array($templateData['steps']) || empty($templateData['steps'])) {
             throw new \InvalidArgumentException('Template must have at least one step');
         }
-        
+
         foreach ($templateData['steps'] as $stepIndex => $step) {
             $this->validateStepStructure($step, $stepIndex);
         }
@@ -254,17 +329,17 @@ class FormTemplateService
     private function validateStepStructure(array $step, int $stepIndex): void
     {
         $required = ['step_id', 'step_title', 'sections'];
-        
+
         foreach ($required as $field) {
             if (empty($step[$field])) {
                 throw new \InvalidArgumentException("Step {$stepIndex}: field '{$field}' is required");
             }
         }
-        
+
         if (!is_array($step['sections']) || empty($step['sections'])) {
             throw new \InvalidArgumentException("Step {$stepIndex}: must have at least one section");
         }
-        
+
         foreach ($step['sections'] as $sectionIndex => $section) {
             $this->validateSectionStructure($section, $stepIndex, $sectionIndex);
         }
@@ -276,17 +351,17 @@ class FormTemplateService
     private function validateSectionStructure(array $section, int $stepIndex, int $sectionIndex): void
     {
         $required = ['section_id', 'section_title', 'fields'];
-        
+
         foreach ($required as $field) {
             if (empty($section[$field])) {
                 throw new \InvalidArgumentException("Step {$stepIndex}, Section {$sectionIndex}: field '{$field}' is required");
             }
         }
-        
+
         if (!is_array($section['fields'])) {
             throw new \InvalidArgumentException("Step {$stepIndex}, Section {$sectionIndex}: fields must be an array");
         }
-        
+
         foreach ($section['fields'] as $fieldIndex => $field) {
             $this->validateFieldStructure($field, $stepIndex, $sectionIndex, $fieldIndex);
         }
@@ -298,7 +373,7 @@ class FormTemplateService
     private function validateFieldStructure(array $field, int $stepIndex, int $sectionIndex, int $fieldIndex): void
     {
         $required = ['field_id', 'field_type', 'label'];
-        
+
         foreach ($required as $fieldName) {
             if (empty($field[$fieldName])) {
                 throw new \InvalidArgumentException(
@@ -306,19 +381,29 @@ class FormTemplateService
                 );
             }
         }
-        
+
         // Validate field type
         $validTypes = [
-            'text', 'textarea', 'email', 'password', 'number', 'currency',
-            'date', 'daterange', 'time', 'datetime',
-            'dropdown', 'multiselect', 'radio', 'checkbox', 'checkbox_group',
-            'user_select', 'multi_user_select', 'file_upload', 'image_upload',
-            'datatable', 'repeater', 'panel', 'alert', 'summary_panel',
-            'rating', 'slider', 'toggle', 'chips', 'autocomplete',
-            'rich_text', 'code_editor', 'map_location', 'signature',
-            'calculated_field', 'hidden', 'display_only'
+            // Basic Input Fields
+            'text', 'textarea', 'email', 'password', 'number', 'currency', 'phone', 'tel', 'url',
+            // Date & Time Fields
+            'date', 'daterange', 'time', 'datetime', 'datetime-local', 'month', 'week',
+            // Selection Fields
+            'dropdown', 'multiselect', 'radio', 'checkbox', 'checkbox_group', 'select', 'switch',
+            // User Selection Fields
+            'user_select', 'multi_user_select',
+            // File Fields
+            'file_upload', 'image_upload', 'file', 'image',
+            // Advanced Fields
+            'datatable', 'repeater', 'panel', 'alert', 'summary_panel', 'dynamic-list',
+            // UI Fields
+            'rating', 'slider', 'toggle', 'chips', 'autocomplete', 'range', 'percentage',
+            // Content Fields
+            'rich_text', 'code_editor', 'map_location', 'signature', 'wysiwyg', 'location',
+            // Special Fields
+            'calculated_field', 'hidden', 'display_only', 'relationship'
         ];
-        
+
         if (!in_array($field['field_type'], $validTypes)) {
             throw new \InvalidArgumentException(
                 "Step {$stepIndex}, Section {$sectionIndex}, Field {$fieldIndex}: invalid field type '{$field['field_type']}'"
@@ -331,14 +416,14 @@ class FormTemplateService
      */
     private function hasSignificantChanges(array $original, array $updated): bool
     {
-        $significantFields = ['steps', 'validation_rules', 'workflow_configuration', 'methodology_type'];
-        
+        $significantFields = ['steps', 'validation_rules', 'workflow_configuration'];
+
         foreach ($significantFields as $field) {
             if (($original[$field] ?? null) !== ($updated[$field] ?? null)) {
                 return true;
             }
         }
-        
+
         return false;
     }
 
@@ -348,27 +433,23 @@ class FormTemplateService
     private function generateChangesSummary(array $original, array $updated): string
     {
         $changes = [];
-        
+
         if (($original['name'] ?? '') !== ($updated['name'] ?? '')) {
             $changes[] = 'Name updated';
         }
-        
-        if (($original['methodology_type'] ?? '') !== ($updated['methodology_type'] ?? '')) {
-            $changes[] = 'Methodology changed to ' . ($updated['methodology_type'] ?? 'universal');
-        }
-        
+
         if (count($original['steps'] ?? []) !== count($updated['steps'] ?? [])) {
             $changes[] = 'Steps modified';
         }
-        
+
         if (($original['validation_rules'] ?? []) !== ($updated['validation_rules'] ?? [])) {
             $changes[] = 'Validation rules updated';
         }
-        
+
         if (($original['workflow_configuration'] ?? []) !== ($updated['workflow_configuration'] ?? [])) {
             $changes[] = 'Workflow configuration updated';
         }
-        
+
         return empty($changes) ? 'Template updated' : implode(', ', $changes);
     }
 
@@ -379,17 +460,17 @@ class FormTemplateService
     {
         $defaults = [];
         $fields = $template->getAllFields();
-        
+
         foreach ($fields as $fieldId => $field) {
             $fieldType = $field['field_type'] ?? '';
             $value = $projectData[$fieldId] ?? null;
-            
+
             // Only extract certain types of values as defaults
             if ($value !== null && $this->shouldUseAsDefault($fieldType, $value)) {
                 $defaults[$fieldId] = $value;
             }
         }
-        
+
         return $defaults;
     }
 
@@ -400,21 +481,21 @@ class FormTemplateService
     {
         // Don't use personal/unique data as defaults
         $excludeTypes = ['email', 'signature', 'file_upload', 'image_upload'];
-        
+
         if (in_array($fieldType, $excludeTypes)) {
             return false;
         }
-        
+
         // Don't use dates as defaults
         if (in_array($fieldType, ['date', 'daterange', 'datetime'])) {
             return false;
         }
-        
+
         // Only use dropdown/select values if they're likely to be reusable
         if (in_array($fieldType, ['dropdown', 'radio']) && is_string($value)) {
             return !$this->isPersonalData($value);
         }
-        
+
         return true;
     }
 
@@ -429,13 +510,13 @@ class FormTemplateService
             '/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/', // Email
             '/\b\d{10,}\b/', // Long numbers (phone, ID, etc.)
         ];
-        
+
         foreach ($personalPatterns as $pattern) {
             if (preg_match($pattern, $value)) {
                 return true;
             }
         }
-        
+
         return false;
     }
 
@@ -444,13 +525,56 @@ class FormTemplateService
      */
     private function clearTemplateCache(int $tenantId): void
     {
-        $keys = [
+        // Clear specific template caches instead of flushing all
+        $patterns = [
             "org_templates_{$tenantId}_*",
-            "form_template_*"
+            "form_template_*",
+            "deleted_templates_{$tenantId}_*",
+            "deleted_templates_count_{$tenantId}"
         ];
-        
-        foreach ($keys as $pattern) {
-            Cache::flush(); // In production, use more specific cache clearing
+
+        foreach ($patterns as $pattern) {
+            if (str_contains($pattern, '*')) {
+                // For wildcard patterns, we need to get all matching keys
+                $keys = Cache::get('template_cache_keys_' . $tenantId, []);
+                foreach ($keys as $key) {
+                    if (str_starts_with($key, str_replace('*', '', $pattern))) {
+                        Cache::forget($key);
+                    }
+                }
+            } else {
+                Cache::forget($pattern);
+            }
         }
+
+        // Clear the cache keys registry
+        Cache::forget('template_cache_keys_' . $tenantId);
+    }
+
+    /**
+     * Clear all template caches immediately (for debugging)
+     */
+    public function clearAllTemplateCaches(): void
+    {
+        // Clear all possible cache patterns
+        $patterns = [
+            "org_templates_*",
+            "form_template_*",
+            "deleted_templates_*",
+            "deleted_templates_count_*"
+        ];
+
+        foreach ($patterns as $pattern) {
+            if (str_contains($pattern, '*')) {
+                // For wildcard patterns, try to clear common keys
+                for ($i = 1; $i <= 10; $i++) { // Clear first 10 tenants
+                    Cache::forget(str_replace('*', $i, $pattern));
+                }
+            } else {
+                Cache::forget($pattern);
+            }
+        }
+
+        Log::info("All template caches cleared");
     }
 }

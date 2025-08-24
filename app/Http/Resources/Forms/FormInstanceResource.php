@@ -10,46 +10,39 @@ class FormInstanceResource extends JsonResource
     {
         return [
             'id' => $this->id,
-            'instance_code' => $this->instance_code,
-            'form_template' => [
-                'id' => $this->template->id,
-                'name' => $this->template->name,
-                'category' => $this->template->category,
-                'methodology_type' => $this->template->methodology_type,
-                'estimated_completion_time' => $this->template->estimated_completion_time
-            ],
-            'user' => [
-                'id' => $this->user->id,
-                'name' => $this->user->name,
-                'email' => $this->user->email
-            ],
-            'form_data' => $this->form_data,
-            'calculated_fields' => $this->calculated_fields,
+            'template_id' => $this->template_id,
+            'template_name' => $this->template->name,
+            'template_category' => $this->template->category,
             'status' => $this->status,
-            'current_step' => $this->current_step,
-            'completion_percentage' => $this->completion_percentage,
-            'workflow_state' => $this->workflow_state ? json_decode($this->workflow_state, true) : null,
-            'workflow_history' => $this->workflow_history,
-            'validation_results' => $this->validation_results,
-            'compliance_results' => $this->compliance_results,
-            'can_edit' => $this->canBeEditedBy(auth()->user()),
-            'is_draft' => $this->isDraft(),
-            'is_submitted' => $this->isSubmitted(),
-            'is_completed' => $this->isCompleted(),
+            'submission_type' => $this->submission_type,
+            'form_data' => $this->form_data,
+            'validation_errors' => $this->validation_errors,
+            'workflow_status' => $this->workflow_status,
+            'workflow_step' => $this->workflow_step,
+            'workflow_data' => $this->workflow_data,
             'submitted_at' => $this->submitted_at?->toISOString(),
             'completed_at' => $this->completed_at?->toISOString(),
             'created_at' => $this->created_at?->toISOString(),
             'updated_at' => $this->updated_at?->toISOString(),
-            'submissions' => $this->when($this->relationLoaded('submissions'), function () {
-                return $this->submissions->map(function ($submission) {
-                    return [
-                        'id' => $submission->id,
-                        'submission_type' => $submission->submission_type,
-                        'submitter' => $submission->submitter->name,
-                        'notes' => $submission->notes,
-                        'created_at' => $submission->created_at->toISOString()
-                    ];
-                });
+            'deleted_at' => $this->deleted_at?->toISOString(),
+            'tenant_id' => $this->tenant_id,
+            'organization_id' => $this->organization_id,
+            'created_by' => $this->whenLoaded('creator', function () {
+                return [
+                    'id' => $this->creator->id,
+                    'name' => $this->creator->name,
+                    'email' => $this->creator->email
+                ];
+            }),
+            'updated_by' => $this->whenLoaded('updater', function () {
+                return [
+                    'id' => $this->updater->id,
+                    'name' => $this->updater->name,
+                    'email' => $this->updater->email
+                ];
+            }),
+            'template' => $this->whenLoaded('template', function () {
+                return new FormTemplateResource($this->template);
             })
         ];
     }

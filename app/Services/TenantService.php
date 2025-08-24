@@ -17,33 +17,34 @@ class TenantService
             if (!isset($data['slug'])) {
                 $data['slug'] = Str::slug($data['name']);
             }
-            
+
             $data['slug'] = $this->ensureUniqueSlug($data['slug']);
-            
+
             $tenant = Tenant::create([
                 'name' => $data['name'],
+                'owner_id' => $data['owner_id'],
                 'slug' => $data['slug'],
                 'domain' => $data['domain'] ?? null,
                 'settings' => $data['settings'] ?? [],
                 'is_active' => $data['is_active'] ?? true,
                 'created_by' => $creator->id,
             ]);
-            
+
             $this->addUserToTenant($tenant, $creator, 'owner', true);
-            
+
             return $tenant;
         });
     }
 
     public function addUserToTenant(
-        Tenant $tenant, 
-        User $user, 
+        Tenant $tenant,
+        User $user,
         string $roleName = 'member',
         bool $setAsCurrent = false,
         array $customPermissions = []
     ): void {
         $role = Role::where('name', $roleName)->first();
-        
+
         if (!$role) {
             throw new \InvalidArgumentException("Role '{$roleName}' does not exist");
         }
@@ -54,7 +55,7 @@ class TenantService
 
         if ($setAsCurrent) {
             $user->tenants()->updateExistingPivot(
-                $user->tenants()->pluck('tenants.id'), 
+                $user->tenants()->pluck('tenants.id'),
                 ['current_tenant' => false]
             );
         }
@@ -66,7 +67,7 @@ class TenantService
             'status' => 'active',
             'joined_at' => now(),
         ]);
-        
+
         if ($setAsCurrent) {
             session(['tenant_id' => $tenant->id]);
         }
@@ -86,22 +87,22 @@ class TenantService
                 })
                 ->wherePivot('status', 'active')
                 ->count();
-                
+
             if ($ownerCount <= 1) {
                 throw new \InvalidArgumentException('Cannot remove the last owner from tenant');
             }
         }
 
         $user->tenants()->detach($tenant->id);
-        
+
         if (session('tenant_id') == $tenant->id) {
             session()->forget('tenant_id');
         }
     }
 
     public function updateUserRole(
-        Tenant $tenant, 
-        User $user, 
+        Tenant $tenant,
+        User $user,
         string $newRoleName,
         array $customPermissions = []
     ): void {
@@ -122,7 +123,7 @@ class TenantService
                 })
                 ->wherePivot('status', 'active')
                 ->count();
-                
+
             if ($ownerCount <= 1) {
                 throw new \InvalidArgumentException('Cannot change role of the last owner');
             }
@@ -144,7 +145,7 @@ class TenantService
             ->get()
             ->map(function($user) {
                 $user->tenant_role = Role::find($user->pivot->role_id);
-                $user->custom_permissions = $user->pivot->permissions ? 
+                $user->custom_permissions = $user->pivot->permissions ?
                     json_decode($user->pivot->permissions, true) : [];
                 $user->tenant_status = $user->pivot->status;
                 $user->joined_at = $user->pivot->joined_at;
@@ -160,17 +161,23 @@ class TenantService
     public function updateTenantSettings(Tenant $tenant, array $settings): Tenant
     {
         $currentSettings = $tenant->settings ?? [];
+        
+        // Ensure currentSettings is an array
+        if (!is_array($currentSettings)) {
+            $currentSettings = [];
+        }
+        
         $mergedSettings = array_merge($currentSettings, $settings);
-        
+
         $tenant->update(['settings' => $mergedSettings]);
-        
+
         return $tenant->fresh();
     }
 
     public function deactivateTenant(Tenant $tenant): void
     {
         $tenant->update(['is_active' => false]);
-        
+
         $tenant->users()->each(function($user) use ($tenant) {
             if (session('tenant_id') == $tenant->id) {
                 session()->forget('tenant_id');
@@ -182,12 +189,12 @@ class TenantService
     {
         $originalSlug = $slug;
         $counter = 1;
-        
+
         while (Tenant::where('slug', $slug)->exists()) {
             $slug = $originalSlug . '-' . $counter;
             $counter++;
         }
-        
+
         return $slug;
     }
 

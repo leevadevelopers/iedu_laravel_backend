@@ -5,6 +5,7 @@ namespace App\Models\Traits;
 use App\Models\Scopes\TenantScope;
 use App\Models\Settings\Tenant;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 trait Tenantable
@@ -15,12 +16,32 @@ trait Tenantable
 
         static::creating(function ($model) {
             if (!$model->tenant_id) {
-                $tenantId = session('tenant_id') ?? 
-                           auth('api')->user()?->getCurrentTenant()?->id ?? 
-                           null;
+                // Use the same logic as RiskReportService
+                $tenantId = session('tenant_id');
+                
+                if (!$tenantId) {
+                    $user = auth('api')->user();
+                    if ($user && $user instanceof \App\Models\User) {
+                        // Get tenant directly from user relationship without triggering TenantScope
+                        $tenant = $user->tenants()->withoutGlobalScope(\App\Models\Scopes\TenantScope::class)
+                            ->wherePivot('current_tenant', true)->first();
+                        if ($tenant && isset($tenant->id)) {
+                            $tenantId = $tenant->id;
+                            session(['tenant_id' => $tenant->id]);
+                        } else {
+                            // Fallback to first tenant
+                            $tenant = $user->tenants()->withoutGlobalScope(\App\Models\Scopes\TenantScope::class)->first();
+                            if ($tenant && isset($tenant->id)) {
+                                $tenantId = $tenant->id;
+                                session(['tenant_id' => $tenant->id]);
+                            }
+                        }
+                    }
+                }
                 
                 if ($tenantId) {
                     $model->tenant_id = $tenantId;
+                    Log::info('Tenantable trait set tenant_id', ['tenant_id' => $tenantId, 'model' => get_class($model)]);
                 } else {
                     Log::warning('Creating model without tenant context', [
                         'model' => get_class($model),
@@ -51,7 +72,26 @@ trait Tenantable
 
     public function scopeForTenant($query, $tenantId = null)
     {
-        $tenantId = $tenantId ?? session('tenant_id') ?? auth('api')->user()?->getCurrentTenant()?->id;
+        if ($tenantId === null) {
+            // Check if we're in a database transaction to avoid infinite loops
+            if (DB::transactionLevel() > 0) {
+                // During transactions, rely on session or header only
+                $tenantId = session('tenant_id');
+                if (!$tenantId && request()->hasHeader('X-Tenant-ID')) {
+                    $tenantId = (int) request()->header('X-Tenant-ID');
+                }
+            } else {
+                // Use session first, then header, avoid user queries to prevent circular dependency
+                $tenantId = session('tenant_id');
+                if (!$tenantId && request()->hasHeader('X-Tenant-ID')) {
+                    $tenantId = (int) request()->header('X-Tenant-ID');
+                }
+                // If still no tenant ID, use default for development
+                if (!$tenantId && config('app.env') !== 'production') {
+                    $tenantId = 1; // Default to tenant_id = 1 for seeded data
+                }
+            }
+        }
         
         if ($tenantId) {
             return $query->where($this->getTable() . '.tenant_id', $tenantId);
@@ -72,13 +112,69 @@ trait Tenantable
 
     public function belongsToCurrentTenant(): bool
     {
-        $currentTenantId = session('tenant_id') ?? auth('api')->user()?->getCurrentTenant()?->id;
+        // Check if we're in a database transaction to avoid infinite loops
+        if (DB::transactionLevel() > 0) {
+            // During transactions, rely on session or header only
+            $currentTenantId = session('tenant_id');
+            if (!$currentTenantId && request()->hasHeader('X-Tenant-ID')) {
+                $currentTenantId = (int) request()->header('X-Tenant-ID');
+            }
+        } else {
+            // Avoid circular dependency by getting tenant ID directly
+            $currentTenantId = session('tenant_id');
+            if (!$currentTenantId) {
+                $user = auth('api')->user();
+                if ($user && $user instanceof \App\Models\User) {
+                    $tenant = $user->tenants()->withoutGlobalScope(\App\Models\Scopes\TenantScope::class)
+                        ->wherePivot('current_tenant', true)->first();
+                    if ($tenant) {
+                        $currentTenantId = $tenant->id;
+                        session(['tenant_id' => $tenant->id]);
+                    } else {
+                        $tenant = $user->tenants()->withoutGlobalScope(\App\Models\Scopes\TenantScope::class)->first();
+                        if ($tenant) {
+                            $currentTenantId = $tenant->id;
+                            session(['tenant_id' => $tenant->id]);
+                        }
+                    }
+                }
+            }
+        }
         return $currentTenantId && $this->belongsToTenant($currentTenantId);
     }
 
     public static function createForTenant(array $attributes = [], $tenantId = null): static
     {
-        $tenantId = $tenantId ?? session('tenant_id') ?? auth('api')->user()?->getCurrentTenant()?->id;
+        if ($tenantId === null) {
+            // Check if we're in a database transaction to avoid infinite loops
+            if (DB::transactionLevel() > 0) {
+                // During transactions, rely on session or header only
+                $tenantId = session('tenant_id');
+                if (!$tenantId && request()->hasHeader('X-Tenant-ID')) {
+                    $tenantId = (int) request()->header('X-Tenant-ID');
+                }
+            } else {
+                // Avoid circular dependency by getting tenant ID directly
+                $tenantId = session('tenant_id');
+                if (!$tenantId) {
+                    $user = auth('api')->user();
+                    if ($user && $user instanceof \App\Models\User) {
+                        $tenant = $user->tenants()->withoutGlobalScope(\App\Models\Scopes\TenantScope::class)
+                            ->wherePivot('current_tenant', true)->first();
+                        if ($tenant) {
+                            $tenantId = $tenant->id;
+                            session(['tenant_id' => $tenant->id]);
+                        } else {
+                            $tenant = $user->tenants()->withoutGlobalScope(\App\Models\Scopes\TenantScope::class)->first();
+                            if ($tenant) {
+                                $tenantId = $tenant->id;
+                                session(['tenant_id' => $tenant->id]);
+                            }
+                        }
+                    }
+                }
+            }
+        }
         
         if (!$tenantId) {
             throw new \Exception('Cannot create model without tenant context');

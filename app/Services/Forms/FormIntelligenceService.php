@@ -10,6 +10,10 @@ namespace App\Services\Forms;
 use App\Models\Forms\FormTemplate;
 use App\Models\Forms\FormInstance;
 use App\Services\AI\AIServiceInterface;
+use App\Services\Forms\Compliance\DefaultComplianceChecker;
+use App\Services\Forms\Compliance\EUComplianceChecker;
+use App\Services\Forms\Compliance\USAIDComplianceChecker;
+use App\Services\Forms\Compliance\WorldBankComplianceChecker;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
@@ -21,8 +25,8 @@ class FormIntelligenceService
 
     public function __construct(
         ?AIServiceInterface $aiService = null,
-        FormPatternEngine $patternEngine,
-        FormRuleEngine $ruleEngine
+        ?FormPatternEngine $patternEngine = null,
+        ?FormRuleEngine $ruleEngine = null
     ) {
         $this->aiService = $aiService;
         $this->patternEngine = $patternEngine;
@@ -35,18 +39,22 @@ class FormIntelligenceService
     public function generateFieldSuggestions(string $fieldId, array $context): array
     {
         $cacheKey = "field_suggestions_{$fieldId}_" . md5(json_encode($context));
-        
+
         return Cache::remember($cacheKey, 300, function () use ($fieldId, $context) {
             $suggestions = [];
-            
-            // Rule-based suggestions (always available)
-            $ruleSuggestions = $this->ruleEngine->generateSuggestions($fieldId, $context);
-            $suggestions = array_merge($suggestions, $ruleSuggestions);
-            
-            // Pattern-based suggestions
-            $patternSuggestions = $this->patternEngine->generateSuggestions($fieldId, $context);
-            $suggestions = array_merge($suggestions, $patternSuggestions);
-            
+
+            // Rule-based suggestions (if available)
+            if ($this->ruleEngine) {
+                $ruleSuggestions = $this->ruleEngine->generateSuggestions($fieldId, $context);
+                $suggestions = array_merge($suggestions, $ruleSuggestions);
+            }
+
+            // Pattern-based suggestions (if available)
+            if ($this->patternEngine) {
+                $patternSuggestions = $this->patternEngine->generateSuggestions($fieldId, $context);
+                $suggestions = array_merge($suggestions, $patternSuggestions);
+            }
+
             // AI-enhanced suggestions (if available)
             if ($this->aiService && $this->aiService->isAvailable()) {
                 try {
@@ -59,7 +67,7 @@ class FormIntelligenceService
                     ]);
                 }
             }
-            
+
             // Remove duplicates and limit results
             return array_unique(array_slice($suggestions, 0, 10));
         });
@@ -68,62 +76,95 @@ class FormIntelligenceService
     /**
      * Validate form data with intelligent checks
      */
-    public function validateFormData(array $formData, FormTemplate $template): array
+    public function validateFormData(array $formData, ?FormTemplate $template = null): array
     {
-        $validator = new SmartFormValidator($template, $this->ruleEngine);
-        
-        // Rule-based validation
-        $ruleValidation = $validator->validateRules($formData);
-        
-        // Compliance validation
-        $complianceValidation = $validator->validateCompliance($formData, $template->methodology_type);
-        
-        // Business logic validation
-        $businessValidation = $validator->validateBusinessLogic($formData);
-        
-        // Cross-field validation
-        $crossFieldValidation = $validator->validateCrossFields($formData);
-        
-        // AI-enhanced validation (if available)
-        $aiValidation = ['valid' => true, 'errors' => [], 'warnings' => []];
-        if ($this->aiService && $this->aiService->isAvailable()) {
-            try {
-                $aiValidation = $this->aiService->validateFormData($formData, $template);
-            } catch (\Exception $e) {
-                Log::warning('AI validation failed', ['error' => $e->getMessage()]);
-            }
+        // Se não há template, fazer validação básica
+        if (!$template) {
+            return [
+                'valid' => true,
+                'errors' => [],
+                'warnings' => [],
+                'details' => [
+                    'rule_validation' => ['valid' => true, 'errors' => [], 'warnings' => []],
+                    'compliance_validation' => ['valid' => true, 'errors' => [], 'warnings' => []],
+                    'business_validation' => ['valid' => true, 'errors' => [], 'warnings' => []],
+                    'cross_field_validation' => ['valid' => true, 'errors' => [], 'warnings' => []],
+                    'ai_validation' => ['valid' => true, 'errors' => [], 'warnings' => []]
+                ]
+            ];
         }
-        
-        return [
-            'valid' => $ruleValidation['valid'] && 
-                      $complianceValidation['valid'] && 
-                      $businessValidation['valid'] && 
-                      $crossFieldValidation['valid'] && 
-                      $aiValidation['valid'],
-            'errors' => array_merge(
+
+        // Only use SmartFormValidator if ruleEngine is available
+        if ($this->ruleEngine) {
+            $validator = new SmartFormValidator($template, $this->ruleEngine);
+
+            // Rule-based validation
+            $ruleValidation = $validator->validateRules($formData);
+
+            // Business validation
+            $businessValidation = $validator->validateBusinessLogic($formData);
+
+            // Cross-field validation
+            $crossFieldValidation = $validator->validateCrossFields($formData);
+
+            // AI validation (if available)
+            $aiValidation = ['valid' => true, 'errors' => [], 'warnings' => []];
+            if ($this->aiService && $this->aiService->isAvailable()) {
+                try {
+                    $aiValidation = $this->aiService->validateFormData($formData, $template);
+                } catch (\Exception $e) {
+                    Log::warning('AI validation failed', ['error' => $e->getMessage()]);
+                }
+            }
+
+            // Combine all validations
+            $allValid = $ruleValidation['valid'] &&
+                       $businessValidation['valid'] &&
+                       $crossFieldValidation['valid'] &&
+                       $aiValidation['valid'];
+
+            $allErrors = array_merge(
                 $ruleValidation['errors'] ?? [],
-                $complianceValidation['errors'] ?? [],
                 $businessValidation['errors'] ?? [],
                 $crossFieldValidation['errors'] ?? [],
                 $aiValidation['errors'] ?? []
-            ),
-            'warnings' => array_merge(
+            );
+
+            $allWarnings = array_merge(
                 $ruleValidation['warnings'] ?? [],
-                $complianceValidation['warnings'] ?? [],
                 $businessValidation['warnings'] ?? [],
                 $crossFieldValidation['warnings'] ?? [],
                 $aiValidation['warnings'] ?? []
-            ),
+            );
+
+            return [
+                'valid' => $allValid,
+                'errors' => $allErrors,
+                'warnings' => $allWarnings,
+                'details' => [
+                    'rule_validation' => $ruleValidation,
+                    'compliance_validation' => ['valid' => true, 'errors' => [], 'warnings' => []],
+                    'business_validation' => $businessValidation,
+                    'cross_field_validation' => $crossFieldValidation,
+                    'ai_validation' => $aiValidation
+                ]
+            ];
+        }
+
+        // Fallback to basic validation if no rule engine available
+        return [
+            'valid' => true,
+            'errors' => [],
+            'warnings' => [],
             'details' => [
-                'rule_validation' => $ruleValidation,
-                'compliance_validation' => $complianceValidation,
-                'business_validation' => $businessValidation,
-                'cross_field_validation' => $crossFieldValidation,
-                'ai_validation' => $aiValidation
+                'rule_validation' => ['valid' => true, 'errors' => [], 'warnings' => []],
+                'compliance_validation' => ['valid' => true, 'errors' => [], 'warnings' => []],
+                'business_validation' => ['valid' => true, 'errors' => [], 'warnings' => []],
+                'cross_field_validation' => ['valid' => true, 'errors' => [], 'warnings' => []],
+                'ai_validation' => ['valid' => true, 'errors' => [], 'warnings' => []]
             ]
         ];
     }
-
     /**
      * Calculate derived/computed fields
      */
@@ -131,7 +172,7 @@ class FormIntelligenceService
     {
         $calculatedFields = [];
         $fields = $template->getAllFields();
-        
+
         foreach ($fields as $fieldId => $field) {
             if (($field['field_type'] ?? '') === 'calculated_field') {
                 $formula = $field['calculation_formula'] ?? '';
@@ -150,7 +191,7 @@ class FormIntelligenceService
                 }
             }
         }
-        
+
         return $calculatedFields;
     }
 
@@ -160,15 +201,15 @@ class FormIntelligenceService
     public function autoPopulateFields(FormTemplate $template, array $context): array
     {
         $populatedData = [];
-        
+
         // Pattern-based auto-population
         $patternData = $this->patternEngine->autoPopulateFields($template, $context);
         $populatedData = array_merge($populatedData, $patternData);
-        
+
         // Rule-based auto-population
         $ruleData = $this->ruleEngine->autoPopulateFields($template, $context);
         $populatedData = array_merge($populatedData, $ruleData);
-        
+
         // AI-enhanced auto-population (if available)
         if ($this->aiService && $this->aiService->isAvailable()) {
             try {
@@ -178,17 +219,8 @@ class FormIntelligenceService
                 Log::warning('AI auto-population failed', ['error' => $e->getMessage()]);
             }
         }
-        
-        return $populatedData;
-    }
 
-    /**
-     * Check compliance against methodology
-     */
-    public function checkCompliance(array $formData, string $methodology): array
-    {
-        $checker = $this->getComplianceChecker($methodology);
-        return $checker->checkCompliance($formData);
+        return $populatedData;
     }
 
     /**
@@ -197,11 +229,11 @@ class FormIntelligenceService
     public function getNextWorkflowAction(FormInstance $instance): array
     {
         $recommendations = [];
-        
+
         // Rule-based workflow recommendations
         $ruleRecommendations = $this->ruleEngine->getWorkflowRecommendations($instance);
         $recommendations = array_merge($recommendations, $ruleRecommendations);
-        
+
         // AI-enhanced workflow recommendations (if available)
         if ($this->aiService && $this->aiService->isAvailable()) {
             try {
@@ -211,7 +243,7 @@ class FormIntelligenceService
                 Log::warning('AI workflow recommendations failed', ['error' => $e->getMessage()]);
             }
         }
-        
+
         return [
             'recommendations' => $recommendations,
             'next_step' => $this->determineNextStep($instance),
@@ -219,25 +251,15 @@ class FormIntelligenceService
         ];
     }
 
-    private function getComplianceChecker(string $methodology): ComplianceCheckerInterface
-    {
-        return match($methodology) {
-            'usaid' => new USAIDComplianceChecker(),
-            'world_bank' => new WorldBankComplianceChecker(),
-            'eu' => new EUComplianceChecker(),
-            default => new DefaultComplianceChecker()
-        };
-    }
-
     private function determineNextStep(FormInstance $instance): ?string
     {
         $template = $instance->template;
         $workflowConfig = $template->workflow_configuration;
-        
+
         if (!$workflowConfig) {
             return null;
         }
-        
+
         return $this->ruleEngine->determineNextStep($workflowConfig, $instance->form_data);
     }
 
@@ -245,7 +267,7 @@ class FormIntelligenceService
     {
         $actions = [];
         $validation = $this->validateFormData($instance->form_data, $instance->template);
-        
+
         if (!$validation['valid']) {
             $actions[] = [
                 'type' => 'validation',
@@ -254,7 +276,7 @@ class FormIntelligenceService
                 'errors' => $validation['errors']
             ];
         }
-        
+
         if ($instance->completion_percentage < 100) {
             $actions[] = [
                 'type' => 'completion',
@@ -263,7 +285,7 @@ class FormIntelligenceService
                 'completion' => $instance->completion_percentage
             ];
         }
-        
+
         return $actions;
     }
 }

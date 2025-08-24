@@ -1,19 +1,19 @@
-<?php 
-// File: app/Providers/FormEngineServiceProvider.php
+<?php
+
 namespace App\Providers;
 
 use App\Models\Forms\FormTemplate;
 use App\Models\Forms\FormInstance;
-use App\Policies\FormTemplatePolicy;
-use App\Policies\FormInstancePolicy;
+use App\Policies\Forms\FormTemplatePolicy;
+use App\Policies\Forms\FormInstancePolicy;
 use App\Services\Forms\FormIntelligenceService;
 use App\Services\Forms\FormTemplateService;
 use App\Services\Forms\FormPatternEngine;
 use App\Services\Forms\FormRuleEngine;
-use App\Services\Forms\MethodologyAdapterService;
 use App\Services\Forms\WorkflowIntegrationService;
 use App\Services\AI\AIServiceInterface;
 use App\Services\AI\NullAIService;
+use App\Services\AI\AIServiceFactory;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 
@@ -24,40 +24,37 @@ class FormEngineServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        // Bind AI Service (with null fallback)
+        // Bind AI Service with lazy resolution to avoid config access during registration
         $this->app->bind(AIServiceInterface::class, function ($app) {
-            $provider = config('ai.provider', 'null');
-            
-            return match($provider) {
-                'openai' => $app->make(\App\Services\AI\OpenAIService::class),
-                'aws_bedrock' => $app->make(\App\Services\AI\AWSBedrockService::class),
-                'azure_openai' => $app->make(\App\Services\AI\AzureOpenAIService::class),
-                default => $app->make(NullAIService::class)
-            };
+            // Use factory to create the appropriate service when needed
+            return AIServiceFactory::create();
         });
 
-        // Form Engine Services
-        $this->app->singleton(FormRuleEngine::class);
-        $this->app->singleton(FormPatternEngine::class);
-        $this->app->singleton(MethodologyAdapterService::class);
-        
+        // Form Engine Services - Use lazy loading to prevent circular dependencies
+        $this->app->singleton(FormRuleEngine::class, function ($app) {
+            return new FormRuleEngine();
+        });
+
+        $this->app->singleton(FormPatternEngine::class, function ($app) {
+            return new FormPatternEngine();
+        });
+
         $this->app->bind(FormIntelligenceService::class, function ($app) {
+            // Use lazy resolution to prevent circular dependencies
             return new FormIntelligenceService(
                 $app->make(AIServiceInterface::class),
-                $app->make(FormPatternEngine::class),
-                $app->make(FormRuleEngine::class)
+                $app->bound(FormPatternEngine::class) ? $app->make(FormPatternEngine::class) : null,
+                $app->bound(FormRuleEngine::class) ? $app->make(FormRuleEngine::class) : null
             );
         });
 
         $this->app->bind(FormTemplateService::class, function ($app) {
-            return new FormTemplateService(
-                $app->make(MethodologyAdapterService::class)
-            );
+            return new FormTemplateService();
         });
 
         $this->app->bind(WorkflowIntegrationService::class, function ($app) {
             return new WorkflowIntegrationService(
-                $app->make(FormRuleEngine::class)
+                $app->bound(FormRuleEngine::class) ? $app->make(FormRuleEngine::class) : null
             );
         });
     }

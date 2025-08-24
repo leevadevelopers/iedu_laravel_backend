@@ -1,4 +1,4 @@
-<?php 
+<?php
 namespace App\Models\Forms;
 
 use App\Models\Traits\Tenantable;
@@ -9,7 +9,6 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class FormSubmission extends Model
 {
     use Tenantable;
-
     protected $fillable = [
         'tenant_id', 'form_instance_id', 'submitted_by', 'submission_data',
         'attachments', 'notes', 'submission_type'
@@ -24,12 +23,12 @@ class FormSubmission extends Model
 
     public function instance(): BelongsTo
     {
-        return $this->belongsTo(FormInstance::class, 'form_instance_id');
+        return $this->belongsTo(\App\Models\Forms\FormInstance::class, 'form_instance_id');
     }
 
     public function submitter(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'submitted_by');
+        return $this->belongsTo(User::class, 'submitted_by')->withDefault();
     }
 
     public function isAutoSave(): bool
@@ -42,4 +41,3 @@ class FormSubmission extends Model
         return $this->submission_type === 'submit';
     }
 }
-Made with

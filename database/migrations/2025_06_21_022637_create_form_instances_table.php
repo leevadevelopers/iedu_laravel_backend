@@ -12,13 +12,23 @@ class CreateFormInstancesTable extends Migration
             $table->id();
             $table->foreignId('tenant_id')->constrained()->onDelete('cascade');
             $table->foreignId('form_template_id')->constrained()->onDelete('cascade');
+            $table->string('reference_type')->nullable();
+            $table->unsignedBigInteger('reference_id')->nullable();
+            $table->string('form_type')->nullable();
+            $table->foreignId('organization_id')->nullable()->constrained()->onDelete('cascade');
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
+            $table->foreignId('created_by')->nullable()->constrained('users')->onDelete('set null');
             $table->string('instance_code')->unique();
             $table->json('form_data');
             $table->json('calculated_fields')->nullable();
             $table->enum('status', [
-                'draft', 'in_progress', 'submitted', 'under_review', 
-                'approved', 'rejected', 'completed'
+                'draft',
+                'in_progress',
+                'submitted',
+                'under_review',
+                'approved',
+                'rejected',
+                'completed'
             ])->default('draft');
             $table->string('workflow_state')->nullable();
             $table->json('workflow_history')->nullable();
@@ -30,12 +40,15 @@ class CreateFormInstancesTable extends Migration
             $table->timestamp('completed_at')->nullable();
             $table->timestamps();
             $table->softDeletes();
-            
+
             // Indexes
             $table->index(['tenant_id', 'status']);
             $table->index(['user_id', 'status']);
             $table->index(['form_template_id', 'status']);
             $table->index(['tenant_id', 'created_at']);
+            $table->index(['reference_type', 'reference_id']);
+            $table->index(['form_type']);
+            $table->index(['organization_id']);
         });
     }
 
@@ -44,4 +57,3 @@ class CreateFormInstancesTable extends Migration
         Schema::dropIfExists('form_instances');
     }
 }
-

@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Http\Controllers\Api;
+namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\UserResource;
@@ -23,31 +23,35 @@ class AuthController extends Controller
     public function login(Request $request): JsonResponse
     {
         $request->validate([
-            'email' => 'required|email',
+            'identifier' => 'required',
             'password' => 'required|string',
             'tenant_id' => 'nullable|integer|exists:tenants,id',
         ]);
 
-        $credentials = $request->only('email', 'password');
+        $identifier = $request->get('identifier');
+        $password = $request->get('password');
 
-        if (!$token = JWTAuth::attempt($credentials)) {
+        // Buscar usuário por identifier (email ou telefone)
+        $user = \App\Models\User::where('identifier', $identifier)->first();
+        if (!$user || !\Illuminate\Support\Facades\Hash::check($password, $user->password)) {
             $this->activityLogService->logSecurityEvent('failed_login_attempt', [
-                'email' => $request->get('email'),
+                'identifier' => $identifier,
                 'ip' => $request->ip(),
             ]);
 
             throw ValidationException::withMessages([
-                'email' => ['The provided credentials are incorrect.'],
+                'identifier' => ['The provided credentials are incorrect.'],
             ]);
         }
 
-        $user = auth('api')->user();
-        
         if (!$user->isActive()) {
             return response()->json([
                 'error' => 'Account is inactive. Please contact administrator.'
             ], 403);
         }
+
+        // Autenticar e gerar token JWT Tymon\JWTAuth\Facades\JWTAuth
+        $token = \Tymon\JWTAuth\Facades\JWTAuth::fromUser($user);
 
         // Handle tenant context
         if ($request->has('tenant_id')) {
@@ -73,7 +77,7 @@ class AuthController extends Controller
         return response()->json([
             'access_token' => $token,
             'token_type' => 'bearer',
-            'expires_in' => JWTAuth::factory()->getTTL() * 60,
+            'expires_in' => \Tymon\JWTAuth\Facades\JWTAuth::factory()->getTTL() * 60,
             'user' => new UserResource($user),
             'current_tenant' => $user->getCurrentTenant() ? 
                 new TenantResource($user->getCurrentTenant()) : null,

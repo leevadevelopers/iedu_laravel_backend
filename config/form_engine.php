@@ -1,4 +1,4 @@
-<?php 
+<?php
 // File: config/form_engine.php
 return [
     /*
@@ -46,28 +46,6 @@ return [
             'initial' => 0,
             'reminder' => 24, // hours
             'escalation' => 72, // hours
-        ],
-    ],
-
-    // Methodology adapters
-    'methodologies' => [
-        'usaid' => [
-            'enabled' => true,
-            'adapter_class' => \App\Services\Forms\Methodology\USAIDMethodologyAdapter::class,
-            'strict_compliance' => true,
-            'required_fields' => ['environmental_screening', 'gender_integration', 'marking_branding_plan'],
-        ],
-        'world_bank' => [
-            'enabled' => true,
-            'adapter_class' => \App\Services\Forms\Methodology\WorldBankMethodologyAdapter::class,
-            'strict_compliance' => true,
-            'required_fields' => ['project_development_objective', 'results_framework', 'safeguards_screening'],
-        ],
-        'eu' => [
-            'enabled' => true,
-            'adapter_class' => \App\Services\Forms\Methodology\EUMethodologyAdapter::class,
-            'strict_compliance' => true,
-            'required_fields' => ['logical_framework', 'sustainability_plan', 'visibility_plan'],
         ],
     ],
 

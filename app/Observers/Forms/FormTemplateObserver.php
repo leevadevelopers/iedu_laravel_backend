@@ -13,7 +13,7 @@ class FormTemplateObserver
     public function created(FormTemplate $template): void
     {
         $this->clearCache($template);
-        
+
         activity('form_templates')
             ->performedOn($template)
             ->causedBy(auth()->user())
@@ -26,7 +26,7 @@ class FormTemplateObserver
     public function updated(FormTemplate $template): void
     {
         $this->clearCache($template);
-        
+
         activity('form_templates')
             ->performedOn($template)
             ->causedBy(auth()->user())
@@ -43,7 +43,7 @@ class FormTemplateObserver
     public function deleted(FormTemplate $template): void
     {
         $this->clearCache($template);
-        
+
         activity('form_templates')
             ->performedOn($template)
             ->causedBy(auth()->user())
@@ -54,10 +54,9 @@ class FormTemplateObserver
     {
         $patterns = [
             "org_templates_{$template->tenant_id}_*",
-            "form_template_{$template->id}",
-            "methodology_templates_{$template->methodology_type}"
+            "form_template_{$template->id}"
         ];
-        
+
         foreach ($patterns as $pattern) {
             Cache::forget($pattern);
         }
