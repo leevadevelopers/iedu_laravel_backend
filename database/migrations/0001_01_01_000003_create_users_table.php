@@ -24,6 +24,16 @@ return new class extends Migration
             $table->json('settings')->nullable();
             $table->string('password');
             $table->boolean('must_change')->default(false);
+               // Educational Role
+               $table->enum('user_type', [
+                'student', 'parent', 'teacher', 'admin', 'staff',
+                'principal', 'counselor', 'nurse'
+            ]);
+
+              // Contact Information
+              $table->string('phone', 20)->nullable();
+              $table->json('emergency_contact_json')->nullable();
+  
 
             $table->softDeletes();
             $table->rememberToken();

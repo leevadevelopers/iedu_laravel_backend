@@ -11,6 +11,9 @@ use App\Services\Forms\FormTemplateService;
 use App\Services\Forms\FormPatternEngine;
 use App\Services\Forms\FormRuleEngine;
 use App\Services\Forms\WorkflowIntegrationService;
+use App\Services\Forms\Workflow\EducationalWorkflowService;
+use App\Services\Forms\Validation\EducationalValidationRules;
+use App\Services\Forms\Compliance\EducationalComplianceService;
 use App\Services\AI\AIServiceInterface;
 use App\Services\AI\NullAIService;
 use App\Services\AI\AIServiceFactory;
@@ -56,6 +59,15 @@ class FormEngineServiceProvider extends ServiceProvider
             return new WorkflowIntegrationService(
                 $app->bound(FormRuleEngine::class) ? $app->make(FormRuleEngine::class) : null
             );
+        });
+
+        // Educational-specific services
+        $this->app->singleton(EducationalWorkflowService::class, function ($app) {
+            return new EducationalWorkflowService();
+        });
+
+        $this->app->singleton(EducationalComplianceService::class, function ($app) {
+            return new EducationalComplianceService();
         });
     }
 

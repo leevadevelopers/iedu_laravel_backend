@@ -14,6 +14,8 @@ use App\Services\Forms\Compliance\EUComplianceChecker;
 use App\Services\Forms\Compliance\USAIDComplianceChecker;
 use App\Services\Forms\Compliance\WorldBankComplianceChecker;
 use App\Services\Forms\Compliance\ComplianceCheckerInterface;
+use App\Services\Forms\Validation\EducationalValidationRules;
+use App\Services\Forms\Compliance\EducationalComplianceService;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
 
@@ -462,5 +464,158 @@ class SmartFormValidator
         }
 
         return $errors;
+    }
+
+    /**
+     * Validate educational form data using educational-specific rules
+     */
+    public function validateEducationalForm(array $formData): array
+    {
+        $category = $this->template->category;
+
+        // Check if this is an educational form category
+        $educationalCategories = [
+            'student_enrollment', 'student_registration', 'attendance', 'grades',
+            'academic_records', 'behavior_incident', 'parent_communication',
+            'teacher_evaluation', 'curriculum_planning', 'extracurricular',
+            'field_trip', 'parent_meeting', 'student_health', 'special_education',
+            'discipline', 'graduation', 'scholarship'
+        ];
+
+        if (!in_array($category, $educationalCategories)) {
+            return [
+                'valid' => true,
+                'errors' => [],
+                'warnings' => ['Not an educational form category'],
+                'educational_validation' => false
+            ];
+        }
+
+        // Use educational validation rules
+        $educationalValidation = EducationalValidationRules::validateFormData($formData, $category);
+
+        return [
+            'valid' => $educationalValidation['valid'],
+            'errors' => $educationalValidation['errors'],
+            'warnings' => $educationalValidation['warnings'],
+            'educational_validation' => true,
+            'validation_type' => 'educational'
+        ];
+    }
+
+    /**
+     * Check educational compliance for form data
+     */
+    public function checkEducationalCompliance(\App\Models\Forms\FormInstance $formInstance): array
+    {
+        $category = $this->template->category;
+
+        // Check if this is an educational form category
+        $educationalCategories = [
+            'student_enrollment', 'student_registration', 'attendance', 'grades',
+            'academic_records', 'behavior_incident', 'parent_communication',
+            'teacher_evaluation', 'curriculum_planning', 'extracurricular',
+            'field_trip', 'parent_meeting', 'student_health', 'special_education',
+            'discipline', 'graduation', 'scholarship'
+        ];
+
+        if (!in_array($category, $educationalCategories)) {
+            return [
+                'compliance_check' => false,
+                'message' => 'Not an educational form category'
+            ];
+        }
+
+        try {
+            $complianceService = new EducationalComplianceService();
+            $complianceResults = $complianceService->checkCompliance($formInstance);
+
+            return [
+                'compliance_check' => true,
+                'compliance_results' => $complianceResults,
+                'compliance_report' => $complianceService->generateComplianceReport($formInstance)
+            ];
+        } catch (\Exception $e) {
+            Log::error('Educational compliance check failed', [
+                'form_instance_id' => $formInstance->id,
+                'error' => $e->getMessage()
+            ]);
+
+            return [
+                'compliance_check' => false,
+                'error' => 'Compliance check failed: ' . $e->getMessage()
+            ];
+        }
+    }
+
+    /**
+     * Comprehensive validation including educational rules
+     */
+    public function validateComprehensive(array $formData, ?\App\Models\Forms\FormInstance $formInstance = null): array
+    {
+        $results = [
+            'basic_validation' => $this->validateRules($formData),
+            'business_logic' => $this->validateBusinessLogic($formData),
+            'cross_field_validation' => $this->validateCrossFields($formData),
+            'educational_validation' => $this->validateEducationalForm($formData),
+            'compliance_check' => null
+        ];
+
+        // Add compliance check if form instance is provided
+        if ($formInstance) {
+            $results['compliance_check'] = $this->checkEducationalCompliance($formInstance);
+        }
+
+        // Determine overall validity
+        $overallValid = $results['basic_validation']['valid'] &&
+                       $results['business_logic']['valid'] &&
+                       $results['cross_field_validation']['valid'] &&
+                       $results['educational_validation']['valid'];
+
+        return [
+            'overall_valid' => $overallValid,
+            'results' => $results,
+            'summary' => [
+                'total_errors' => $this->countTotalErrors($results),
+                'total_warnings' => $this->countTotalWarnings($results),
+                'validation_complete' => true
+            ]
+        ];
+    }
+
+    /**
+     * Count total errors across all validation results
+     */
+    private function countTotalErrors(array $results): int
+    {
+        $total = 0;
+
+        foreach ($results as $validationType => $result) {
+            if (is_array($result) && isset($result['errors'])) {
+                if (is_array($result['errors'])) {
+                    $total += count($result['errors']);
+                }
+            }
+        }
+
+        return $total;
+    }
+
+    /**
+     * Count total warnings across all validation results
+     */
+    private function countTotalWarnings(array $results): int
+    {
+        $total = 0;
+
+        foreach ($results as $validationType => $result) {
+            if (is_array($result) && isset($result['warnings'])) {
+                if (is_array($result['warnings'])) {
+                    $total += count($result['warnings']);
+                }
+            }
+        }
+
+        return $total;
     }
 }

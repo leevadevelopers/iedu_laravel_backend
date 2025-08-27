@@ -1,51 +1,133 @@
-<?php
+#!/bin/bash
 
+# Student Information System (SIS) - API Routes
+# This script creates the API routes for the Student Information System
 
-use App\Models\Settings\Tenant;
-use Illuminate\Support\Facades\Route;
+# Validate Laravel root
+if [ ! -d "vendor" ]; then
+    echo "❌ Error: Please run this script from the Laravel root directory (where vendor folder exists)"
+    exit 1
+fi
 
+echo "🏗️ Creating SIS API routes..."
 
-require __DIR__ . '/modules/auth.php';
-require __DIR__ . '/modules/users.php';
-require __DIR__ . '/modules/forms.php';
-require __DIR__ . '/modules/notification.php';
-require __DIR__ . '/modules/tenant.php';
-require __DIR__ . '/modules/school.php';
-require __DIR__ . '/modules/students.php';
+# Create or update routes/api.php
+cat >> "routes/api.php" << 'EOF'
 
-// Permission management routes (protected)
-Route::middleware(['auth:api', 'tenant'])->prefix('permissions')->group(function () {
-    Route::get('/', [\App\Http\Controllers\API\PermissionController::class, 'index']);
-    Route::get('/matrix', [\App\Http\Controllers\API\PermissionController::class, 'matrix']);
+/*
+|--------------------------------------------------------------------------
+| Student Information System (SIS) Routes
+|--------------------------------------------------------------------------
+|
+| These routes handle the Student Information System functionality including
+| student management, family relationships, and educational workflows.
+| All routes are protected with auth:api middleware and school context.
+|
+*/
 
-    // Role management routes
-    Route::get('/roles', [\App\Http\Controllers\API\PermissionController::class, 'roles']);
-    Route::post('/roles', [\App\Http\Controllers\API\PermissionController::class, 'store']);
-    Route::get('/roles/{role}', [\App\Http\Controllers\API\PermissionController::class, 'show']);
-    Route::put('/roles/{role}', [\App\Http\Controllers\API\PermissionController::class, 'update']);
-    Route::delete('/roles/{role}', [\App\Http\Controllers\API\PermissionController::class, 'destroy']);
-    Route::get('/roles/{role}/permissions', [\App\Http\Controllers\API\PermissionController::class, 'rolePermissions']);
-    Route::put('/roles/{role}/permissions', [\App\Http\Controllers\API\PermissionController::class, 'updateRolePermissions']);
+use App\Http\Controllers\Api\V1\StudentController;
+use App\Http\Controllers\Api\V1\FamilyRelationshipController;
 
-    // User role assignment routes
-    Route::post('/users/assign-role', [\App\Http\Controllers\API\PermissionController::class, 'assignRoleToUser']);
-    Route::delete('/users/remove-role', [\App\Http\Controllers\API\PermissionController::class, 'removeRoleFromUser']);
-
-    // User permissions routes
-    Route::get('/user', [\App\Http\Controllers\API\PermissionController::class, 'userPermissions']);
-    Route::put('/user', [\App\Http\Controllers\API\PermissionController::class, 'updateUserPermissions']);
-});
-
-// File upload routes
-Route::middleware(['auth:api', 'tenant'])->group(function () {
-    Route::prefix('v1/files')->group(function () {
-        Route::post('/upload', [\App\Http\Controllers\API\V1\FileUploadController::class, 'upload']);
-        Route::post('/upload-multiple', [\App\Http\Controllers\API\V1\FileUploadController::class, 'uploadMultiple']);
-        Route::delete('/delete', [\App\Http\Controllers\API\V1\FileUploadController::class, 'delete']);
-        Route::get('/info', [\App\Http\Controllers\API\V1\FileUploadController::class, 'info']);
+Route::prefix('v1')->middleware(['auth:api', 'school.context'])->group(function () {
+    
+    /*
+    |--------------------------------------------------------------------------
+    | Student Management Routes
+    |--------------------------------------------------------------------------
+    */
+    
+    // Core Student CRUD Operations
+    Route::apiResource('students', StudentController::class)->parameters([
+        'students' => 'student:student_number'
+    ]);
+    
+    // Additional Student Operations
+    Route::prefix('students')->group(function () {
+        // Academic summary for a specific student
+        Route::get('{student:student_number}/academic-summary', [StudentController::class, 'academicSummary'])
+            ->name('students.academic-summary');
+        
+        // Transfer student to another school
+        Route::post('{student:student_number}/transfer', [StudentController::class, 'transfer'])
+            ->name('students.transfer');
     });
+    
+    // Bulk Student Operations
+    Route::prefix('students/bulk')->group(function () {
+        // Promote multiple students to next grade level
+        Route::post('promote', [StudentController::class, 'bulkPromote'])
+            ->name('students.bulk.promote');
+    });
+    
+    // Student Analytics and Reporting
+    Route::prefix('students/analytics')->group(function () {
+        // Get enrollment statistics by grade, status, etc.
+        Route::get('enrollment-stats', [StudentController::class, 'enrollmentStats'])
+            ->name('students.analytics.enrollment-stats');
+        
+        // Get students requiring attention (missing docs, low attendance, etc.)
+        Route::get('requires-attention', [StudentController::class, 'requiresAttention'])
+            ->name('students.analytics.requires-attention');
+    });
+    
+    /*
+    |--------------------------------------------------------------------------
+    | Family Relationship Routes
+    |--------------------------------------------------------------------------
+    */
+    
+    // Core Family Relationship CRUD
+    Route::apiResource('family-relationships', FamilyRelationshipController::class);
+    
+    // Family Relationship Queries
+    Route::prefix('family-relationships')->group(function () {
+        // Get all relationships for a specific student
+        Route::get('student/{student}', [FamilyRelationshipController::class, 'index'])
+            ->name('family-relationships.by-student');
+        
+        // Get emergency contacts for a student
+        Route::get('emergency-contacts', [FamilyRelationshipController::class, 'emergencyContacts'])
+            ->name('family-relationships.emergency-contacts');
+        
+        // Get family summary for a student
+        Route::get('family-summary', [FamilyRelationshipController::class, 'familySummary'])
+            ->name('family-relationships.family-summary');
+        
+        // Set primary contact
+        Route::patch('{familyRelationship}/set-primary', [FamilyRelationshipController::class, 'setPrimary'])
+            ->name('family-relationships.set-primary');
+        
+        // Update specific permission
+        Route::patch('{familyRelationship}/permission', [FamilyRelationshipController::class, 'updatePermission'])
+            ->name('family-relationships.update-permission');
+        
+        // Check authorization for student access
+        Route::post('check-authorization', [FamilyRelationshipController::class, 'checkAuthorization'])
+            ->name('family-relationships.check-authorization');
+    });
+    
+    // Parent Portal Routes (for guardian access)
+    Route::prefix('parent-portal')->middleware('role:parent')->group(function () {
+        // Get all students for the authenticated guardian
+        Route::get('my-students', [FamilyRelationshipController::class, 'guardianStudents'])
+            ->name('parent-portal.my-students');
+    });
+    
+    /*
+    |--------------------------------------------------------------------------
+    | Student Documents Routes (if implemented)
+    |--------------------------------------------------------------------------
+    */
+    
+    // Route::prefix('student-documents')->group(function () {
+    //     Route::apiResource('', StudentDocumentController::class);
+    //     Route::post('{document}/verify', [StudentDocumentController::class, 'verify'])
+    //         ->name('student-documents.verify');
+    //     Route::get('{document}/download', [StudentDocumentController::class, 'download'])
+    //         ->name('student-documents.download');
+    // });
+    
 });
-
 
 /*
 |--------------------------------------------------------------------------
@@ -58,7 +140,7 @@ Route::middleware(['auth:api', 'tenant'])->group(function () {
 */
 
 Route::prefix('v1/forms')->middleware(['auth:api', 'school.context'])->group(function () {
-
+    
     // Student enrollment forms
     Route::prefix('student-enrollment')->group(function () {
         // Get available enrollment form templates
@@ -89,7 +171,7 @@ Route::prefix('v1/forms')->middleware(['auth:api', 'school.context'])->group(fun
                 ]
             ]);
         })->name('forms.student-enrollment.templates');
-
+        
         // Get specific form template configuration
         Route::get('templates/{template_id}', function (string $templateId) {
             $templates = [
@@ -276,18 +358,18 @@ Route::prefix('v1/forms')->middleware(['auth:api', 'school.context'])->group(fun
                     'success_redirect' => '/students/{student_id}'
                 ]
             ];
-
+            
             if (!isset($templates[$templateId])) {
                 return response()->json([
                     'message' => 'Form template not found'
                 ], 404);
             }
-
+            
             return response()->json([
                 'data' => $templates[$templateId]
             ]);
         })->name('forms.student-enrollment.template');
-
+        
         // Submit enrollment form
         Route::post('submit/{template_id}', function (string $templateId) {
             // This would integrate with the StudentController@store method
@@ -295,7 +377,7 @@ Route::prefix('v1/forms')->middleware(['auth:api', 'school.context'])->group(fun
             return redirect()->route('students.store');
         })->name('forms.student-enrollment.submit');
     });
-
+    
     // Family relationship forms
     Route::prefix('family-relationships')->group(function () {
         Route::get('templates', function () {
@@ -312,3 +394,35 @@ Route::prefix('v1/forms')->middleware(['auth:api', 'school.context'])->group(fun
         })->name('forms.family-relationships.templates');
     });
 });
+EOF
+
+echo "✅ SIS API routes created successfully!"
+echo "📁 Route files updated:"
+echo "   - routes/api.php (SIS routes added)"
+echo ""
+echo "🔧 Available API endpoints:"
+echo "   Student Management:"
+echo "     GET    /api/v1/students"
+echo "     POST   /api/v1/students"
+echo "     GET    /api/v1/students/{student_number}"
+echo "     PUT    /api/v1/students/{student_number}"
+echo "     DELETE /api/v1/students/{student_number}"
+echo "     GET    /api/v1/students/{student_number}/academic-summary"
+echo "     POST   /api/v1/students/{student_number}/transfer"
+echo "     POST   /api/v1/students/bulk/promote"
+echo "     GET    /api/v1/students/analytics/enrollment-stats"
+echo "     GET    /api/v1/students/analytics/requires-attention"
+echo ""
+echo "   Family Relationships:"
+echo "     GET    /api/v1/family-relationships"
+echo "     POST   /api/v1/family-relationships"
+echo "     GET    /api/v1/family-relationships/{id}"
+echo "     PUT    /api/v1/family-relationships/{id}"
+echo "     DELETE /api/v1/family-relationships/{id}"
+echo "     GET    /api/v1/family-relationships/student/{student}"
+echo "     GET    /api/v1/family-relationships/emergency-contacts"
+echo "     PATCH  /api/v1/family-relationships/{id}/set-primary"
+echo ""
+echo "   Form Engine Integration:"
+echo "     GET    /api/v1/forms/student-enrollment/templates"
+echo "     GET    /api/v1/forms/student-enrollment/templates/{id}"
