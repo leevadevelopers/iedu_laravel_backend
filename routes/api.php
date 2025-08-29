@@ -12,29 +12,18 @@ require __DIR__ . '/modules/notification.php';
 require __DIR__ . '/modules/tenant.php';
 require __DIR__ . '/modules/school.php';
 require __DIR__ . '/modules/students.php';
+require __DIR__ . '/modules/roles_permission/roles.php';
 
-// Permission management routes (protected)
-Route::middleware(['auth:api', 'tenant'])->prefix('permissions')->group(function () {
-    Route::get('/', [\App\Http\Controllers\API\PermissionController::class, 'index']);
-    Route::get('/matrix', [\App\Http\Controllers\API\PermissionController::class, 'matrix']);
 
-    // Role management routes
-    Route::get('/roles', [\App\Http\Controllers\API\PermissionController::class, 'roles']);
-    Route::post('/roles', [\App\Http\Controllers\API\PermissionController::class, 'store']);
-    Route::get('/roles/{role}', [\App\Http\Controllers\API\PermissionController::class, 'show']);
-    Route::put('/roles/{role}', [\App\Http\Controllers\API\PermissionController::class, 'update']);
-    Route::delete('/roles/{role}', [\App\Http\Controllers\API\PermissionController::class, 'destroy']);
-    Route::get('/roles/{role}/permissions', [\App\Http\Controllers\API\PermissionController::class, 'rolePermissions']);
-    Route::put('/roles/{role}/permissions', [\App\Http\Controllers\API\PermissionController::class, 'updateRolePermissions']);
 
-    // User role assignment routes
-    Route::post('/users/assign-role', [\App\Http\Controllers\API\PermissionController::class, 'assignRoleToUser']);
-    Route::delete('/users/remove-role', [\App\Http\Controllers\API\PermissionController::class, 'removeRoleFromUser']);
-
-    // User permissions routes
-    Route::get('/user', [\App\Http\Controllers\API\PermissionController::class, 'userPermissions']);
-    Route::put('/user', [\App\Http\Controllers\API\PermissionController::class, 'updateUserPermissions']);
+// Transport Module Routes
+Route::middleware(['api', 'throttle:api'])->group(function () {
+    require_once __DIR__ . '/modules/transport/transport.php';
 });
+
+
+
+
 
 // File upload routes
 Route::middleware(['auth:api', 'tenant'])->group(function () {
@@ -46,269 +35,23 @@ Route::middleware(['auth:api', 'tenant'])->group(function () {
     });
 });
 
+// Additional route model bindings for transport
+Route::bind('route', function ($value) {
+    return \App\Models\V1\Transport\TransportRoute::findOrFail($value);
+});
 
-/*
-|--------------------------------------------------------------------------
-| Form Engine Integration Routes
-|--------------------------------------------------------------------------
-|
-| These routes integrate the Student Information System with the dynamic
-| form engine for flexible student enrollment and data collection.
-|
-*/
+Route::bind('bus', function ($value) {
+    return \App\Models\V1\Transport\FleetBus::findOrFail($value);
+});
 
-Route::prefix('v1/forms')->middleware(['auth:api', 'school.context'])->group(function () {
+Route::bind('stop', function ($value) {
+    return \App\Models\V1\Transport\BusStop::findOrFail($value);
+});
 
-    // Student enrollment forms
-    Route::prefix('student-enrollment')->group(function () {
-        // Get available enrollment form templates
-        Route::get('templates', function () {
-            return response()->json([
-                'data' => [
-                    [
-                        'id' => 'student_enrollment_basic',
-                        'name' => 'Basic Student Enrollment',
-                        'description' => 'Standard student enrollment form with essential information',
-                        'category' => 'enrollment',
-                        'estimated_time' => '15 minutes'
-                    ],
-                    [
-                        'id' => 'student_enrollment_comprehensive',
-                        'name' => 'Comprehensive Student Enrollment',
-                        'description' => 'Detailed enrollment form including medical and family information',
-                        'category' => 'enrollment',
-                        'estimated_time' => '30 minutes'
-                    ],
-                    [
-                        'id' => 'student_transfer_in',
-                        'name' => 'Transfer Student Enrollment',
-                        'description' => 'Enrollment form for students transferring from other schools',
-                        'category' => 'transfer',
-                        'estimated_time' => '20 minutes'
-                    ]
-                ]
-            ]);
-        })->name('forms.student-enrollment.templates');
+Route::bind('subscription', function ($value) {
+    return \App\Models\V1\Transport\StudentTransportSubscription::findOrFail($value);
+});
 
-        // Get specific form template configuration
-        Route::get('templates/{template_id}', function (string $templateId) {
-            $templates = [
-                'student_enrollment_basic' => [
-                    'id' => 'student_enrollment_basic',
-                    'name' => 'Basic Student Enrollment',
-                    'version' => '1.0',
-                    'steps' => [
-                        [
-                            'id' => 'student_information',
-                            'title' => 'Student Information',
-                            'fields' => [
-                                [
-                                    'name' => 'first_name',
-                                    'type' => 'text',
-                                    'label' => 'First Name',
-                                    'required' => true,
-                                    'validation' => 'required|string|max:100'
-                                ],
-                                [
-                                    'name' => 'last_name',
-                                    'type' => 'text',
-                                    'label' => 'Last Name',
-                                    'required' => true,
-                                    'validation' => 'required|string|max:100'
-                                ],
-                                [
-                                    'name' => 'middle_name',
-                                    'type' => 'text',
-                                    'label' => 'Middle Name',
-                                    'required' => false,
-                                    'validation' => 'nullable|string|max:100'
-                                ],
-                                [
-                                    'name' => 'date_of_birth',
-                                    'type' => 'date',
-                                    'label' => 'Date of Birth',
-                                    'required' => true,
-                                    'validation' => 'required|date|before:today'
-                                ],
-                                [
-                                    'name' => 'gender',
-                                    'type' => 'select',
-                                    'label' => 'Gender',
-                                    'required' => false,
-                                    'options' => [
-                                        ['value' => 'male', 'label' => 'Male'],
-                                        ['value' => 'female', 'label' => 'Female'],
-                                        ['value' => 'other', 'label' => 'Other'],
-                                        ['value' => 'prefer_not_to_say', 'label' => 'Prefer not to say']
-                                    ]
-                                ]
-                            ]
-                        ],
-                        [
-                            'id' => 'academic_information',
-                            'title' => 'Academic Information',
-                            'fields' => [
-                                [
-                                    'name' => 'current_grade_level',
-                                    'type' => 'select',
-                                    'label' => 'Grade Level',
-                                    'required' => true,
-                                    'options' => [
-                                        ['value' => 'Pre-K', 'label' => 'Pre-Kindergarten'],
-                                        ['value' => 'K', 'label' => 'Kindergarten'],
-                                        ['value' => '1', 'label' => 'Grade 1'],
-                                        ['value' => '2', 'label' => 'Grade 2'],
-                                        ['value' => '3', 'label' => 'Grade 3'],
-                                        ['value' => '4', 'label' => 'Grade 4'],
-                                        ['value' => '5', 'label' => 'Grade 5'],
-                                        ['value' => '6', 'label' => 'Grade 6'],
-                                        ['value' => '7', 'label' => 'Grade 7'],
-                                        ['value' => '8', 'label' => 'Grade 8'],
-                                        ['value' => '9', 'label' => 'Grade 9'],
-                                        ['value' => '10', 'label' => 'Grade 10'],
-                                        ['value' => '11', 'label' => 'Grade 11'],
-                                        ['value' => '12', 'label' => 'Grade 12']
-                                    ]
-                                ],
-                                [
-                                    'name' => 'admission_date',
-                                    'type' => 'date',
-                                    'label' => 'Admission Date',
-                                    'required' => true,
-                                    'validation' => 'required|date|before_or_equal:today'
-                                ]
-                            ]
-                        ],
-                        [
-                            'id' => 'contact_information',
-                            'title' => 'Contact Information',
-                            'fields' => [
-                                [
-                                    'name' => 'email',
-                                    'type' => 'email',
-                                    'label' => 'Email Address',
-                                    'required' => false,
-                                    'validation' => 'nullable|email'
-                                ],
-                                [
-                                    'name' => 'phone',
-                                    'type' => 'tel',
-                                    'label' => 'Phone Number',
-                                    'required' => false,
-                                    'validation' => 'nullable|string|max:20'
-                                ],
-                                [
-                                    'name' => 'address_json.street',
-                                    'type' => 'text',
-                                    'label' => 'Street Address',
-                                    'required' => false
-                                ],
-                                [
-                                    'name' => 'address_json.city',
-                                    'type' => 'text',
-                                    'label' => 'City',
-                                    'required' => false
-                                ],
-                                [
-                                    'name' => 'address_json.state',
-                                    'type' => 'text',
-                                    'label' => 'State/Province',
-                                    'required' => false
-                                ],
-                                [
-                                    'name' => 'address_json.postal_code',
-                                    'type' => 'text',
-                                    'label' => 'Postal Code',
-                                    'required' => false
-                                ]
-                            ]
-                        ],
-                        [
-                            'id' => 'emergency_contacts',
-                            'title' => 'Emergency Contacts',
-                            'fields' => [
-                                [
-                                    'name' => 'emergency_contacts_json',
-                                    'type' => 'repeater',
-                                    'label' => 'Emergency Contacts',
-                                    'required' => true,
-                                    'min' => 1,
-                                    'max' => 5,
-                                    'fields' => [
-                                        [
-                                            'name' => 'name',
-                                            'type' => 'text',
-                                            'label' => 'Contact Name',
-                                            'required' => true
-                                        ],
-                                        [
-                                            'name' => 'relationship',
-                                            'type' => 'text',
-                                            'label' => 'Relationship',
-                                            'required' => true
-                                        ],
-                                        [
-                                            'name' => 'phone',
-                                            'type' => 'tel',
-                                            'label' => 'Phone Number',
-                                            'required' => true
-                                        ],
-                                        [
-                                            'name' => 'email',
-                                            'type' => 'email',
-                                            'label' => 'Email Address',
-                                            'required' => false
-                                        ],
-                                        [
-                                            'name' => 'is_primary',
-                                            'type' => 'checkbox',
-                                            'label' => 'Primary Contact',
-                                            'required' => false
-                                        ]
-                                    ]
-                                ]
-                            ]
-                        ]
-                    ],
-                    'submission_endpoint' => '/api/v1/students',
-                    'submission_method' => 'POST',
-                    'success_message' => 'Student enrollment completed successfully!',
-                    'success_redirect' => '/students/{student_id}'
-                ]
-            ];
-
-            if (!isset($templates[$templateId])) {
-                return response()->json([
-                    'message' => 'Form template not found'
-                ], 404);
-            }
-
-            return response()->json([
-                'data' => $templates[$templateId]
-            ]);
-        })->name('forms.student-enrollment.template');
-
-        // Submit enrollment form
-        Route::post('submit/{template_id}', function (string $templateId) {
-            // This would integrate with the StudentController@store method
-            // For now, redirect to the main student creation endpoint
-            return redirect()->route('students.store');
-        })->name('forms.student-enrollment.submit');
-    });
-
-    // Family relationship forms
-    Route::prefix('family-relationships')->group(function () {
-        Route::get('templates', function () {
-            return response()->json([
-                'data' => [
-                    [
-                        'id' => 'add_guardian',
-                        'name' => 'Add Guardian/Family Member',
-                        'description' => 'Add a new guardian or family member for a student',
-                        'category' => 'family'
-                    ]
-                ]
-            ]);
-        })->name('forms.family-relationships.templates');
-    });
+Route::bind('incident', function ($value) {
+    return \App\Models\V1\Transport\TransportIncident::findOrFail($value);
 });

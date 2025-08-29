@@ -12,7 +12,7 @@ class Tenant extends Model
     use SoftDeletes;
 
     protected $fillable = [
-        'name', 'slug', 'domain', 'database', 'settings', 'is_active', 'created_by',
+        'name', 'slug', 'domain', 'database', 'settings', 'is_active', 'created_by', 'owner_id',
     ];
 
     protected $casts = [

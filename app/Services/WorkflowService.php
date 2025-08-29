@@ -29,7 +29,6 @@ class WorkflowService
             // Create the workflow
             $workflow = FormWorkflow::create([
                 'form_instance_id' => $formInstance->id,
-                'organization_id' => $model->organization_id ?? $model->tenant_id ?? null,
                 'workflow_type' => $workflowType,
                 'current_step' => 1,
                 'total_steps' => count($finalConfig['steps'] ?? []),
@@ -72,7 +71,6 @@ class WorkflowService
 
         return FormInstance::create([
             'tenant_id' => $model->tenant_id ?? null,
-            'organization_id' => $model->organization_id ?? $model->tenant_id ?? null,
             'form_template_id' => $formTemplate->id,
             'user_id' => Auth::id(),
             'form_type' => $workflowType,

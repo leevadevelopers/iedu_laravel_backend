@@ -79,7 +79,7 @@ class AuthController extends Controller
             'token_type' => 'bearer',
             'expires_in' => \Tymon\JWTAuth\Facades\JWTAuth::factory()->getTTL() * 60,
             'user' => new UserResource($user),
-            'current_tenant' => $user->getCurrentTenant() ? 
+            'current_tenant' => $user->getCurrentTenant() ?
                 new TenantResource($user->getCurrentTenant()) : null,
         ]);
     }
@@ -104,6 +104,7 @@ class AuthController extends Controller
             // Create organization and make user owner
             $tenant = app(\App\Services\TenantService::class)->createTenant([
                 'name' => $request->get('organization_name'),
+                'owner_id' => $user->id, // Add the owner_id field
                 'is_active' => true,
             ], $user);
 
@@ -131,10 +132,10 @@ class AuthController extends Controller
     public function me(): JsonResponse
     {
         $user = auth('api')->user();
-        
+
         return response()->json([
             'user' => new UserResource($user),
-            'current_tenant' => $user->getCurrentTenant() ? 
+            'current_tenant' => $user->getCurrentTenant() ?
                 new TenantResource($user->getCurrentTenant()) : null,
             'tenant_context' => $user->getTenantContext(),
         ]);
@@ -143,9 +144,9 @@ class AuthController extends Controller
     public function logout(): JsonResponse
     {
         $user = auth('api')->user();
-        
+
         $this->activityLogService->logUserAction('user_logged_out', $user);
-        
+
         JWTAuth::invalidate(JWTAuth::getToken());
 
         return response()->json(['message' => 'Successfully logged out']);

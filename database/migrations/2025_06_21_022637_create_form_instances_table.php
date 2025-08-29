@@ -15,7 +15,6 @@ class CreateFormInstancesTable extends Migration
             $table->string('reference_type')->nullable();
             $table->unsignedBigInteger('reference_id')->nullable();
             $table->string('form_type')->nullable();
-            $table->foreignId('organization_id')->nullable()->constrained()->onDelete('cascade');
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
             $table->foreignId('created_by')->nullable()->constrained('users')->onDelete('set null');
             $table->string('instance_code')->unique();
@@ -48,7 +47,6 @@ class CreateFormInstancesTable extends Migration
             $table->index(['tenant_id', 'created_at']);
             $table->index(['reference_type', 'reference_id']);
             $table->index(['form_type']);
-            $table->index(['organization_id']);
         });
     }
 

@@ -40,7 +40,6 @@ class FormEngineService
 
         $instance = \App\Models\Forms\FormInstance::create([
             'form_template_id' => $template->id,
-            'organization_id' => $data['organization_id'],
             'instance_name' => $data['name'] ?? "Form Instance - {$formType}",
             'reference_number' => $this->generateReferenceNumber($formType),
             'data_json' => $data,
@@ -62,8 +61,6 @@ class FormEngineService
     {
         return FormTemplate::where('category', $formType)
             ->where('is_active', true)
-            // ->where('organization_id', $data['organization_id'])
-            // ->orWhere('is_system_template', true)
             ->first();
     }
 

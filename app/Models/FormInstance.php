@@ -14,7 +14,6 @@ class FormInstance extends BaseModel
 
     protected $fillable = [
         'form_template_id',
-        'organization_id',
         'instance_name',
         'reference_number',
         'data_json',

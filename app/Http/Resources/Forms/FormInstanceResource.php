@@ -26,7 +26,6 @@ class FormInstanceResource extends JsonResource
             'updated_at' => $this->updated_at?->toISOString(),
             'deleted_at' => $this->deleted_at?->toISOString(),
             'tenant_id' => $this->tenant_id,
-            'organization_id' => $this->organization_id,
             'created_by' => $this->whenLoaded('creator', function () {
                 return [
                     'id' => $this->creator->id,

@@ -4,7 +4,7 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-class CreateSchoolEntitiesTables extends Migration
+class CreateAcademicYearTables extends Migration
 {
     public function up()
     {
@@ -37,9 +37,6 @@ class CreateSchoolEntitiesTables extends Migration
 
             $table->timestamps();
 
-            // Foreign Keys
-            $table->foreign('school_id')->references('id')->on('schools')->onDelete('cascade');
-
             // Constraints
             $table->unique(['school_id', 'code']);
 
@@ -71,10 +68,6 @@ class CreateSchoolEntitiesTables extends Migration
             ])->default('planned');
 
             $table->timestamps();
-
-            // Foreign Keys
-            $table->foreign('academic_year_id')->references('id')->on('academic_years')->onDelete('cascade');
-            $table->foreign('school_id')->references('id')->on('schools')->onDelete('cascade');
 
             // Indexes
             $table->index('academic_year_id');

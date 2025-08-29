@@ -9,6 +9,8 @@ use App\Models\User;
 use Illuminate\Support\Facades\Validator;
 use App\Models\Settings\Tenant;
 use Spatie\Permission\Models\Role;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class AuthController extends Controller
 {
@@ -28,12 +30,22 @@ class AuthController extends Controller
 
         $validatedData = $validator->validated();
 
-        \DB::beginTransaction();
+        DB::beginTransaction();
         try {
-            // Create the tenant (organization)
+            // Create the user first
+            $user = User::create([
+                'name' => $validatedData['name'],
+                'identifier' => $validatedData['identifier'],
+                'type' => $validatedData['type'],
+                'password' => bcrypt($validatedData['password']),
+                // 'verified_at' => now(), // Uncomment if you want to auto-verify
+            ]);
+
+            // Create the tenant (organization) with the user as owner
             $tenant = Tenant::create([
                 'name' => $validatedData['organization_name'],
-                'slug' => \Str::slug($validatedData['organization_name']),
+                'slug' => Str::slug($validatedData['organization_name']),
+                'owner_id' => $user->id, // Set the owner_id to the newly created user
                 'is_active' => true,
                 'settings' => [
                     'timezone' => 'UTC',
@@ -41,16 +53,7 @@ class AuthController extends Controller
                     'language' => 'en',
                     'features' => [],
                 ],
-                'created_by' => null, // will update after user creation
-            ]);
-
-            // Create the user
-            $user = User::create([
-                'name' => $validatedData['name'],
-                'identifier' => $validatedData['identifier'],
-                'type' => $validatedData['type'],
-                'password' => bcrypt($validatedData['password']),
-                // 'verified_at' => now(), // Uncomment if you want to auto-verify
+                'created_by' => $user->id, // Set created_by to the user as well
             ]);
 
             // Attach user to tenant as owner
@@ -63,12 +66,9 @@ class AuthController extends Controller
                 'status' => 'active',
             ]);
 
-            // Update tenant's created_by
-            $tenant->update(['created_by' => $user->id]);
-
             $token = auth('api')->login($user);
 
-            \DB::commit();
+            DB::commit();
 
             // Prepare response
             $userData = $user->toArray();
@@ -104,7 +104,7 @@ class AuthController extends Controller
                 'message' => 'Registration successful',
             ]);
         } catch (\Exception $e) {
-            \DB::rollBack();
+            DB::rollBack();
             return response()->json(['error' => 'Registration failed', 'details' => $e->getMessage()], 500);
         }
     }
@@ -127,7 +127,7 @@ class AuthController extends Controller
         }
 
         $user = auth('api')->user();
-        
+
         if ($user->must_change) {
             return response()->json([
                 'access_token' => $token,

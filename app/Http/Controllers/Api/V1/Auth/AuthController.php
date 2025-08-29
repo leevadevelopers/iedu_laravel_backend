@@ -34,10 +34,20 @@ class AuthController extends Controller
 
         DB::beginTransaction();
         try {
-            // Create the tenant (organization)
+            // Create the user first
+            $user = User::create([
+                'name' => $validatedData['name'],
+                'identifier' => $validatedData['identifier'],
+                'type' => $validatedData['type'],
+                'password' => bcrypt($validatedData['password']),
+                // 'verified_at' => now(), // Uncomment if you want to auto-verify
+            ]);
+
+            // Create the tenant (organization) with the user as owner
             $tenant = Tenant::create([
                 'name' => $validatedData['organization_name'],
                 'slug' => Str::slug($validatedData['organization_name']),
+                'owner_id' => $user->id, // Set the owner_id to the newly created user
                 'is_active' => true,
                 'settings' => [
                     'timezone' => 'UTC',
@@ -45,16 +55,7 @@ class AuthController extends Controller
                     'language' => 'en',
                     'features' => [],
                 ],
-                'created_by' => null, // will update after user creation
-            ]);
-
-            // Create the user
-            $user = User::create([
-                'name' => $validatedData['name'],
-                'identifier' => $validatedData['identifier'],
-                'type' => $validatedData['type'],
-                'password' => bcrypt($validatedData['password']),
-                // 'verified_at' => now(), // Uncomment if you want to auto-verify
+                'created_by' => $user->id, // Set created_by to the user as well
             ]);
 
             // Attach user to tenant as owner
@@ -66,9 +67,6 @@ class AuthController extends Controller
                 'joined_at' => now(),
                 'status' => 'active',
             ]);
-
-            // Update tenant's created_by
-            $tenant->update(['created_by' => $user->id]);
 
             $token = auth('api')->login($user);
 
@@ -155,7 +153,7 @@ class AuthController extends Controller
                 'line' => $e->getLine(),
                 'trace' => $e->getTraceAsString()
             ]);
-            
+
             return response()->json([
                 'error' => 'Internal server error',
                 'message' => 'An error occurred during login. Please try again.'
@@ -166,11 +164,11 @@ class AuthController extends Controller
     public function me()
     {
         $user = auth('api')->user();
-        
+
         // Try to get current tenant, but don't fail if none exists
         $currentTenant = null;
         $tenantContext = null;
-        
+
         try {
             if ($user) {
                 $currentTenant = $user->getCurrentTenant();
@@ -182,7 +180,7 @@ class AuthController extends Controller
             // Log the error but don't fail the request
             Log::warning('Failed to get tenant context in me() method: ' . $e->getMessage());
         }
-        
+
         return response()->json([
             'user' => $user,
             'current_tenant' => $currentTenant,
@@ -229,7 +227,7 @@ class AuthController extends Controller
             }
 
             $user = auth('api')->user();
-            
+
             // Check if user exists and is active
             if (!$user) {
                 return response()->json(['success' => false, 'message' => 'User not found'], 401);
@@ -260,7 +258,7 @@ class AuthController extends Controller
                 'file' => $e->getFile(),
                 'line' => $e->getLine()
             ]);
-            
+
             return response()->json([
                 'success' => false,
                 'message' => 'Token validation failed: ' . $e->getMessage()
@@ -271,7 +269,7 @@ class AuthController extends Controller
     protected function respondWithToken($token)
     {
         $user = auth('api')->user();
-        
+
         return response()->json([
             'data' => [
                 'access_token' => $token,

@@ -11,7 +11,6 @@ return new class extends Migration
         Schema::create('form_workflows', function (Blueprint $table) {
             $table->id();
             $table->foreignId('tenant_id')->constrained()->onDelete('cascade');
-            $table->foreignId('organization_id')->constrained()->onDelete('cascade');
             $table->foreignId('form_instance_id')->nullable()->constrained('form_instances')->onDelete('set null');
             $table->string('workflow_type')->nullable();
             $table->integer('current_step')->default(1);
@@ -26,7 +25,6 @@ return new class extends Migration
             $table->string('escalation_reason')->nullable();
             $table->timestamps();
 
-            $table->index(['organization_id', 'status']);
             $table->index(['form_instance_id']);
             $table->index(['workflow_type']);
         });

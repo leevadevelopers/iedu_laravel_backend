@@ -30,10 +30,11 @@ return new class extends Migration
                 'principal', 'counselor', 'nurse'
             ]);
 
-              // Contact Information
-              $table->string('phone', 20)->nullable();
-              $table->json('emergency_contact_json')->nullable();
-  
+            // Contact Information
+            $table->string('phone', 20)->nullable();
+            $table->json('emergency_contact_json')->nullable();
+            $table->json('transport_notification_preferences')->nullable();
+            $table->string('whatsapp_phone', 20)->nullable();
 
             $table->softDeletes();
             $table->rememberToken();

@@ -71,8 +71,7 @@ class FormTemplateResource extends JsonResource
             'workflow_configuration' => $this->workflow_configuration,
             'ai_prompts' => $this->ai_prompts,
             'metadata' => $this->metadata,
-            'tenant_id' => $this->tenant_id,
-            'organization_id' => $this->organization_id
+            'tenant_id' => $this->tenant_id
         ];
     }
 

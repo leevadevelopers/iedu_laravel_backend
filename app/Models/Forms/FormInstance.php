@@ -19,7 +19,7 @@ class FormInstance extends Model
         'calculated_fields', 'status', 'workflow_state', 'workflow_history',
         'current_step', 'completion_percentage', 'validation_results',
         'compliance_results', 'submitted_at', 'completed_at', 'reference_type',
-        'reference_id', 'form_type', 'organization_id', 'created_by',
+        'reference_id', 'form_type', 'created_by',
         'public_access_token', 'public_access_enabled', 'public_access_expires_at',
         'submission_type', 'submission_metadata'
     ];
@@ -330,7 +330,7 @@ class FormInstance extends Model
         if (!$this->isPublicAccessValid()) {
             return '';
         }
-        
+
         return config('app.frontend_url') . '/public/form/' . $this->public_access_token;
     }
 

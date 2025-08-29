@@ -33,7 +33,6 @@ trait HasWorkflow
         $workflow = FormWorkflow::create([
             'form_instance_id' => $this->id,
             'form_instance_type' => static::class,
-            'organization_id' => $this->organization_id,
             'workflow_type' => $workflowType,
             'current_step' => 1,
             'total_steps' => count($config['steps'] ?? []),

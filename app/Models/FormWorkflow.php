@@ -15,7 +15,6 @@ class FormWorkflow extends BaseModel
     protected $fillable = [
         'tenant_id',
         'form_instance_id',
-        'organization_id',
         'workflow_type',
         'current_step',
         'total_steps',

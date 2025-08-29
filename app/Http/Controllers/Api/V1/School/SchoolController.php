@@ -36,7 +36,7 @@ class SchoolController extends Controller
             $query = School::with([
                 'academicYears:id,name,start_date,end_date',
                 'currentAcademicYear:id,name',
-                'principal:id,name,email'
+                'users:id,name,email'
             ]);
 
             // Apply filters
@@ -44,29 +44,29 @@ class SchoolController extends Controller
                 $query->where('status', $request->status);
             }
 
-            if ($request->has('type')) {
-                $query->where('type', $request->type);
+            if ($request->has('school_type')) {
+                $query->where('school_type', $request->school_type);
             }
 
-            if ($request->has('district')) {
-                $query->where('district', $request->district);
+            if ($request->has('state_province')) {
+                $query->where('state_province', $request->state_province);
             }
 
-            if ($request->has('state')) {
-                $query->where('state', $request->state);
+            if ($request->has('country_code')) {
+                $query->where('country_code', $request->country_code);
             }
 
             if ($request->has('search')) {
                 $search = $request->search;
                 $query->where(function ($q) use ($search) {
-                    $q->where('name', 'like', "%{$search}%")
-                        ->orWhere('code', 'like', "%{$search}%")
-                        ->orWhere('district', 'like', "%{$search}%")
+                    $q->where('official_name', 'like', "%{$search}%")
+                        ->orWhere('school_code', 'like', "%{$search}%")
+                        ->orWhere('display_name', 'like', "%{$search}%")
                         ->orWhere('city', 'like', "%{$search}%");
                 });
             }
 
-            $schools = $query->orderBy('name')
+            $schools = $query->orderBy('official_name')
                 ->paginate($request->get('per_page', 15));
 
             return response()->json([
@@ -88,24 +88,38 @@ class SchoolController extends Controller
     public function store(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'name' => 'required|string|max:255',
-            'code' => 'required|string|max:50|unique:schools,code',
-            'type' => 'required|in:elementary,middle,high,k12,charter,private,public',
-            'address' => 'required|string|max:500',
-            'city' => 'required|string|max:100',
-            'state' => 'required|string|max:100',
-            'postal_code' => 'required|string|max:20',
-            'country' => 'required|string|max:100',
-            'district' => 'nullable|string|max:100',
-            'phone' => 'nullable|string|max:20',
-            'email' => 'nullable|email|max:255',
+            'tenant_id' => 'required|integer|exists:tenants,id',
+            'official_name' => 'required|string|max:255',
+            'display_name' => 'required|string|max:255',
+            'short_name' => 'required|string|max:50',
+            'school_code' => 'required|string|max:50|unique:schools,school_code',
+            'school_type' => 'required|in:public,private,charter,magnet,international,vocational,special_needs,alternative',
+            'educational_levels' => 'required|array',
+            'grade_range_min' => 'required|string|max:10',
+            'grade_range_max' => 'required|string|max:10',
+            'email' => 'required|email|max:255',
+            'phone' => 'nullable|string|max:50',
             'website' => 'nullable|url|max:255',
-            'principal_id' => 'nullable|exists:users,id',
-            'capacity' => 'nullable|integer|min:1',
+            'address_json' => 'nullable|array',
+            'country_code' => 'required|string|size:2',
+            'state_province' => 'nullable|string|max:100',
+            'city' => 'required|string|max:100',
+            'timezone' => 'nullable|string|max:50',
+            'ministry_education_code' => 'nullable|string|max:100',
+            'accreditation_status' => 'nullable|in:accredited,candidate,probation,not_accredited',
+            'academic_calendar_type' => 'nullable|in:semester,trimester,quarter,year_round,custom',
+            'academic_year_start_month' => 'nullable|integer|min:1|max:12',
+            'grading_system' => 'nullable|in:traditional_letter,percentage,points,standards_based,narrative,mixed',
+            'attendance_tracking_level' => 'nullable|in:daily,period,subject,flexible',
+            'educational_philosophy' => 'nullable|string',
+            'language_instruction' => 'required|array',
+            'religious_affiliation' => 'nullable|string|max:100',
+            'student_capacity' => 'nullable|integer|min:1',
             'established_date' => 'nullable|date',
-            'accreditation_status' => 'nullable|in:accredited,provisional,probation,not_accredited',
-            'accreditation_expiry' => 'nullable|date|after:today',
-            'description' => 'nullable|string|max:1000',
+            'subscription_plan' => 'nullable|in:basic,standard,premium,enterprise,custom',
+            'feature_flags' => 'nullable|array',
+            'integration_settings' => 'nullable|array',
+            'branding_configuration' => 'nullable|array',
             'form_data' => 'nullable|array', // For Form Engine integration
         ]);
 
@@ -122,8 +136,14 @@ class SchoolController extends Controller
 
             // Create school
             $schoolData = $request->except(['form_data']);
-            $schoolData['tenant_id'] = Auth::user()->current_tenant_id;
-            $schoolData['status'] = 'active';
+            $schoolData['status'] = 'setup';
+            $schoolData['current_enrollment'] = 0;
+            $schoolData['staff_count'] = 0;
+
+            // Set default values for JSON fields
+            $schoolData['feature_flags'] = $schoolData['feature_flags'] ?? [];
+            $schoolData['integration_settings'] = $schoolData['integration_settings'] ?? [];
+            $schoolData['branding_configuration'] = $schoolData['branding_configuration'] ?? [];
 
             $school = School::create($schoolData);
 
@@ -149,7 +169,7 @@ class SchoolController extends Controller
                 'success' => true,
                 'message' => 'School created successfully',
                 'data' => [
-                    'school' => $school->load(['principal:id,name,email']),
+                    'school' => $school->load(['users:id,name,email']),
                     'workflow_id' => $workflow->id
                 ]
             ], 201);
@@ -172,7 +192,7 @@ class SchoolController extends Controller
             $school->load([
                 'academicYears:id,name,start_date,end_date,status',
                 'currentAcademicYear:id,name,start_date,end_date',
-                'principal:id,name,email,phone',
+                'users:id,name,email',
                 'students:id,first_name,last_name,grade_level,status'
             ]);
 
@@ -209,25 +229,38 @@ class SchoolController extends Controller
     public function update(Request $request, School $school): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'name' => 'sometimes|required|string|max:255',
-            'code' => 'sometimes|required|string|max:50|unique:schools,code,' . $school->id,
-            'type' => 'sometimes|required|in:elementary,middle,high,k12,charter,private,public',
-            'address' => 'sometimes|required|string|max:500',
-            'city' => 'sometimes|required|string|max:100',
-            'state' => 'sometimes|required|string|max:100',
-            'postal_code' => 'sometimes|required|string|max:20',
-            'country' => 'sometimes|required|string|max:100',
-            'district' => 'nullable|string|max:100',
-            'phone' => 'nullable|string|max:20',
-            'email' => 'nullable|email|max:255',
+            'official_name' => 'sometimes|required|string|max:255',
+            'display_name' => 'sometimes|required|string|max:255',
+            'short_name' => 'sometimes|required|string|max:50',
+            'school_code' => 'sometimes|required|string|max:50|unique:schools,school_code,' . $school->id,
+            'school_type' => 'sometimes|required|in:public,private,charter,magnet,international,vocational,special_needs,alternative',
+            'educational_levels' => 'sometimes|required|array',
+            'grade_range_min' => 'sometimes|required|string|max:10',
+            'grade_range_max' => 'sometimes|required|string|max:10',
+            'email' => 'sometimes|required|email|max:255',
+            'phone' => 'nullable|string|max:50',
             'website' => 'nullable|url|max:255',
-            'principal_id' => 'nullable|exists:users,id',
-            'capacity' => 'nullable|integer|min:1',
+            'address_json' => 'nullable|array',
+            'country_code' => 'sometimes|required|string|size:2',
+            'state_province' => 'nullable|string|max:100',
+            'city' => 'sometimes|required|string|max:100',
+            'timezone' => 'nullable|string|max:50',
+            'ministry_education_code' => 'nullable|string|max:100',
+            'accreditation_status' => 'nullable|in:accredited,candidate,probation,not_accredited',
+            'academic_calendar_type' => 'nullable|in:semester,trimester,quarter,year_round,custom',
+            'academic_year_start_month' => 'nullable|integer|min:1|max:12',
+            'grading_system' => 'nullable|in:traditional_letter,percentage,points,standards_based,narrative,mixed',
+            'attendance_tracking_level' => 'nullable|in:daily,period,subject,flexible',
+            'educational_philosophy' => 'nullable|string',
+            'language_instruction' => 'sometimes|required|array',
+            'religious_affiliation' => 'nullable|string|max:100',
+            'student_capacity' => 'nullable|integer|min:1',
             'established_date' => 'nullable|date',
-            'accreditation_status' => 'nullable|in:accredited,provisional,probation,not_accredited',
-            'accreditation_expiry' => 'nullable|date|after:today',
-            'description' => 'nullable|string|max:1000',
-            'status' => 'sometimes|required|in:active,inactive,suspended,closed',
+            'subscription_plan' => 'nullable|in:basic,standard,premium,enterprise,custom',
+            'feature_flags' => 'nullable|array',
+            'integration_settings' => 'nullable|array',
+            'branding_configuration' => 'nullable|array',
+            'status' => 'sometimes|required|in:setup,active,maintenance,suspended,archived',
         ]);
 
         if ($validator->fails()) {
@@ -248,7 +281,7 @@ class SchoolController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'School updated successfully',
-                'data' => $school->fresh()->load(['principal:id,name,email'])
+                'data' => $school->fresh()->load(['users:id,name,email'])
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
@@ -278,7 +311,7 @@ class SchoolController extends Controller
             }
 
             // Soft delete school
-            $school->update(['status' => 'closed']);
+            $school->update(['status' => 'archived']);
             $school->delete();
 
             DB::commit();
@@ -304,7 +337,7 @@ class SchoolController extends Controller
     {
         try {
             $dashboard = [
-                'school_info' => $school->only(['id', 'name', 'code', 'type', 'status']),
+                'school_info' => $school->only(['id', 'official_name', 'school_code', 'school_type', 'status']),
                 'enrollment_summary' => [
                     'total_students' => $school->students()->count(),
                     'active_students' => $school->students()->where('status', 'active')->count(),
@@ -544,8 +577,24 @@ class SchoolController extends Controller
     public function getFormTemplates(Request $request): JsonResponse
     {
         try {
+            $user = Auth::user();
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'User not authenticated'
+                ], 401);
+            }
+
+            $currentTenant = $user->getCurrentTenant();
+            if (!$currentTenant) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'User does not have access to any tenant'
+                ], 403);
+            }
+
             $query = FormTemplate::where('is_active', true)
-                ->where('tenant_id', Auth::user()->current_tenant_id);
+                ->where('tenant_id', $currentTenant->id);
 
             // Filter by category
             if ($request->has('category')) {
@@ -614,6 +663,7 @@ class SchoolController extends Controller
     public function createFormTemplate(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
+            'tenant_id' => 'required|integer|exists:tenants,id',
             'name' => 'required|string|max:255',
             'description' => 'nullable|string|max:1000',
             'category' => 'required|string|max:100',
@@ -639,7 +689,6 @@ class SchoolController extends Controller
             DB::beginTransaction();
 
             $templateData = array_merge($request->all(), [
-                'tenant_id' => Auth::user()->current_tenant_id,
                 'created_by' => Auth::id(),
                 'version' => '1.0',
                 'is_active' => true,
@@ -1005,6 +1054,7 @@ class SchoolController extends Controller
     public function duplicateFormTemplate(Request $request, FormTemplate $template): JsonResponse
     {
         $validator = Validator::make($request->all(), [
+            'tenant_id' => 'required|integer|exists:tenants,id',
             'name' => 'required|string|max:255',
             'description' => 'nullable|string|max:1000',
             'customizations' => 'nullable|array'
@@ -1026,7 +1076,7 @@ class SchoolController extends Controller
                 'id' => null,
                 'name' => $request->name,
                 'description' => $request->description ?? $template->description,
-                'tenant_id' => Auth::user()->current_tenant_id,
+                'tenant_id' => $request->tenant_id,
                 'created_by' => Auth::id(),
                 'is_default' => false,
                 'version' => '1.0',
@@ -1106,5 +1156,90 @@ class SchoolController extends Controller
             'average_response_time' => round($responseTimes->avg(), 2),
             'response_times' => $responseTimes->toArray()
         ];
+    }
+
+    // =====================================================
+    // ADDITIONAL HELPER METHODS (TO BE IMPLEMENTED)
+    // =====================================================
+
+    /**
+     * Get recent activities for a school
+     */
+    private function getRecentActivities(School $school): array
+    {
+        // TODO: Implement activity logging for schools
+        return [];
+    }
+
+    /**
+     * Get upcoming events for a school
+     */
+    private function getUpcomingEvents(School $school): array
+    {
+        // TODO: Implement event management for schools
+        return [];
+    }
+
+    /**
+     * Get age distribution for students
+     */
+    private function getAgeDistribution(School $school): array
+    {
+        // TODO: Implement age distribution calculation
+        return [];
+    }
+
+    /**
+     * Get geographic distribution for students
+     */
+    private function getGeographicDistribution(School $school): array
+    {
+        // TODO: Implement geographic distribution calculation
+        return [];
+    }
+
+    /**
+     * Get enrollment growth metrics
+     */
+    private function getEnrollmentGrowth(School $school, $year): array
+    {
+        // TODO: Implement enrollment growth calculation
+        return [];
+    }
+
+    /**
+     * Get retention rate metrics
+     */
+    private function getRetentionRate(School $school, $year): array
+    {
+        // TODO: Implement retention rate calculation
+        return [];
+    }
+
+    /**
+     * Get graduation rate metrics
+     */
+    private function getGraduationRate(School $school, $year): array
+    {
+        // TODO: Implement graduation rate calculation
+        return [];
+    }
+
+    /**
+     * Get attendance rate metrics
+     */
+    private function getAttendanceRate(School $school, $year): array
+    {
+        // TODO: Implement attendance rate calculation
+        return [];
+    }
+
+    /**
+     * Get academic progress metrics
+     */
+    private function getAcademicProgress(School $school, $year): array
+    {
+        // TODO: Implement academic progress calculation
+        return [];
     }
 }
