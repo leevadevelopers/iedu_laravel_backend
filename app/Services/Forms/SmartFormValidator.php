@@ -475,11 +475,18 @@ class SmartFormValidator
 
         // Check if this is an educational form category
         $educationalCategories = [
+            'school_registration', 'school_enrollment', 'school_setup',
             'student_enrollment', 'student_registration', 'attendance', 'grades',
             'academic_records', 'behavior_incident', 'parent_communication',
             'teacher_evaluation', 'curriculum_planning', 'extracurricular',
             'field_trip', 'parent_meeting', 'student_health', 'special_education',
-            'discipline', 'graduation', 'scholarship'
+            'discipline', 'graduation', 'scholarship', 'staff_management',
+            'faculty_recruitment', 'professional_development', 'school_calendar',
+            'events_management', 'facilities_management', 'transportation',
+            'cafeteria_management', 'library_management', 'technology_management',
+            'security_management', 'maintenance_requests', 'financial_aid',
+            'tuition_management', 'donation_management', 'alumni_relations',
+            'community_outreach', 'partnership_management'
         ];
 
         if (!in_array($category, $educationalCategories)) {
@@ -512,11 +519,18 @@ class SmartFormValidator
 
         // Check if this is an educational form category
         $educationalCategories = [
+            'school_registration', 'school_enrollment', 'school_setup',
             'student_enrollment', 'student_registration', 'attendance', 'grades',
             'academic_records', 'behavior_incident', 'parent_communication',
             'teacher_evaluation', 'curriculum_planning', 'extracurricular',
             'field_trip', 'parent_meeting', 'student_health', 'special_education',
-            'discipline', 'graduation', 'scholarship'
+            'discipline', 'graduation', 'scholarship', 'staff_management',
+            'faculty_recruitment', 'professional_development', 'school_calendar',
+            'events_management', 'facilities_management', 'transportation',
+            'cafeteria_management', 'library_management', 'technology_management',
+            'security_management', 'maintenance_requests', 'financial_aid',
+            'tuition_management', 'donation_management', 'alumni_relations',
+            'community_outreach', 'partnership_management'
         ];
 
         if (!in_array($category, $educationalCategories)) {

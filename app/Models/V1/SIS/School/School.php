@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
  * School Model
@@ -169,7 +170,7 @@ class School extends Model
     /**
      * Get the current active academic year.
      */
-    public function currentAcademicYear(): BelongsTo
+    public function currentAcademicYear(): HasOne
     {
         return $this->hasOne(AcademicYear::class)->where('is_current', true);
     }

@@ -7,7 +7,7 @@ use App\Http\Controllers\API\V1\Forms\PublicFormTemplateController;
 use Illuminate\Support\Facades\Route;
 
 // Public Form Template Routes (no authentication required)
-Route::prefix('v1/public/forms')->group(function () {
+Route::prefix('public/forms')->group(function () {
     Route::get('/{token}', [PublicFormTemplateController::class, 'show']);
     Route::post('/{token}/create-instance', [PublicFormTemplateController::class, 'createInstance']);
     Route::put('/{token}/update-instance', [PublicFormTemplateController::class, 'updateInstance']);
@@ -16,10 +16,11 @@ Route::prefix('v1/public/forms')->group(function () {
 });
 
 // Forms API Routes
-Route::middleware(['auth:api', 'tenant'])->group(function () {
+// Route::middleware(['auth:api', 'tenant'])->group(function () {
+    Route::middleware(['auth:api'])->group(function () {
 
     // Form Templates
-    Route::prefix('v1/form-templates')->group(function () {
+    Route::prefix('form-templates')->group(function () {
         Route::get('/', [FormTemplateController::class, 'index']);
         Route::post('/', [FormTemplateController::class, 'store']);
         Route::get('/{template}', [FormTemplateController::class, 'show']);
@@ -57,7 +58,7 @@ Route::middleware(['auth:api', 'tenant'])->group(function () {
     });
 
     // Form Instances
-    Route::prefix('v1/form-instances')->group(function () {
+    Route::prefix('form-instances')->group(function () {
         Route::get('/', [FormInstanceController::class, 'index']);
         Route::post('/', [FormInstanceController::class, 'store']);
         Route::get('/{instance}', [FormInstanceController::class, 'show']);

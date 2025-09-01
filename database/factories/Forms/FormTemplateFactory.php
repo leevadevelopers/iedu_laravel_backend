@@ -18,12 +18,18 @@ class FormTemplateFactory extends Factory
             'description' => $this->faker->paragraph(),
             'version' => '1.0',
             'category' => $this->faker->randomElement([
-                'project_creation',
-                'contract_management',
-                'procurement',
-                'monitoring',
-                'financial',
-                'custom'
+                'school_registration', 'school_enrollment', 'school_setup',
+                'student_enrollment', 'student_registration', 'student_transfer',
+                'attendance', 'grades', 'academic_records', 'behavior_incident',
+                'parent_communication', 'teacher_evaluation', 'curriculum_planning',
+                'extracurricular', 'field_trip', 'parent_meeting', 'student_health',
+                'special_education', 'discipline', 'graduation', 'scholarship',
+                'staff_management', 'faculty_recruitment', 'professional_development',
+                'school_calendar', 'events_management', 'facilities_management',
+                'transportation', 'cafeteria_management', 'library_management',
+                'technology_management', 'security_management', 'maintenance_requests',
+                'financial_aid', 'tuition_management', 'donation_management',
+                'alumni_relations', 'community_outreach', 'partnership_management'
             ]),
             'estimated_completion_time' => $this->faker->randomElement([
                 '15 minutes',

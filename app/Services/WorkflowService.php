@@ -145,49 +145,50 @@ class WorkflowService
     private function getWorkflowConfiguration(string $workflowType, Model $model): array
     {
         return match($workflowType) {
-            'budget_approval' => $this->getBudgetApprovalWorkflow($model),
-            'transaction_approval' => $this->getTransactionApprovalWorkflow($model),
-            'project_approval' => $this->getProjectApprovalWorkflow($model),
+            'school_setup' => $this->getSchoolSetupWorkflow($model),
+            'grade_approval' => $this->getGradeApprovalWorkflow($model),
+            'attendance_approval' => $this->getAttendanceApprovalWorkflow($model),
+            'behavior_incident_approval' => $this->getBehaviorIncidentApprovalWorkflow($model),
             default => ['steps' => []]
         };
     }
 
     /**
-     * Get budget approval workflow configuration.
+     * Get grade approval workflow configuration.
      */
-    private function getBudgetApprovalWorkflow(Model $budget): array
+    private function getGradeApprovalWorkflow(Model $grade): array
     {
-        $amount = $budget->total_amount ?? 0;
+        $gradeValue = $grade->grade_value ?? 0;
 
         $steps = [
             [
                 'step_number' => 1,
-                'step_name' => 'Technical Review',
+                'step_name' => 'Teacher Review',
                 'step_type' => 'review',
-                'required_role' => 'program_manager',
-                'instructions' => 'Review budget technical details and alignment with project objectives'
+                'required_role' => 'teacher',
+                'instructions' => 'Review grade calculation and justification'
             ]
         ];
 
-        // Add financial review for budgets over threshold
-        if ($amount > 100000) {
+        // Add department head review for failing grades
+        if ($gradeValue < 60) {
             $steps[] = [
                 'step_number' => 2,
-                'step_name' => 'Financial Review',
+                'step_name' => 'Department Head Review',
                 'step_type' => 'approval',
-                'required_role' => 'finance_officer',
-                'instructions' => 'Review budget financial details and compliance'
+                'required_role' => 'department_head',
+                'instructions' => 'Review failing grade and provide recommendations'
             ];
         }
 
-        // Add director approval for large budgets
-        if ($amount > 500000) {
+        // Add principal approval for very low grades
+        if ($gradeValue < 50) {
             $steps[] = [
                 'step_number' => count($steps) + 1,
-                'step_name' => 'Director Approval',
+                'step_name' => 'Principal Approval',
                 'step_type' => 'approval',
-                'required_role' => 'org_admin',
-                'instructions' => 'Final approval for large budget'
+                'required_role' => 'principal',
+                'instructions' => 'Final approval for very low grade'
             ];
         }
 
@@ -195,39 +196,39 @@ class WorkflowService
     }
 
     /**
-     * Get transaction approval workflow configuration.
+     * Get attendance approval workflow configuration.
      */
-    private function getTransactionApprovalWorkflow(Model $transaction): array
+    private function getAttendanceApprovalWorkflow(Model $attendance): array
     {
-        $amount = $transaction->amount ?? 0;
+        $absenceCount = $attendance->absence_count ?? 0;
         $steps = [];
 
-        // Always require at least one approval step for transactions
+        // Always require teacher approval for attendance
         $steps[] = [
             'step_number' => 1,
-            'step_name' => 'Manager Approval',
+            'step_name' => 'Teacher Approval',
             'step_type' => 'approval',
-            'required_role' => 'program_manager',
-            'instructions' => 'Approve transaction for project'
+            'required_role' => 'teacher',
+            'instructions' => 'Approve attendance record and note any discrepancies'
         ];
 
-        if ($amount > 10000) {
+        if ($absenceCount > 5) {
             $steps[] = [
                 'step_number' => count($steps) + 1,
-                'step_name' => 'Senior Manager Approval',
+                'step_name' => 'Counselor Review',
                 'step_type' => 'approval',
-                'required_role' => 'senior_manager',
-                'instructions' => 'Senior manager approval for significant transaction'
+                'required_role' => 'counselor',
+                'instructions' => 'Review attendance pattern and provide guidance'
             ];
         }
 
-        if ($amount > 50000) {
+        if ($absenceCount > 10) {
             $steps[] = [
                 'step_number' => count($steps) + 1,
-                'step_name' => 'Finance Approval',
+                'step_name' => 'Administrator Approval',
                 'step_type' => 'approval',
-                'required_role' => 'finance_officer',
-                'instructions' => 'Financial approval for large transaction'
+                'required_role' => 'administrator',
+                'instructions' => 'Review excessive absences and determine next steps'
             ];
         }
 
@@ -235,35 +236,84 @@ class WorkflowService
     }
 
     /**
-     * Get project approval workflow configuration.
+     * Get behavior incident approval workflow configuration.
      */
-    private function getProjectApprovalWorkflow(Model $project): array
+    private function getBehaviorIncidentApprovalWorkflow(Model $incident): array
     {
-        return [
-            'steps' => [
-                [
-                    'step_number' => 1,
-                    'step_name' => 'Technical Review',
-                    'step_type' => 'review',
-                    'required_role' => 'program_manager',
-                    'instructions' => 'Review project technical feasibility and alignment'
-                ],
-                [
-                    'step_number' => 2,
-                    'step_name' => 'Financial Review',
-                    'step_type' => 'review',
-                    'required_role' => 'finance_officer',
-                    'instructions' => 'Review project budget and financial sustainability'
-                ],
-                [
-                    'step_number' => 3,
-                    'step_name' => 'Final Approval',
-                    'step_type' => 'approval',
-                    'required_role' => 'org_admin',
-                    'instructions' => 'Final project approval'
-                ]
+        $severity = $incident->severity_level ?? 'low';
+        $steps = [];
+
+        // Always require teacher documentation
+        $steps[] = [
+            'step_number' => 1,
+            'step_name' => 'Teacher Documentation',
+            'step_type' => 'review',
+            'required_role' => 'teacher',
+            'instructions' => 'Document behavior incident with details and evidence'
+        ];
+
+        // Add counselor review for moderate incidents
+        if (in_array($severity, ['moderate', 'high'])) {
+            $steps[] = [
+                'step_number' => count($steps) + 1,
+                'step_name' => 'Counselor Review',
+                'step_type' => 'review',
+                'required_role' => 'counselor',
+                'instructions' => 'Review incident and provide behavioral intervention recommendations'
+            ];
+        }
+
+        // Add administrator approval for high severity incidents
+        if ($severity === 'high') {
+            $steps[] = [
+                'step_number' => count($steps) + 1,
+                'step_name' => 'Administrator Approval',
+                'step_type' => 'approval',
+                'required_role' => 'administrator',
+                'instructions' => 'Review high severity incident and determine disciplinary action'
+            ];
+        }
+
+        return ['steps' => $steps];
+    }
+
+    /**
+     * Get school setup workflow configuration.
+     */
+    private function getSchoolSetupWorkflow(Model $school): array
+    {
+        $steps = [
+            [
+                'step_number' => 1,
+                'step_name' => 'Initial Setup',
+                'step_type' => 'setup',
+                'required_role' => 'school_admin',
+                'instructions' => 'Complete initial school configuration and setup'
+            ],
+            [
+                'step_number' => 2,
+                'step_name' => 'Staff Assignment',
+                'step_type' => 'assignment',
+                'required_role' => 'school_admin',
+                'instructions' => 'Assign staff members and define roles'
+            ],
+            [
+                'step_number' => 3,
+                'step_name' => 'Curriculum Setup',
+                'step_type' => 'setup',
+                'required_role' => 'curriculum_coordinator',
+                'instructions' => 'Configure curriculum and academic programs'
+            ],
+            [
+                'step_number' => 4,
+                'step_name' => 'Final Approval',
+                'step_type' => 'approval',
+                'required_role' => 'principal',
+                'instructions' => 'Final review and approval of school setup'
             ]
         ];
+
+        return ['steps' => $steps];
     }
 
     /**
@@ -271,7 +321,20 @@ class WorkflowService
      */
     private function createWorkflowSteps(FormWorkflow $workflow, array $steps): void
     {
-        foreach ($steps as $stepConfig) {
+        foreach ($steps as $index => $stepConfig) {
+            // Validate step configuration
+            if (!is_array($stepConfig)) {
+                throw new \InvalidArgumentException("Step configuration at index {$index} must be an array, got " . gettype($stepConfig));
+            }
+
+            // Ensure required fields are present
+            $requiredFields = ['step_number', 'step_name', 'step_type', 'required_role'];
+            foreach ($requiredFields as $field) {
+                if (!isset($stepConfig[$field])) {
+                    throw new \InvalidArgumentException("Step configuration at index {$index} is missing required field: {$field}");
+                }
+            }
+
             FormWorkflowStep::create([
                 'workflow_id' => $workflow->id,
                 'step_number' => $stepConfig['step_number'],
@@ -377,9 +440,9 @@ class WorkflowService
     private function getTemplateNameForWorkflowType(string $workflowType): string
     {
         return match($workflowType) {
-            'transaction_approval' => 'Transaction Approval Workflow',
-            'budget_approval' => 'Budget Approval Workflow',
-            'project_approval' => 'Project Approval Workflow',
+            'grade_approval' => 'Grade Approval Workflow',
+            'attendance_approval' => 'Attendance Approval Workflow',
+            'behavior_incident_approval' => 'Behavior Incident Approval Workflow',
             default => ucfirst(str_replace('_', ' ', $workflowType)) . ' Workflow'
         };
     }
@@ -396,7 +459,7 @@ class WorkflowService
             'tenant_id' => $model->tenant_id,
             'name' => $templateName,
             'description' => 'Default workflow template for ' . $workflowType,
-            'category' => 'financial',
+            'category' => 'academic_records',
             'compliance_level' => 'standard',
             'version' => '1.0',
             'is_active' => true,

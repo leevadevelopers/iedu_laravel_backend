@@ -1,4 +1,4 @@
-<?php
+ <?php
 
 use App\Http\Controllers\API\V1\School\SchoolController;
 use Illuminate\Support\Facades\Route;
@@ -11,10 +11,14 @@ use Illuminate\Support\Facades\Route;
     |--------------------------------------------------------------------------
     */
 
-    Route::prefix('schools')->group(function () {
+    Route::middleware(['auth:api'])->prefix('schools')->group(function () {
+        // Health check
+        Route::get('/health', [SchoolController::class, 'health']);
+
         // Basic CRUD operations
         Route::get('/', [SchoolController::class, 'index']);
         Route::post('/', [SchoolController::class, 'store']);
+        // Route::post('/test', action: [SchoolController::class, 'testStore']); // Test route for simplified creation
         Route::get('/{school}', [SchoolController::class, 'show']);
         Route::put('/{school}', [SchoolController::class, 'update']);
         Route::delete('/{school}', [SchoolController::class, 'destroy']);

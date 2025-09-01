@@ -20,7 +20,7 @@ class UpdateFormTemplateRequest extends FormRequest
         return [
             'name' => 'nullable|string|max:255',
             'description' => 'nullable|string|max:1000',
-            'category' => 'nullable|string|in:project_creation,contract_management,procurement,monitoring,financial,custom,project,planning,execution,closure,risk_assessment,risk_mitigation,risk_monitoring,risk_report,indicator,evaluation,monitoring_report,dashboard,budget,transaction,expense,financial_report,audit,procurement_request,tender,contract,procurement_evaluation,supplier',
+            'category' => 'nullable|string|in:school_registration,school_enrollment,school_setup,student_enrollment,student_registration,student_transfer,attendance,grades,academic_records,behavior_incident,parent_communication,teacher_evaluation,curriculum_planning,extracurricular,field_trip,parent_meeting,student_health,special_education,discipline,graduation,scholarship,staff_management,faculty_recruitment,professional_development,school_calendar,events_management,facilities_management,transportation,cafeteria_management,library_management,technology_management,security_management,maintenance_requests,financial_aid,tuition_management,donation_management,alumni_relations,community_outreach,partnership_management',
             'estimated_completion_time' => 'nullable|string|max:50',
             'is_multi_step' => 'boolean',
             'auto_save' => 'boolean',

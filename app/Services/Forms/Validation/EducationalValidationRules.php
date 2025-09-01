@@ -41,6 +41,15 @@ class EducationalValidationRules
     private static function getCategorySpecificRules(string $category, array $context = []): array
     {
         switch ($category) {
+            case 'school_registration':
+                return self::getSchoolRegistrationRules();
+
+            case 'school_enrollment':
+                return self::getSchoolEnrollmentRules();
+
+            case 'school_setup':
+                return self::getSchoolSetupRules();
+
             case 'student_enrollment':
                 return self::getEnrollmentRules();
 
@@ -91,6 +100,60 @@ class EducationalValidationRules
 
             case 'scholarship':
                 return self::getScholarshipRules();
+
+            case 'staff_management':
+                return self::getStaffManagementRules();
+
+            case 'faculty_recruitment':
+                return self::getFacultyRecruitmentRules();
+
+            case 'professional_development':
+                return self::getProfessionalDevelopmentRules();
+
+            case 'school_calendar':
+                return self::getSchoolCalendarRules();
+
+            case 'events_management':
+                return self::getEventsManagementRules();
+
+            case 'facilities_management':
+                return self::getFacilitiesManagementRules();
+
+            case 'transportation':
+                return self::getTransportationRules();
+
+            case 'cafeteria_management':
+                return self::getCafeteriaManagementRules();
+
+            case 'library_management':
+                return self::getLibraryManagementRules();
+
+            case 'technology_management':
+                return self::getTechnologyManagementRules();
+
+            case 'security_management':
+                return self::getSecurityManagementRules();
+
+            case 'maintenance_requests':
+                return self::getMaintenanceRequestsRules();
+
+            case 'financial_aid':
+                return self::getFinancialAidRules();
+
+            case 'tuition_management':
+                return self::getTuitionManagementRules();
+
+            case 'donation_management':
+                return self::getDonationManagementRules();
+
+            case 'alumni_relations':
+                return self::getAlumniRelationsRules();
+
+            case 'community_outreach':
+                return self::getCommunityOutreachRules();
+
+            case 'partnership_management':
+                return self::getPartnershipManagementRules();
 
             default:
                 return [];
@@ -567,5 +630,536 @@ class EducationalValidationRules
         }
 
         return $warnings;
+    }
+
+    /**
+     * School registration validation rules
+     */
+    private static function getSchoolRegistrationRules(): array
+    {
+        return [
+            'school_name' => 'required|string|max:200',
+            'school_type' => 'required|in:public,private,charter,magnet',
+            'registration_date' => 'required|date|after_or_equal:today',
+            'school_address' => 'required|string|max:500',
+            'contact_person' => 'required|string|max:200',
+            'contact_phone' => 'required|string|max:20',
+            'contact_email' => 'required|email|max:100',
+            'accreditation_status' => 'required|in:accredited,provisional,not_accredited',
+            'accreditation_expiry' => 'nullable|date|after:today',
+            'capacity' => 'required|integer|min:1',
+            'current_enrollment' => 'required|integer|min:0',
+            'registration_fee' => 'nullable|numeric|min:0',
+            'documents_required' => 'required|array|min:1',
+            'documents_required.*' => 'string|in:license,accreditation,insurance,financial_statements'
+        ];
+    }
+
+    /**
+     * School enrollment validation rules
+     */
+    private static function getSchoolEnrollmentRules(): array
+    {
+        return [
+            'enrollment_period' => 'required|string|max:100',
+            'enrollment_start_date' => 'required|date|before_or_equal:enrollment_end_date',
+            'enrollment_end_date' => 'required|date|after_or_equal:enrollment_start_date',
+            'enrollment_capacity' => 'required|integer|min:1',
+            'enrollment_fee' => 'nullable|numeric|min:0',
+            'enrollment_requirements' => 'required|array|min:1',
+            'enrollment_requirements.*' => 'string|max:200',
+            'enrollment_status' => 'required|in:open,waitlist,closed',
+            'priority_enrollment' => 'boolean',
+            'priority_criteria' => 'nullable|string|max:500'
+        ];
+    }
+
+    /**
+     * School setup validation rules
+     */
+    private static function getSchoolSetupRules(): array
+    {
+        return [
+            'setup_phase' => 'required|in:planning,construction,equipment,staffing,testing,operational',
+            'target_opening_date' => 'required|date|after:today',
+            'setup_budget' => 'required|numeric|min:0',
+            'setup_timeline' => 'required|array|min:1',
+            'setup_timeline.*.phase' => 'required|string|max:100',
+            'setup_timeline.*.start_date' => 'required|date',
+            'setup_timeline.*.end_date' => 'required|date|after:setup_timeline.*.start_date',
+            'setup_timeline.*.status' => 'required|in:not_started,in_progress,completed,delayed',
+            'required_permits' => 'required|array|min:1',
+            'required_permits.*' => 'string|max:200',
+            'permits_status' => 'required|array',
+            'permits_status.*.permit_type' => 'required|string|max:200',
+            'permits_status.*.status' => 'required|in:not_applied,applied,approved,rejected'
+        ];
+    }
+
+    /**
+     * Staff management validation rules
+     */
+    private static function getStaffManagementRules(): array
+    {
+        return [
+            'staff_id' => 'required|string|max:50',
+            'staff_type' => 'required|in:teacher,administrator,support_staff,maintenance,security',
+            'department' => 'required|string|max:100',
+            'position' => 'required|string|max:100',
+            'hire_date' => 'required|date|before_or_equal:today',
+            'employment_status' => 'required|in:full_time,part_time,contract,temporary',
+            'salary_grade' => 'required|string|max:20',
+            'supervisor' => 'nullable|string|max:200',
+            'performance_rating' => 'nullable|numeric|min:1|max:5',
+            'training_required' => 'nullable|array',
+            'training_required.*' => 'string|max:200'
+        ];
+    }
+
+    /**
+     * Faculty recruitment validation rules
+     */
+    private static function getFacultyRecruitmentRules(): array
+    {
+        return [
+            'position_title' => 'required|string|max:200',
+            'department' => 'required|string|max:100',
+            'position_type' => 'required|in:full_time,part_time,adjunct,visiting',
+            'qualifications_required' => 'required|array|min:1',
+            'qualifications_required.*' => 'string|max:200',
+            'experience_required' => 'required|integer|min:0',
+            'education_required' => 'required|string|max:100',
+            'salary_range_min' => 'required|numeric|min:0',
+            'salary_range_max' => 'required|numeric|min:salary_range_min',
+            'application_deadline' => 'required|date|after:today',
+            'interview_process' => 'required|array|min:1',
+            'interview_process.*.stage' => 'required|string|max:100',
+            'interview_process.*.duration' => 'required|integer|min:1'
+        ];
+    }
+
+    /**
+     * Professional development validation rules
+     */
+    private static function getProfessionalDevelopmentRules(): array
+    {
+        return [
+            'program_name' => 'required|string|max:200',
+            'program_type' => 'required|in:workshop,conference,certification,degree,online_course',
+            'provider' => 'required|string|max:200',
+            'start_date' => 'required|date|after_or_equal:today',
+            'end_date' => 'required|date|after:start_date',
+            'duration_hours' => 'required|integer|min:1',
+            'cost' => 'nullable|numeric|min:0',
+            'funding_source' => 'nullable|string|max:100',
+            'target_audience' => 'required|array|min:1',
+            'target_audience.*' => 'string|max:100',
+            'learning_objectives' => 'required|array|min:1',
+            'learning_objectives.*' => 'string|max:500',
+            'certification_offered' => 'boolean',
+            'certification_name' => 'nullable|string|max:200'
+        ];
+    }
+
+    /**
+     * School calendar validation rules
+     */
+    private static function getSchoolCalendarRules(): array
+    {
+        return [
+            'academic_year' => 'required|string|max:20',
+            'semester' => 'required|in:fall,spring,summer,full_year',
+            'start_date' => 'required|date',
+            'end_date' => 'required|date|after:start_date',
+            'holidays' => 'nullable|array',
+            'holidays.*.name' => 'required|string|max:100',
+            'holidays.*.date' => 'required|date',
+            'holidays.*.type' => 'required|in:public_holiday,school_holiday,professional_development',
+            'exam_periods' => 'nullable|array',
+            'exam_periods.*.name' => 'required|string|max:100',
+            'exam_periods.*.start_date' => 'required|date',
+            'exam_periods.*.end_date' => 'required|date|after:exam_periods.*.start_date',
+            'parent_teacher_conferences' => 'nullable|array',
+            'parent_teacher_conferences.*.date' => 'required|date',
+            'parent_teacher_conferences.*.duration_minutes' => 'required|integer|min:15'
+        ];
+    }
+
+    /**
+     * Events management validation rules
+     */
+    private static function getEventsManagementRules(): array
+    {
+        return [
+            'event_name' => 'required|string|max:200',
+            'event_type' => 'required|in:academic,athletic,arts,cultural,community,celebration',
+            'event_date' => 'required|date|after_or_equal:today',
+            'start_time' => 'required|date_format:H:i',
+            'end_time' => 'required|date_format:H:i|after:start_time',
+            'location' => 'required|string|max:200',
+            'capacity' => 'nullable|integer|min:1',
+            'registration_required' => 'boolean',
+            'registration_deadline' => 'nullable|date|before:event_date',
+            'cost' => 'nullable|numeric|min:0',
+            'organizer' => 'required|string|max:200',
+            'contact_person' => 'required|string|max:200',
+            'contact_phone' => 'required|string|max:20',
+            'contact_email' => 'required|email|max:100',
+            'description' => 'required|string|max:1000',
+            'target_audience' => 'required|array|min:1',
+            'target_audience.*' => 'string|max:100'
+        ];
+    }
+
+    /**
+     * Facilities management validation rules
+     */
+    private static function getFacilitiesManagementRules(): array
+    {
+        return [
+            'facility_name' => 'required|string|max:200',
+            'facility_type' => 'required|in:classroom,library,laboratory,gymnasium,auditorium,cafeteria,office,maintenance',
+            'building' => 'required|string|max:100',
+            'floor' => 'nullable|string|max:20',
+            'room_number' => 'nullable|string|max:20',
+            'capacity' => 'nullable|integer|min:1',
+            'square_footage' => 'nullable|numeric|min:0',
+            'equipment_included' => 'nullable|array',
+            'equipment_included.*' => 'string|max:200',
+            'maintenance_schedule' => 'nullable|string|max:100',
+            'last_maintenance_date' => 'nullable|date|before_or_equal:today',
+            'next_maintenance_date' => 'nullable|date|after:last_maintenance_date',
+            'access_restrictions' => 'nullable|string|max:500',
+            'booking_required' => 'boolean',
+            'booking_contact' => 'nullable|string|max:200'
+        ];
+    }
+
+    /**
+     * Transportation validation rules
+     */
+    private static function getTransportationRules(): array
+    {
+        return [
+            'route_number' => 'required|string|max:20',
+            'route_name' => 'required|string|max:200',
+            'vehicle_type' => 'required|in:bus,van,car,walking',
+            'vehicle_capacity' => 'required|integer|min:1',
+            'driver_name' => 'required|string|max:200',
+            'driver_license' => 'required|string|max:50',
+            'driver_phone' => 'required|string|max:20',
+            'pickup_time' => 'required|date_format:H:i',
+            'dropoff_time' => 'required|date_format:H:i|after:pickup_time',
+            'pickup_location' => 'required|string|max:200',
+            'dropoff_location' => 'required|string|max:200',
+            'stops' => 'required|array|min:1',
+            'stops.*.location' => 'required|string|max:200',
+            'stops.*.time' => 'required|date_format:H:i',
+            'stops.*.type' => 'required|in:pickup,dropoff,both',
+            'route_distance' => 'nullable|numeric|min:0',
+            'estimated_duration' => 'nullable|integer|min:1'
+        ];
+    }
+
+    /**
+     * Cafeteria management validation rules
+     */
+    private static function getCafeteriaManagementRules(): array
+    {
+        return [
+            'meal_type' => 'required|in:breakfast,lunch,dinner,snack',
+            'meal_date' => 'required|date|after_or_equal:today',
+            'menu_items' => 'required|array|min:1',
+            'menu_items.*.name' => 'required|string|max:200',
+            'menu_items.*.category' => 'required|in:main_dish,side_dish,salad,dessert,beverage',
+            'menu_items.*.dietary_restrictions' => 'nullable|array',
+            'menu_items.*.dietary_restrictions.*' => 'string|in:vegetarian,vegan,gluten_free,dairy_free,nut_free',
+            'nutritional_info' => 'nullable|array',
+            'nutritional_info.calories' => 'nullable|integer|min:0',
+            'nutritional_info.protein' => 'nullable|numeric|min:0',
+            'nutritional_info.carbohydrates' => 'nullable|numeric|min:0',
+            'nutritional_info.fat' => 'nullable|numeric|min:0',
+            'allergen_info' => 'nullable|array',
+            'allergen_info.*' => 'string|in:peanuts,tree_nuts,milk,eggs,soy,wheat,fish,shellfish',
+            'cost' => 'nullable|numeric|min:0',
+            'serving_time_start' => 'required|date_format:H:i',
+            'serving_time_end' => 'required|date_format:H:i|after:serving_time_start'
+        ];
+    }
+
+    /**
+     * Library management validation rules
+     */
+    private static function getLibraryManagementRules(): array
+    {
+        return [
+            'book_title' => 'required|string|max:200',
+            'author' => 'required|string|max:200',
+            'isbn' => 'nullable|string|max:20',
+            'category' => 'required|string|max:100',
+            'subcategory' => 'nullable|string|max:100',
+            'reading_level' => 'nullable|string|max:50',
+            'publication_year' => 'nullable|integer|min:1800|max:' . (date('Y') + 1),
+            'publisher' => 'nullable|string|max:200',
+            'copies_available' => 'required|integer|min:0',
+            'total_copies' => 'required|integer|min:copies_available',
+            'location' => 'required|string|max:100',
+            'shelf_number' => 'nullable|string|max:20',
+            'condition' => 'required|in:excellent,good,fair,poor,damaged',
+            'last_checkout_date' => 'nullable|date|before_or_equal:today',
+            'due_date' => 'nullable|date|after:last_checkout_date',
+            'checkout_duration_days' => 'nullable|integer|min:1|max:30',
+            'renewal_allowed' => 'boolean',
+            'max_renewals' => 'nullable|integer|min:0'
+        ];
+    }
+
+    /**
+     * Technology management validation rules
+     */
+    private static function getTechnologyManagementRules(): array
+    {
+        return [
+            'device_type' => 'required|in:computer,tablet,projector,printer,network_device,software,other',
+            'device_name' => 'required|string|max:200',
+            'model' => 'nullable|string|max:100',
+            'serial_number' => 'nullable|string|max:100',
+            'location' => 'required|string|max:200',
+            'assigned_to' => 'nullable|string|max:200',
+            'purchase_date' => 'nullable|date|before_or_equal:today',
+            'warranty_expiry' => 'nullable|date|after:purchase_date',
+            'last_maintenance_date' => 'nullable|date|before_or_equal:today',
+            'next_maintenance_date' => 'nullable|date|after:last_maintenance_date',
+            'status' => 'required|in:operational,maintenance,repair,retired,stolen',
+            'ip_address' => 'nullable|ip',
+            'mac_address' => 'nullable|string|max:17',
+            'software_installed' => 'nullable|array',
+            'software_installed.*' => 'string|max:200',
+            'access_restrictions' => 'nullable|string|max:500',
+            'backup_schedule' => 'nullable|string|max:100'
+        ];
+    }
+
+    /**
+     * Security management validation rules
+     */
+    private static function getSecurityManagementRules(): array
+    {
+        return [
+            'incident_type' => 'required|in:theft,vandalism,unauthorized_access,harassment,other',
+            'incident_date' => 'required|date|before_or_equal:today',
+            'incident_time' => 'required|date_format:H:i',
+            'location' => 'required|string|max:200',
+            'reported_by' => 'required|string|max:200',
+            'witnesses' => 'nullable|array',
+            'witnesses.*' => 'string|max:200',
+            'description' => 'required|string|max:1000',
+            'severity_level' => 'required|in:low,medium,high,critical',
+            'police_notified' => 'boolean',
+            'police_report_number' => 'nullable|string|max:50',
+            'security_cameras' => 'nullable|boolean',
+            'camera_footage_reviewed' => 'nullable|boolean',
+            'actions_taken' => 'required|array|min:1',
+            'actions_taken.*' => 'string|max:500',
+            'follow_up_required' => 'boolean',
+            'follow_up_date' => 'nullable|date|after:incident_date',
+            'preventive_measures' => 'nullable|array',
+            'preventive_measures.*' => 'string|max:500'
+        ];
+    }
+
+    /**
+     * Maintenance requests validation rules
+     */
+    private static function getMaintenanceRequestsRules(): array
+    {
+        return [
+            'request_type' => 'required|in:repair,preventive_maintenance,inspection,installation,cleaning,other',
+            'priority_level' => 'required|in:low,medium,high,urgent,emergency',
+            'location' => 'required|string|max:200',
+            'description' => 'required|string|max:1000',
+            'reported_by' => 'required|string|max:200',
+            'reported_date' => 'required|date|before_or_equal:today',
+            'requested_completion_date' => 'nullable|date|after:reported_date',
+            'estimated_cost' => 'nullable|numeric|min:0',
+            'approved_budget' => 'nullable|numeric|min:0',
+            'assigned_to' => 'nullable|string|max:200',
+            'status' => 'required|in:submitted,approved,in_progress,completed,cancelled',
+            'completion_date' => 'nullable|date|after:reported_date',
+            'actual_cost' => 'nullable|numeric|min:0',
+            'work_notes' => 'nullable|string|max:1000',
+            'photos_attached' => 'boolean',
+            'follow_up_required' => 'boolean'
+        ];
+    }
+
+    /**
+     * Financial aid validation rules
+     */
+    private static function getFinancialAidRules(): array
+    {
+        return [
+            'aid_type' => 'required|in:scholarship,grant,loan,work_study,tuition_waiver',
+            'aid_name' => 'required|string|max:200',
+            'provider' => 'required|string|max:200',
+            'amount' => 'required|numeric|min:0',
+            'application_deadline' => 'required|date|after:today',
+            'eligibility_criteria' => 'required|string|max:1000',
+            'required_documents' => 'required|array|min:1',
+            'required_documents.*' => 'string|max:200',
+            'application_status' => 'required|in:draft,submitted,under_review,approved,rejected',
+            'submission_date' => 'nullable|date|before_or_equal:today',
+            'review_date' => 'nullable|date|after:submission_date',
+            'decision_date' => 'nullable|date|after:review_date',
+            'disbursement_date' => 'nullable|date|after:decision_date',
+            'renewal_required' => 'boolean',
+            'renewal_deadline' => 'nullable|date|after:disbursement_date',
+            'academic_requirements' => 'nullable|array',
+            'academic_requirements.*' => 'string|max:200'
+        ];
+    }
+
+    /**
+     * Tuition management validation rules
+     */
+    private static function getTuitionManagementRules(): array
+    {
+        return [
+            'student_id' => 'required|string|max:50',
+            'academic_year' => 'required|string|max:20',
+            'semester' => 'required|in:fall,spring,summer,full_year',
+            'tuition_amount' => 'required|numeric|min:0',
+            'fees_amount' => 'nullable|numeric|min:0',
+            'total_amount' => 'required|numeric|min:0',
+            'payment_plan' => 'nullable|string|max:100',
+            'payment_due_date' => 'required|date|after:today',
+            'payment_status' => 'required|in:unpaid,partial,paid,overdue,waived',
+            'amount_paid' => 'nullable|numeric|min:0',
+            'amount_due' => 'required|numeric|min:0',
+            'payment_method' => 'nullable|string|max:100',
+            'payment_date' => 'nullable|date|before_or_equal:today',
+            'late_fees' => 'nullable|numeric|min:0',
+            'financial_aid_applied' => 'nullable|numeric|min:0',
+            'balance' => 'required|numeric',
+            'notes' => 'nullable|string|max:1000'
+        ];
+    }
+
+    /**
+     * Donation management validation rules
+     */
+    private static function getDonationManagementRules(): array
+    {
+        return [
+            'donor_name' => 'required|string|max:200',
+            'donor_type' => 'required|in:individual,corporation,foundation,alumni,parent,other',
+            'donation_type' => 'required|in:monetary,equipment,supplies,services,property,other',
+            'donation_amount' => 'nullable|numeric|min:0',
+            'donation_description' => 'required|string|max:1000',
+            'donation_date' => 'required|date|before_or_equal:today',
+            'acknowledgment_sent' => 'boolean',
+            'acknowledgment_date' => 'nullable|date|after:donation_date',
+            'tax_receipt_issued' => 'boolean',
+            'tax_receipt_date' => 'nullable|date|after:donation_date',
+            'restrictions' => 'nullable|string|max:500',
+            'designated_use' => 'nullable|string|max:200',
+            'recognition_level' => 'nullable|string|max:100',
+            'anonymous_donation' => 'boolean',
+            'contact_person' => 'nullable|string|max:200',
+            'contact_phone' => 'nullable|string|max:20',
+            'contact_email' => 'nullable|email|max:100'
+        ];
+    }
+
+    /**
+     * Alumni relations validation rules
+     */
+    private static function getAlumniRelationsRules(): array
+    {
+        return [
+            'alumni_name' => 'required|string|max:200',
+            'graduation_year' => 'required|integer|min:1900|max:' . (date('Y') + 1),
+            'degree_program' => 'required|string|max:200',
+            'current_occupation' => 'nullable|string|max:200',
+            'employer' => 'nullable|string|max:200',
+            'contact_email' => 'required|email|max:100',
+            'contact_phone' => 'nullable|string|max:20',
+            'mailing_address' => 'nullable|string|max:500',
+            'alumni_activities' => 'nullable|array',
+            'alumni_activities.*' => 'string|max:200',
+            'volunteer_interest' => 'boolean',
+            'volunteer_areas' => 'nullable|array',
+            'volunteer_areas.*' => 'string|max:200',
+            'mentorship_interest' => 'boolean',
+            'mentorship_areas' => 'nullable|array',
+            'mentorship_areas.*' => 'string|max:200',
+            'donation_history' => 'nullable|array',
+            'donation_history.*.year' => 'required|integer|min:1900|max:' . (date('Y') + 1),
+            'donation_history.*.amount' => 'required|numeric|min:0',
+            'newsletter_subscription' => 'boolean',
+            'event_notifications' => 'boolean'
+        ];
+    }
+
+    /**
+     * Community outreach validation rules
+     */
+    private static function getCommunityOutreachRules(): array
+    {
+        return [
+            'program_name' => 'required|string|max:200',
+            'program_type' => 'required|in:volunteer,partnership,event,education,health,environmental,other',
+            'target_community' => 'required|string|max:200',
+            'program_description' => 'required|string|max:1000',
+            'start_date' => 'required|date|after_or_equal:today',
+            'end_date' => 'nullable|date|after:start_date',
+            'duration_hours' => 'nullable|integer|min:1',
+            'location' => 'required|string|max:200',
+            'participants_expected' => 'nullable|integer|min:1',
+            'participants_actual' => 'nullable|integer|min:0',
+            'volunteers_needed' => 'nullable|integer|min:0',
+            'volunteers_registered' => 'nullable|integer|min:0',
+            'budget' => 'nullable|numeric|min:0',
+            'funding_source' => 'nullable|string|max:200',
+            'partnerships' => 'nullable|array',
+            'partnerships.*' => 'string|max:200',
+            'success_metrics' => 'nullable|array',
+            'success_metrics.*' => 'string|max:200',
+            'challenges_faced' => 'nullable|string|max:500',
+            'lessons_learned' => 'nullable|string|max:500',
+            'follow_up_required' => 'boolean',
+            'next_steps' => 'nullable|string|max:500'
+        ];
+    }
+
+    /**
+     * Partnership management validation rules
+     */
+    private static function getPartnershipManagementRules(): array
+    {
+        return [
+            'partner_name' => 'required|string|max:200',
+            'partner_type' => 'required|in:business,educational,governmental,non_profit,community,other',
+            'partnership_type' => 'required|in:sponsorship,mentorship,internship,research,community_service,other',
+            'partnership_start_date' => 'required|date|before_or_equal:today',
+            'partnership_end_date' => 'nullable|date|after:partnership_start_date',
+            'partnership_status' => 'required|in:active,inactive,pending,expired,terminated',
+            'contact_person' => 'required|string|max:200',
+            'contact_title' => 'nullable|string|max:100',
+            'contact_phone' => 'required|string|max:20',
+            'contact_email' => 'required|email|max:100',
+            'partnership_goals' => 'required|array|min:1',
+            'partnership_goals.*' => 'string|max:500',
+            'benefits_for_school' => 'required|array|min:1',
+            'benefits_for_school.*' => 'string|max:500',
+            'benefits_for_partner' => 'required|array|min:1',
+            'benefits_for_partner.*' => 'string|max:500',
+            'financial_contribution' => 'nullable|numeric|min:0',
+            'resource_contribution' => 'nullable|string|max:500',
+            'evaluation_criteria' => 'nullable|array',
+            'evaluation_criteria.*' => 'string|max:200',
+            'renewal_terms' => 'nullable|string|max:500',
+            'termination_clause' => 'nullable|string|max:500'
+        ];
     }
 }

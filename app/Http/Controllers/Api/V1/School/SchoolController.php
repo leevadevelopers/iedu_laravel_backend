@@ -4,27 +4,42 @@ namespace App\Http\Controllers\API\V1\School;
 
 use App\Http\Controllers\Controller;
 use App\Models\V1\SIS\School\School;
-use App\Models\V1\SIS\School\AcademicYear;
-use App\Models\V1\SIS\School\AcademicTerm;
-use App\Models\V1\SIS\Student\Student;
 use App\Models\Forms\FormTemplate;
-use App\Services\FormEngineService;
-use App\Services\WorkflowService;
+use App\Services\SchoolService;
+use App\Http\Requests\School\CreateSchoolRequest;
+use App\Http\Requests\School\UpdateSchoolRequest;
+use App\Http\Requests\School\CreateFormTemplateRequest;
+use App\Http\Requests\School\UpdateFormTemplateRequest;
+use App\Http\Requests\School\ProcessFormSubmissionRequest;
+use App\Http\Requests\School\UpdateFormInstanceStatusRequest;
+use App\Http\Requests\School\DuplicateFormTemplateRequest;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 
 class SchoolController extends Controller
 {
-    protected $formEngineService;
-    protected $workflowService;
+    protected $schoolService;
 
-    public function __construct(FormEngineService $formEngineService, WorkflowService $workflowService)
+    public function __construct(SchoolService $schoolService)
     {
-        $this->formEngineService = $formEngineService;
-        $this->workflowService = $workflowService;
+        $this->schoolService = $schoolService;
+    }
+
+    /**
+     * Health check endpoint
+     */
+    public function health(): JsonResponse
+    {
+        return response()->json([
+            'success' => true,
+            'message' => 'School API is healthy',
+            'timestamp' => now()->toISOString()
+        ]);
     }
 
     /**
@@ -33,41 +48,24 @@ class SchoolController extends Controller
     public function index(Request $request): JsonResponse
     {
         try {
-            $query = School::with([
-                'academicYears:id,name,start_date,end_date',
-                'currentAcademicYear:id,name',
-                'users:id,name,email'
-            ]);
+            $filters = $request->only(['status', 'school_type', 'state_province', 'country_code', 'search']);
+            $perPage = $request->get('per_page', 15);
 
-            // Apply filters
-            if ($request->has('status')) {
-                $query->where('status', $request->status);
+            // Create cache key based on filters and user
+            $user = Auth::user();
+            $cacheKey = 'schools_' . md5(serialize($filters) . $perPage . ($user ? $user->id : 'guest'));
+
+            // Track cache keys for invalidation
+            $cacheKeys = Cache::get('schools_cache_keys', []);
+            if (!in_array($cacheKey, $cacheKeys)) {
+                $cacheKeys[] = $cacheKey;
+                Cache::put('schools_cache_keys', $cacheKeys, 3600); // Store for 1 hour
             }
 
-            if ($request->has('school_type')) {
-                $query->where('school_type', $request->school_type);
-            }
-
-            if ($request->has('state_province')) {
-                $query->where('state_province', $request->state_province);
-            }
-
-            if ($request->has('country_code')) {
-                $query->where('country_code', $request->country_code);
-            }
-
-            if ($request->has('search')) {
-                $search = $request->search;
-                $query->where(function ($q) use ($search) {
-                    $q->where('official_name', 'like', "%{$search}%")
-                        ->orWhere('school_code', 'like', "%{$search}%")
-                        ->orWhere('display_name', 'like', "%{$search}%")
-                        ->orWhere('city', 'like', "%{$search}%");
-                });
-            }
-
-            $schools = $query->orderBy('official_name')
-                ->paginate($request->get('per_page', 15));
+            // Try to get from cache first
+            $schools = Cache::remember($cacheKey, 300, function () use ($filters, $perPage) {
+                return $this->schoolService->getSchools($filters, $perPage);
+            });
 
             return response()->json([
                 'success' => true,
@@ -85,96 +83,20 @@ class SchoolController extends Controller
     /**
      * Store a newly created school with Form Engine processing
      */
-    public function store(Request $request): JsonResponse
+    public function store(CreateSchoolRequest $request): JsonResponse
     {
-        $validator = Validator::make($request->all(), [
-            'tenant_id' => 'required|integer|exists:tenants,id',
-            'official_name' => 'required|string|max:255',
-            'display_name' => 'required|string|max:255',
-            'short_name' => 'required|string|max:50',
-            'school_code' => 'required|string|max:50|unique:schools,school_code',
-            'school_type' => 'required|in:public,private,charter,magnet,international,vocational,special_needs,alternative',
-            'educational_levels' => 'required|array',
-            'grade_range_min' => 'required|string|max:10',
-            'grade_range_max' => 'required|string|max:10',
-            'email' => 'required|email|max:255',
-            'phone' => 'nullable|string|max:50',
-            'website' => 'nullable|url|max:255',
-            'address_json' => 'nullable|array',
-            'country_code' => 'required|string|size:2',
-            'state_province' => 'nullable|string|max:100',
-            'city' => 'required|string|max:100',
-            'timezone' => 'nullable|string|max:50',
-            'ministry_education_code' => 'nullable|string|max:100',
-            'accreditation_status' => 'nullable|in:accredited,candidate,probation,not_accredited',
-            'academic_calendar_type' => 'nullable|in:semester,trimester,quarter,year_round,custom',
-            'academic_year_start_month' => 'nullable|integer|min:1|max:12',
-            'grading_system' => 'nullable|in:traditional_letter,percentage,points,standards_based,narrative,mixed',
-            'attendance_tracking_level' => 'nullable|in:daily,period,subject,flexible',
-            'educational_philosophy' => 'nullable|string',
-            'language_instruction' => 'required|array',
-            'religious_affiliation' => 'nullable|string|max:100',
-            'student_capacity' => 'nullable|integer|min:1',
-            'established_date' => 'nullable|date',
-            'subscription_plan' => 'nullable|in:basic,standard,premium,enterprise,custom',
-            'feature_flags' => 'nullable|array',
-            'integration_settings' => 'nullable|array',
-            'branding_configuration' => 'nullable|array',
-            'form_data' => 'nullable|array', // For Form Engine integration
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Validation failed',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
         try {
-            DB::beginTransaction();
-
-            // Create school
-            $schoolData = $request->except(['form_data']);
-            $schoolData['status'] = 'setup';
-            $schoolData['current_enrollment'] = 0;
-            $schoolData['staff_count'] = 0;
-
-            // Set default values for JSON fields
-            $schoolData['feature_flags'] = $schoolData['feature_flags'] ?? [];
-            $schoolData['integration_settings'] = $schoolData['integration_settings'] ?? [];
-            $schoolData['branding_configuration'] = $schoolData['branding_configuration'] ?? [];
-
-            $school = School::create($schoolData);
-
-            // Process form data through Form Engine if provided
-            if ($request->has('form_data')) {
-                $processedData = $this->formEngineService->processFormData('school_registration', $request->form_data);
-                $this->formEngineService->createFormInstance('school_registration', $processedData, 'School', $school->id);
-            }
-
-            // Start school setup workflow
-            $workflow = $this->workflowService->startWorkflow($school, 'school_setup', [
-                'steps' => [
-                    'initial_setup',
-                    'staff_assignment',
-                    'curriculum_setup',
-                    'final_approval'
-                ]
-            ]);
-
-            DB::commit();
+            $result = $this->schoolService->createSchool($request->validated());
 
             return response()->json([
                 'success' => true,
                 'message' => 'School created successfully',
                 'data' => [
-                    'school' => $school->load(['users:id,name,email']),
-                    'workflow_id' => $workflow->id
+                    'school' => $result['school']->only(['id', 'official_name', 'school_code', 'school_type', 'status', 'created_at']),
+                    'workflow_id' => $result['workflow']?->id
                 ]
             ], 201);
         } catch (\Exception $e) {
-            DB::rollBack();
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to create school',
@@ -182,6 +104,7 @@ class SchoolController extends Controller
             ], 500);
         }
     }
+
 
     /**
      * Display the specified school
@@ -192,17 +115,17 @@ class SchoolController extends Controller
             $school->load([
                 'academicYears:id,name,start_date,end_date,status',
                 'currentAcademicYear:id,name,start_date,end_date',
-                'users:id,name,email',
-                'students:id,first_name,last_name,grade_level,status'
+                'users:id,name,identifier',
+                'students:id,first_name,last_name,current_grade_level,enrollment_status'
             ]);
 
             // Get school statistics
             $stats = [
                 'total_students' => $school->students()->count(),
-                'active_students' => $school->students()->where('status', 'active')->count(),
+                'active_students' => $school->students()->where('enrollment_status', 'enrolled')->count(),
                 'by_grade_level' => $school->students()
-                    ->selectRaw('grade_level, COUNT(*) as count')
-                    ->groupBy('grade_level')
+                    ->selectRaw('current_grade_level, COUNT(*) as count')
+                    ->groupBy('current_grade_level')
                     ->get(),
                 'academic_years' => $school->academicYears()->count()
             ];
@@ -226,65 +149,17 @@ class SchoolController extends Controller
     /**
      * Update the specified school
      */
-    public function update(Request $request, School $school): JsonResponse
+    public function update(UpdateSchoolRequest $request, School $school): JsonResponse
     {
-        $validator = Validator::make($request->all(), [
-            'official_name' => 'sometimes|required|string|max:255',
-            'display_name' => 'sometimes|required|string|max:255',
-            'short_name' => 'sometimes|required|string|max:50',
-            'school_code' => 'sometimes|required|string|max:50|unique:schools,school_code,' . $school->id,
-            'school_type' => 'sometimes|required|in:public,private,charter,magnet,international,vocational,special_needs,alternative',
-            'educational_levels' => 'sometimes|required|array',
-            'grade_range_min' => 'sometimes|required|string|max:10',
-            'grade_range_max' => 'sometimes|required|string|max:10',
-            'email' => 'sometimes|required|email|max:255',
-            'phone' => 'nullable|string|max:50',
-            'website' => 'nullable|url|max:255',
-            'address_json' => 'nullable|array',
-            'country_code' => 'sometimes|required|string|size:2',
-            'state_province' => 'nullable|string|max:100',
-            'city' => 'sometimes|required|string|max:100',
-            'timezone' => 'nullable|string|max:50',
-            'ministry_education_code' => 'nullable|string|max:100',
-            'accreditation_status' => 'nullable|in:accredited,candidate,probation,not_accredited',
-            'academic_calendar_type' => 'nullable|in:semester,trimester,quarter,year_round,custom',
-            'academic_year_start_month' => 'nullable|integer|min:1|max:12',
-            'grading_system' => 'nullable|in:traditional_letter,percentage,points,standards_based,narrative,mixed',
-            'attendance_tracking_level' => 'nullable|in:daily,period,subject,flexible',
-            'educational_philosophy' => 'nullable|string',
-            'language_instruction' => 'sometimes|required|array',
-            'religious_affiliation' => 'nullable|string|max:100',
-            'student_capacity' => 'nullable|integer|min:1',
-            'established_date' => 'nullable|date',
-            'subscription_plan' => 'nullable|in:basic,standard,premium,enterprise,custom',
-            'feature_flags' => 'nullable|array',
-            'integration_settings' => 'nullable|array',
-            'branding_configuration' => 'nullable|array',
-            'status' => 'sometimes|required|in:setup,active,maintenance,suspended,archived',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Validation failed',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
         try {
-            DB::beginTransaction();
-
-            $school->update($request->all());
-
-            DB::commit();
+            $updatedSchool = $this->schoolService->updateSchool($school, $request->validated());
 
             return response()->json([
                 'success' => true,
                 'message' => 'School updated successfully',
-                'data' => $school->fresh()->load(['users:id,name,email'])
+                'data' => $updatedSchool->load(['users:id,name,identifier'])
             ]);
         } catch (\Exception $e) {
-            DB::rollBack();
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to update school',
@@ -299,29 +174,13 @@ class SchoolController extends Controller
     public function destroy(School $school): JsonResponse
     {
         try {
-            DB::beginTransaction();
-
-            // Check if school has active students
-            $activeStudents = $school->students()->where('status', 'active')->count();
-            if ($activeStudents > 0) {
-                return response()->json([
-                    'success' => false,
-                    'message' => "Cannot delete school with {$activeStudents} active students"
-                ], 422);
-            }
-
-            // Soft delete school
-            $school->update(['status' => 'archived']);
-            $school->delete();
-
-            DB::commit();
+            $this->schoolService->deleteSchool($school);
 
             return response()->json([
                 'success' => true,
                 'message' => 'School deleted successfully'
             ]);
         } catch (\Exception $e) {
-            DB::rollBack();
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to delete school',
@@ -340,12 +199,12 @@ class SchoolController extends Controller
                 'school_info' => $school->only(['id', 'official_name', 'school_code', 'school_type', 'status']),
                 'enrollment_summary' => [
                     'total_students' => $school->students()->count(),
-                    'active_students' => $school->students()->where('status', 'active')->count(),
+                    'active_students' => $school->students()->where('enrollment_status', 'enrolled')->count(),
                     'new_enrollments' => $school->students()
                         ->where('created_at', '>=', now()->subDays(30))
                         ->count(),
                     'transfers_in' => $school->students()
-                        ->where('status', 'transferred')
+                        ->where('enrollment_status', 'transferred')
                         ->where('created_at', '>=', now()->subDays(30))
                         ->count()
                 ],
@@ -381,12 +240,12 @@ class SchoolController extends Controller
                 'enrollment' => [
                     'total' => $school->students()->count(),
                     'by_status' => $school->students()
-                        ->selectRaw('status, COUNT(*) as count')
-                        ->groupBy('status')
+                        ->selectRaw('enrollment_status, COUNT(*) as count')
+                        ->groupBy('enrollment_status')
                         ->get(),
                     'by_grade' => $school->students()
-                        ->selectRaw('grade_level, COUNT(*) as count')
-                        ->groupBy('grade_level')
+                        ->selectRaw('current_grade_level, COUNT(*) as count')
+                        ->groupBy('current_grade_level')
                         ->get(),
                     'by_gender' => $school->students()
                         ->selectRaw('gender, COUNT(*) as count')
@@ -433,11 +292,11 @@ class SchoolController extends Controller
 
             // Apply filters
             if ($request->has('status')) {
-                $query->where('status', $request->status);
+                $query->where('enrollment_status', $request->status);
             }
 
             if ($request->has('grade_level')) {
-                $query->where('grade_level', $request->grade_level);
+                $query->where('current_grade_level', $request->grade_level);
             }
 
             if ($request->has('academic_year_id')) {
@@ -541,13 +400,7 @@ class SchoolController extends Controller
     {
         try {
             $year = $request->get('year', date('Y'));
-            $metrics = [
-                'enrollment_growth' => $this->getEnrollmentGrowth($school, $year),
-                'retention_rate' => $this->getRetentionRate($school, $year),
-                'graduation_rate' => $this->getGraduationRate($school, $year),
-                'attendance_rate' => $this->getAttendanceRate($school, $year),
-                'academic_progress' => $this->getAcademicProgress($school, $year)
-            ];
+            $metrics = $this->schoolService->getSchoolPerformanceMetrics($school, $year);
 
             return response()->json([
                 'success' => true,
@@ -800,66 +653,22 @@ class SchoolController extends Controller
     /**
      * Process form submission through Form Engine
      */
-    public function processFormSubmission(Request $request, School $school): JsonResponse
+    public function processFormSubmission(ProcessFormSubmissionRequest $request, School $school): JsonResponse
     {
-        $validator = Validator::make($request->all(), [
-            'form_template_id' => 'required|exists:form_templates,id',
-            'form_data' => 'required|array',
-            'submission_type' => 'nullable|string|max:100',
-            'metadata' => 'nullable|array'
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Validation failed',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
         try {
-            DB::beginTransaction();
-
-            // Get form template
-            $template = FormTemplate::findOrFail($request->form_template_id);
-
-            // Process form data through Form Engine
-            $processedData = $this->formEngineService->processFormData(
-                $template->category,
-                $request->form_data
-            );
-
-            // Create form instance
-            $formInstance = $this->formEngineService->createFormInstance(
-                $template->category,
-                $processedData,
-                'School',
-                $school->id
-            );
-
-            // Start workflow if configured
-            $workflow = null;
-            if ($template->workflow_enabled && $template->workflow_configuration) {
-                $workflow = $this->workflowService->startWorkflow($formInstance, 'form_approval', [
-                    'steps' => $template->workflow_configuration['steps'] ?? ['review', 'approval'],
-                    'form_instance_id' => $formInstance->id
-                ]);
-            }
-
-            DB::commit();
+            $result = $this->schoolService->processFormSubmission($school, $request->validated());
 
             return response()->json([
                 'success' => true,
                 'message' => 'Form submitted successfully',
                 'data' => [
-                    'form_instance' => $formInstance,
-                    'workflow_id' => $workflow?->id,
-                    'processed_data' => $processedData
+                    'form_instance' => $result['form_instance'],
+                    'workflow_id' => $result['workflow']?->id,
+                    'processed_data' => $result['processed_data']
                 ]
             ], 201);
 
         } catch (\Exception $e) {
-            DB::rollBack();
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to process form submission',

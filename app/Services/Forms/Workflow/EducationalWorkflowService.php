@@ -156,6 +156,380 @@ class EducationalWorkflowService
                 ],
                 'approvers' => ['teacher', 'principal', 'district_safety_officer'],
                 'sla_hours' => 120
+            ],
+
+            'school_registration' => [
+                'type' => 'approval',
+                'initial_step' => 'application',
+                'steps' => [
+                    'application' => ['name' => 'Application Submitted', 'can_edit' => true, 'next_steps' => ['review']],
+                    'review' => ['name' => 'Under Review', 'can_edit' => false, 'next_steps' => ['approved', 'rejected', 'needs_info']],
+                    'needs_info' => ['name' => 'Needs Information', 'can_edit' => true, 'next_steps' => ['review']],
+                    'approved' => ['name' => 'Approved', 'can_edit' => false, 'next_steps' => ['registration']],
+                    'rejected' => ['name' => 'Rejected', 'can_edit' => false, 'next_steps' => []],
+                    'registration' => ['name' => 'Registration Complete', 'can_edit' => false, 'next_steps' => []]
+                ],
+                'approvers' => ['district_officer', 'education_board', 'compliance_officer'],
+                'sla_hours' => 168
+            ],
+
+            'school_enrollment' => [
+                'type' => 'approval',
+                'initial_step' => 'planning',
+                'steps' => [
+                    'planning' => ['name' => 'Enrollment Planning', 'can_edit' => true, 'next_steps' => ['approval']],
+                    'approval' => ['name' => 'Administrative Approval', 'can_edit' => false, 'next_steps' => ['approved', 'rejected', 'needs_changes']],
+                    'needs_changes' => ['name' => 'Needs Changes', 'can_edit' => true, 'next_steps' => ['planning']],
+                    'approved' => ['name' => 'Approved', 'can_edit' => false, 'next_steps' => ['implementation']],
+                    'rejected' => ['name' => 'Rejected', 'can_edit' => false, 'next_steps' => []],
+                    'implementation' => ['name' => 'Implementation', 'can_edit' => false, 'next_steps' => ['monitoring']],
+                    'monitoring' => ['name' => 'Monitoring', 'can_edit' => false, 'next_steps' => ['completed']],
+                    'completed' => ['name' => 'Completed', 'can_edit' => false, 'next_steps' => []]
+                ],
+                'approvers' => ['principal', 'district_officer', 'enrollment_coordinator'],
+                'sla_hours' => 240
+            ],
+
+            'school_setup' => [
+                'type' => 'project',
+                'initial_step' => 'planning',
+                'steps' => [
+                    'planning' => ['name' => 'Planning Phase', 'can_edit' => true, 'next_steps' => ['approval']],
+                    'approval' => ['name' => 'Board Approval', 'can_edit' => false, 'next_steps' => ['approved', 'rejected', 'needs_revision']],
+                    'needs_revision' => ['name' => 'Needs Revision', 'can_edit' => true, 'next_steps' => ['planning']],
+                    'approved' => ['name' => 'Approved', 'can_edit' => false, 'next_steps' => ['construction']],
+                    'rejected' => ['name' => 'Rejected', 'can_edit' => false, 'next_steps' => []],
+                    'construction' => ['name' => 'Construction', 'can_edit' => false, 'next_steps' => ['inspection']],
+                    'inspection' => ['name' => 'Inspection', 'can_edit' => false, 'next_steps' => ['certification']],
+                    'certification' => ['name' => 'Certification', 'can_edit' => false, 'next_steps' => ['staffing']],
+                    'staffing' => ['name' => 'Staffing', 'can_edit' => false, 'next_steps' => ['testing']],
+                    'testing' => ['name' => 'Testing', 'can_edit' => false, 'next_steps' => ['operational']],
+                    'operational' => ['name' => 'Operational', 'can_edit' => false, 'next_steps' => []]
+                ],
+                'approvers' => ['school_board', 'district_superintendent', 'construction_manager', 'principal'],
+                'sla_hours' => 8760
+            ],
+
+            'staff_management' => [
+                'type' => 'approval',
+                'initial_step' => 'evaluation',
+                'steps' => [
+                    'evaluation' => ['name' => 'Performance Evaluation', 'can_edit' => true, 'next_steps' => ['review']],
+                    'review' => ['name' => 'Supervisor Review', 'can_edit' => false, 'next_steps' => ['approved', 'needs_improvement', 'disciplinary']],
+                    'needs_improvement' => ['name' => 'Needs Improvement', 'can_edit' => true, 'next_steps' => ['evaluation']],
+                    'disciplinary' => ['name' => 'Disciplinary Action', 'can_edit' => false, 'next_steps' => ['resolution']],
+                    'approved' => ['name' => 'Approved', 'can_edit' => false, 'next_steps' => ['implementation']],
+                    'resolution' => ['name' => 'Resolution', 'can_edit' => false, 'next_steps' => ['monitoring']],
+                    'implementation' => ['name' => 'Implementation', 'can_edit' => false, 'next_steps' => ['monitoring']],
+                    'monitoring' => ['name' => 'Monitoring', 'can_edit' => false, 'next_steps' => ['completed']],
+                    'completed' => ['name' => 'Completed', 'can_edit' => false, 'next_steps' => []]
+                ],
+                'approvers' => ['supervisor', 'hr_manager', 'principal'],
+                'sla_hours' => 168
+            ],
+
+            'faculty_recruitment' => [
+                'type' => 'approval',
+                'initial_step' => 'application',
+                'steps' => [
+                    'application' => ['name' => 'Application Received', 'can_edit' => false, 'next_steps' => ['screening']],
+                    'screening' => ['name' => 'Initial Screening', 'can_edit' => false, 'next_steps' => ['interview', 'rejected']],
+                    'interview' => ['name' => 'Interview', 'can_edit' => false, 'next_steps' => ['reference_check', 'rejected']],
+                    'reference_check' => ['name' => 'Reference Check', 'can_edit' => false, 'next_steps' => ['background_check', 'rejected']],
+                    'background_check' => ['name' => 'Background Check', 'can_edit' => false, 'next_steps' => ['final_approval', 'rejected']],
+                    'final_approval' => ['name' => 'Final Approval', 'can_edit' => false, 'next_steps' => ['offer', 'rejected']],
+                    'offer' => ['name' => 'Offer Extended', 'can_edit' => false, 'next_steps' => ['accepted', 'declined']],
+                    'accepted' => ['name' => 'Accepted', 'can_edit' => false, 'next_steps' => ['onboarding']],
+                    'declined' => ['name' => 'Declined', 'can_edit' => false, 'next_steps' => []],
+                    'onboarding' => ['name' => 'Onboarding', 'can_edit' => false, 'next_steps' => ['completed']],
+                    'completed' => ['name' => 'Completed', 'can_edit' => false, 'next_steps' => []],
+                    'rejected' => ['name' => 'Rejected', 'can_edit' => false, 'next_steps' => []]
+                ],
+                'approvers' => ['hr_manager', 'department_head', 'principal'],
+                'sla_hours' => 336
+            ],
+
+            'professional_development' => [
+                'type' => 'approval',
+                'initial_step' => 'request',
+                'steps' => [
+                    'request' => ['name' => 'Development Request', 'can_edit' => true, 'next_steps' => ['review']],
+                    'review' => ['name' => 'Supervisor Review', 'can_edit' => false, 'next_steps' => ['approved', 'rejected', 'needs_revision']],
+                    'needs_revision' => ['name' => 'Needs Revision', 'can_edit' => true, 'next_steps' => ['request']],
+                    'approved' => ['name' => 'Approved', 'can_edit' => false, 'next_steps' => ['enrollment']],
+                    'rejected' => ['name' => 'Rejected', 'can_edit' => false, 'next_steps' => []],
+                    'enrollment' => ['name' => 'Enrolled', 'can_edit' => false, 'next_steps' => ['participation']],
+                    'participation' => ['name' => 'Participation', 'can_edit' => false, 'next_steps' => ['completion']],
+                    'completion' => ['name' => 'Completed', 'can_edit' => false, 'next_steps' => ['evaluation']],
+                    'evaluation' => ['name' => 'Evaluation', 'can_edit' => false, 'next_steps' => ['certification']],
+                    'certification' => ['name' => 'Certified', 'can_edit' => false, 'next_steps' => []]
+                ],
+                'approvers' => ['supervisor', 'hr_manager', 'principal'],
+                'sla_hours' => 720
+            ],
+
+            'school_calendar' => [
+                'type' => 'approval',
+                'initial_step' => 'draft',
+                'steps' => [
+                    'draft' => ['name' => 'Calendar Draft', 'can_edit' => true, 'next_steps' => ['review']],
+                    'review' => ['name' => 'Administrative Review', 'can_edit' => false, 'next_steps' => ['approved', 'rejected', 'needs_changes']],
+                    'needs_changes' => ['name' => 'Needs Changes', 'can_edit' => true, 'next_steps' => ['draft']],
+                    'approved' => ['name' => 'Approved', 'can_edit' => false, 'next_steps' => ['published']],
+                    'rejected' => ['name' => 'Rejected', 'can_edit' => false, 'next_steps' => []],
+                    'published' => ['name' => 'Published', 'can_edit' => false, 'next_steps' => []]
+                ],
+                'approvers' => ['principal', 'district_officer', 'calendar_coordinator'],
+                'sla_hours' => 168
+            ],
+
+            'events_management' => [
+                'type' => 'approval',
+                'initial_step' => 'proposal',
+                'steps' => [
+                    'proposal' => ['name' => 'Event Proposal', 'can_edit' => true, 'next_steps' => ['review']],
+                    'review' => ['name' => 'Event Review', 'can_edit' => false, 'next_steps' => ['approved', 'rejected', 'needs_changes']],
+                    'needs_changes' => ['name' => 'Needs Changes', 'can_edit' => true, 'next_steps' => ['proposal']],
+                    'approved' => ['name' => 'Approved', 'can_edit' => false, 'next_steps' => ['planning']],
+                    'rejected' => ['name' => 'Rejected', 'can_edit' => false, 'next_steps' => []],
+                    'planning' => ['name' => 'Event Planning', 'can_edit' => true, 'next_steps' => ['execution']],
+                    'execution' => ['name' => 'Event Execution', 'can_edit' => false, 'next_steps' => ['evaluation']],
+                    'evaluation' => ['name' => 'Post-Event Evaluation', 'can_edit' => true, 'next_steps' => ['completed']],
+                    'completed' => ['name' => 'Completed', 'can_edit' => false, 'next_steps' => []]
+                ],
+                'approvers' => ['event_coordinator', 'principal', 'facilities_manager'],
+                'sla_hours' => 168
+            ],
+
+            'facilities_management' => [
+                'type' => 'maintenance',
+                'initial_step' => 'inspection',
+                'steps' => [
+                    'inspection' => ['name' => 'Facility Inspection', 'can_edit' => true, 'next_steps' => ['assessment']],
+                    'assessment' => ['name' => 'Needs Assessment', 'can_edit' => false, 'next_steps' => ['maintenance', 'no_action']],
+                    'maintenance' => ['name' => 'Maintenance Required', 'can_edit' => false, 'next_steps' => ['scheduling']],
+                    'no_action' => ['name' => 'No Action Required', 'can_edit' => false, 'next_steps' => ['completed']],
+                    'scheduling' => ['name' => 'Maintenance Scheduled', 'can_edit' => false, 'next_steps' => ['execution']],
+                    'execution' => ['name' => 'Maintenance Execution', 'can_edit' => false, 'next_steps' => ['verification']],
+                    'verification' => ['name' => 'Quality Verification', 'can_edit' => false, 'next_steps' => ['completed']],
+                    'completed' => ['name' => 'Completed', 'can_edit' => false, 'next_steps' => []]
+                ],
+                'approvers' => ['facilities_manager', 'maintenance_supervisor', 'principal'],
+                'sla_hours' => 72
+            ],
+
+            'transportation' => [
+                'type' => 'approval',
+                'initial_step' => 'route_planning',
+                'steps' => [
+                    'route_planning' => ['name' => 'Route Planning', 'can_edit' => true, 'next_steps' => ['safety_review']],
+                    'safety_review' => ['name' => 'Safety Review', 'can_edit' => false, 'next_steps' => ['approved', 'rejected', 'needs_changes']],
+                    'needs_changes' => ['name' => 'Needs Changes', 'can_edit' => true, 'next_steps' => ['route_planning']],
+                    'approved' => ['name' => 'Approved', 'can_edit' => false, 'next_steps' => ['implementation']],
+                    'rejected' => ['name' => 'Rejected', 'can_edit' => false, 'next_steps' => []],
+                    'implementation' => ['name' => 'Implementation', 'can_edit' => false, 'next_steps' => ['monitoring']],
+                    'monitoring' => ['name' => 'Monitoring', 'can_edit' => false, 'next_steps' => ['evaluation']],
+                    'evaluation' => ['name' => 'Performance Evaluation', 'can_edit' => false, 'next_steps' => ['completed']],
+                    'completed' => ['name' => 'Completed', 'can_edit' => false, 'next_steps' => []]
+                ],
+                'approvers' => ['transportation_manager', 'safety_officer', 'principal'],
+                'sla_hours' => 168
+            ],
+
+            'cafeteria_management' => [
+                'type' => 'operational',
+                'initial_step' => 'menu_planning',
+                'steps' => [
+                    'menu_planning' => ['name' => 'Menu Planning', 'can_edit' => true, 'next_steps' => ['nutrition_review']],
+                    'nutrition_review' => ['name' => 'Nutrition Review', 'can_edit' => false, 'next_steps' => ['approved', 'rejected', 'needs_changes']],
+                    'needs_changes' => ['name' => 'Needs Changes', 'can_edit' => true, 'next_steps' => ['menu_planning']],
+                    'approved' => ['name' => 'Approved', 'can_edit' => false, 'next_steps' => ['procurement']],
+                    'rejected' => ['name' => 'Rejected', 'can_edit' => false, 'next_steps' => []],
+                    'procurement' => ['name' => 'Procurement', 'can_edit' => false, 'next_steps' => ['preparation']],
+                    'preparation' => ['name' => 'Food Preparation', 'can_edit' => false, 'next_steps' => ['service']],
+                    'service' => ['name' => 'Food Service', 'can_edit' => false, 'next_steps' => ['evaluation']],
+                    'evaluation' => ['name' => 'Service Evaluation', 'can_edit' => false, 'next_steps' => ['completed']],
+                    'completed' => ['name' => 'Completed', 'can_edit' => false, 'next_steps' => []]
+                ],
+                'approvers' => ['cafeteria_manager', 'nutritionist', 'principal'],
+                'sla_hours' => 48
+            ],
+
+            'library_management' => [
+                'type' => 'operational',
+                'initial_step' => 'acquisition',
+                'steps' => [
+                    'acquisition' => ['name' => 'Resource Acquisition', 'can_edit' => true, 'next_steps' => ['cataloging']],
+                    'cataloging' => ['name' => 'Cataloging', 'can_edit' => false, 'next_steps' => ['processing']],
+                    'processing' => ['name' => 'Processing', 'can_edit' => false, 'next_steps' => ['shelving']],
+                    'shelving' => ['name' => 'Shelving', 'can_edit' => false, 'next_steps' => ['circulation']],
+                    'circulation' => ['name' => 'Circulation', 'can_edit' => false, 'next_steps' => ['maintenance']],
+                    'maintenance' => ['name' => 'Maintenance', 'can_edit' => false, 'next_steps' => ['evaluation']],
+                    'evaluation' => ['name' => 'Collection Evaluation', 'can_edit' => false, 'next_steps' => ['completed']],
+                    'completed' => ['name' => 'Completed', 'can_edit' => false, 'next_steps' => []]
+                ],
+                'approvers' => ['librarian', 'library_assistant', 'principal'],
+                'sla_hours' => 72
+            ],
+
+            'technology_management' => [
+                'type' => 'technical',
+                'initial_step' => 'assessment',
+                'steps' => [
+                    'assessment' => ['name' => 'Technology Assessment', 'can_edit' => true, 'next_steps' => ['planning']],
+                    'planning' => ['name' => 'Implementation Planning', 'can_edit' => true, 'next_steps' => ['approval']],
+                    'approval' => ['name' => 'Technical Approval', 'can_edit' => false, 'next_steps' => ['approved', 'rejected', 'needs_revision']],
+                    'needs_revision' => ['name' => 'Needs Revision', 'can_edit' => true, 'next_steps' => ['planning']],
+                    'approved' => ['name' => 'Approved', 'can_edit' => false, 'next_steps' => ['implementation']],
+                    'rejected' => ['name' => 'Rejected', 'can_edit' => false, 'next_steps' => []],
+                    'implementation' => ['name' => 'Implementation', 'can_edit' => false, 'next_steps' => ['testing']],
+                    'testing' => ['name' => 'Testing', 'can_edit' => false, 'next_steps' => ['deployment']],
+                    'deployment' => ['name' => 'Deployment', 'can_edit' => false, 'next_steps' => ['monitoring']],
+                    'monitoring' => ['name' => 'Monitoring', 'can_edit' => false, 'next_steps' => ['completed']],
+                    'completed' => ['name' => 'Completed', 'can_edit' => false, 'next_steps' => []]
+                ],
+                'approvers' => ['it_manager', 'technology_coordinator', 'principal'],
+                'sla_hours' => 336
+            ],
+
+            'security_management' => [
+                'type' => 'security',
+                'initial_step' => 'incident_report',
+                'steps' => [
+                    'incident_report' => ['name' => 'Incident Report', 'can_edit' => true, 'next_steps' => ['investigation']],
+                    'investigation' => ['name' => 'Investigation', 'can_edit' => false, 'next_steps' => ['assessment']],
+                    'assessment' => ['name' => 'Risk Assessment', 'can_edit' => false, 'next_steps' => ['action_plan']],
+                    'action_plan' => ['name' => 'Action Plan', 'can_edit' => true, 'next_steps' => ['approval']],
+                    'approval' => ['name' => 'Security Approval', 'can_edit' => false, 'next_steps' => ['approved', 'rejected', 'needs_revision']],
+                    'needs_revision' => ['name' => 'Needs Revision', 'can_edit' => true, 'next_steps' => ['action_plan']],
+                    'approved' => ['name' => 'Approved', 'can_edit' => false, 'next_steps' => ['implementation']],
+                    'rejected' => ['name' => 'Rejected', 'can_edit' => false, 'next_steps' => []],
+                    'implementation' => ['name' => 'Implementation', 'can_edit' => false, 'next_steps' => ['verification']],
+                    'verification' => ['name' => 'Verification', 'can_edit' => false, 'next_steps' => ['completed']],
+                    'completed' => ['name' => 'Completed', 'can_edit' => false, 'next_steps' => []]
+                ],
+                'approvers' => ['security_officer', 'principal', 'district_security'],
+                'sla_hours' => 24
+            ],
+
+            'maintenance_requests' => [
+                'type' => 'maintenance',
+                'initial_step' => 'request',
+                'steps' => [
+                    'request' => ['name' => 'Maintenance Request', 'can_edit' => true, 'next_steps' => ['assessment']],
+                    'assessment' => ['name' => 'Assessment', 'can_edit' => false, 'next_steps' => ['scheduling']],
+                    'scheduling' => ['name' => 'Scheduling', 'can_edit' => false, 'next_steps' => ['execution']],
+                    'execution' => ['name' => 'Execution', 'can_edit' => false, 'next_steps' => ['verification']],
+                    'verification' => ['name' => 'Quality Verification', 'can_edit' => false, 'next_steps' => ['completed']],
+                    'completed' => ['name' => 'Completed', 'can_edit' => false, 'next_steps' => []]
+                ],
+                'approvers' => ['maintenance_supervisor', 'facilities_manager', 'principal'],
+                'sla_hours' => 72
+            ],
+
+            'financial_aid' => [
+                'type' => 'approval',
+                'initial_step' => 'application',
+                'steps' => [
+                    'application' => ['name' => 'Application Submitted', 'can_edit' => true, 'next_steps' => ['review']],
+                    'review' => ['name' => 'Financial Review', 'can_edit' => false, 'next_steps' => ['approved', 'rejected', 'needs_info']],
+                    'needs_info' => ['name' => 'Needs Information', 'can_edit' => true, 'next_steps' => ['review']],
+                    'approved' => ['name' => 'Approved', 'can_edit' => false, 'next_steps' => ['disbursement']],
+                    'rejected' => ['name' => 'Rejected', 'can_edit' => false, 'next_steps' => []],
+                    'disbursement' => ['name' => 'Disbursement', 'can_edit' => false, 'next_steps' => ['monitoring']],
+                    'monitoring' => ['name' => 'Monitoring', 'can_edit' => false, 'next_steps' => ['completed']],
+                    'completed' => ['name' => 'Completed', 'can_edit' => false, 'next_steps' => []]
+                ],
+                'approvers' => ['financial_aid_officer', 'principal', 'district_finance'],
+                'sla_hours' => 168
+            ],
+
+            'tuition_management' => [
+                'type' => 'financial',
+                'initial_step' => 'billing',
+                'steps' => [
+                    'billing' => ['name' => 'Billing Generated', 'can_edit' => true, 'next_steps' => ['payment']],
+                    'payment' => ['name' => 'Payment Processing', 'can_edit' => false, 'next_steps' => ['verification']],
+                    'verification' => ['name' => 'Payment Verification', 'can_edit' => false, 'next_steps' => ['reconciliation']],
+                    'reconciliation' => ['name' => 'Account Reconciliation', 'can_edit' => false, 'next_steps' => ['completed']],
+                    'completed' => ['name' => 'Completed', 'can_edit' => false, 'next_steps' => []]
+                ],
+                'approvers' => ['finance_officer', 'accountant', 'principal'],
+                'sla_hours' => 48
+            ],
+
+            'donation_management' => [
+                'type' => 'approval',
+                'initial_step' => 'donation',
+                'steps' => [
+                    'donation' => ['name' => 'Donation Received', 'can_edit' => false, 'next_steps' => ['acknowledgment']],
+                    'acknowledgment' => ['name' => 'Acknowledgment', 'can_edit' => true, 'next_steps' => ['processing']],
+                    'processing' => ['name' => 'Processing', 'can_edit' => false, 'next_steps' => ['approval']],
+                    'approval' => ['name' => 'Administrative Approval', 'can_edit' => false, 'next_steps' => ['approved', 'rejected']],
+                    'approved' => ['name' => 'Approved', 'can_edit' => false, 'next_steps' => ['utilization']],
+                    'rejected' => ['name' => 'Rejected', 'can_edit' => false, 'next_steps' => ['return']],
+                    'utilization' => ['name' => 'Utilization', 'can_edit' => false, 'next_steps' => ['reporting']],
+                    'return' => ['name' => 'Return Process', 'can_edit' => false, 'next_steps' => ['completed']],
+                    'reporting' => ['name' => 'Reporting', 'can_edit' => false, 'next_steps' => ['completed']],
+                    'completed' => ['name' => 'Completed', 'can_edit' => false, 'next_steps' => []]
+                ],
+                'approvers' => ['development_officer', 'principal', 'board_member'],
+                'sla_hours' => 168
+            ],
+
+            'alumni_relations' => [
+                'type' => 'engagement',
+                'initial_step' => 'outreach',
+                'steps' => [
+                    'outreach' => ['name' => 'Alumni Outreach', 'can_edit' => true, 'next_steps' => ['engagement']],
+                    'engagement' => ['name' => 'Engagement Activities', 'can_edit' => false, 'next_steps' => ['evaluation']],
+                    'evaluation' => ['name' => 'Program Evaluation', 'can_edit' => false, 'next_steps' => ['improvement']],
+                    'improvement' => ['name' => 'Program Improvement', 'can_edit' => true, 'next_steps' => ['outreach']],
+                    'completed' => ['name' => 'Completed', 'can_edit' => false, 'next_steps' => []]
+                ],
+                'approvers' => ['alumni_coordinator', 'principal', 'development_officer'],
+                'sla_hours' => 720
+            ],
+
+            'community_outreach' => [
+                'type' => 'engagement',
+                'initial_step' => 'planning',
+                'steps' => [
+                    'planning' => ['name' => 'Program Planning', 'can_edit' => true, 'next_steps' => ['approval']],
+                    'approval' => ['name' => 'Administrative Approval', 'can_edit' => false, 'next_steps' => ['approved', 'rejected', 'needs_revision']],
+                    'needs_revision' => ['name' => 'Needs Revision', 'can_edit' => true, 'next_steps' => ['planning']],
+                    'approved' => ['name' => 'Approved', 'can_edit' => false, 'next_steps' => ['implementation']],
+                    'rejected' => ['name' => 'Rejected', 'can_edit' => false, 'next_steps' => []],
+                    'implementation' => ['name' => 'Implementation', 'can_edit' => false, 'next_steps' => ['monitoring']],
+                    'monitoring' => ['name' => 'Monitoring', 'can_edit' => false, 'next_steps' => ['evaluation']],
+                    'evaluation' => ['name' => 'Program Evaluation', 'can_edit' => false, 'next_steps' => ['completed']],
+                    'completed' => ['name' => 'Completed', 'can_edit' => false, 'next_steps' => []]
+                ],
+                'approvers' => ['community_coordinator', 'principal', 'district_officer'],
+                'sla_hours' => 720
+            ],
+
+            'partnership_management' => [
+                'type' => 'partnership',
+                'initial_step' => 'exploration',
+                'steps' => [
+                    'exploration' => ['name' => 'Partnership Exploration', 'can_edit' => true, 'next_steps' => ['negotiation']],
+                    'negotiation' => ['name' => 'Negotiation', 'can_edit' => true, 'next_steps' => ['agreement']],
+                    'agreement' => ['name' => 'Agreement Drafting', 'can_edit' => true, 'next_steps' => ['approval']],
+                    'approval' => ['name' => 'Legal Approval', 'can_edit' => false, 'next_steps' => ['approved', 'rejected', 'needs_revision']],
+                    'needs_revision' => ['name' => 'Needs Revision', 'can_edit' => true, 'next_steps' => ['agreement']],
+                    'approved' => ['name' => 'Approved', 'can_edit' => false, 'next_steps' => ['implementation']],
+                    'rejected' => ['name' => 'Rejected', 'can_edit' => false, 'next_steps' => []],
+                    'implementation' => ['name' => 'Implementation', 'can_edit' => false, 'next_steps' => ['monitoring']],
+                    'monitoring' => ['name' => 'Monitoring', 'can_edit' => false, 'next_steps' => ['evaluation']],
+                    'evaluation' => ['name' => 'Partnership Evaluation', 'can_edit' => false, 'next_steps' => ['renewal']],
+                    'renewal' => ['name' => 'Renewal Decision', 'can_edit' => false, 'next_steps' => ['renewed', 'terminated', 'completed']],
+                    'renewed' => ['name' => 'Renewed', 'can_edit' => false, 'next_steps' => ['implementation']],
+                    'terminated' => ['name' => 'Terminated', 'can_edit' => false, 'next_steps' => ['completed']],
+                    'completed' => ['name' => 'Completed', 'can_edit' => false, 'next_steps' => []]
+                ],
+                'approvers' => ['partnership_coordinator', 'principal', 'legal_counsel', 'board_member'],
+                'sla_hours' => 1680
             ]
         ];
 

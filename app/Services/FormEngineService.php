@@ -141,20 +141,65 @@ class FormEngineService
     private function generateReferenceNumber(string $formType): string
     {
         $prefix = match($formType) {
-            'project_creation' => 'PRJ',
-            'budget_planning' => 'BUD',
-            'procurement_request' => 'PRO',
-            'contract_management' => 'CON',
-            'risk_assessment' => 'RSK',
-            'me_data_collection' => 'MEV',
-            'compliance_check' => 'CMP',
+            // School Management Categories
+            'school_registration' => 'SCH',
+            'school_enrollment' => 'SEN',
+            'school_setup' => 'SSU',
+
+            // Student Management Categories
+            'student_enrollment' => 'ENR',
+            'student_registration' => 'REG',
+            'student_transfer' => 'TRF',
+            'attendance' => 'ATT',
+            'grades' => 'GRD',
+            'academic_records' => 'ACR',
+            'behavior_incident' => 'BHV',
+            'parent_communication' => 'PCM',
+            'teacher_evaluation' => 'TEV',
+            'curriculum_planning' => 'CRP',
+            'extracurricular' => 'EXT',
+            'field_trip' => 'FDT',
+            'parent_meeting' => 'PMT',
+            'student_health' => 'HLT',
+            'special_education' => 'SPE',
+            'discipline' => 'DSC',
+            'graduation' => 'GRD',
+            'scholarship' => 'SLR',
+
+            // Staff Management Categories
+            'staff_management' => 'STM',
+            'faculty_recruitment' => 'FCR',
+            'professional_development' => 'PFD',
+
+            // Administrative Categories
+            'school_calendar' => 'SCL',
+            'events_management' => 'EVM',
+            'facilities_management' => 'FCM',
+            'transportation' => 'TRN',
+            'cafeteria_management' => 'CFM',
+            'library_management' => 'LBM',
+            'technology_management' => 'TCM',
+            'security_management' => 'SCM',
+            'maintenance_requests' => 'MNR',
+
+            // Financial Categories
+            'financial_aid' => 'FNA',
+            'tuition_management' => 'TUM',
+            'donation_management' => 'DNM',
+
+            // Community Categories
+            'alumni_relations' => 'ALR',
+            'community_outreach' => 'CMO',
+            'partnership_management' => 'PTM',
+
             default => 'FRM'
         };
 
         $year = now()->year;
-                    $sequence = \App\Models\Forms\FormInstance::where('reference_number', 'like', "{$prefix}-{$year}-%")
-            ->count() + 1;
+        $timestamp = now()->timestamp;
+        $random = mt_rand(1000, 9999);
 
-        return $prefix . '-' . $year . '-' . str_pad($sequence, 6, '0', STR_PAD_LEFT);
+        // Use timestamp and random number instead of counting database records
+        return $prefix . '-' . $year . '-' . $timestamp . '-' . $random;
     }
 }

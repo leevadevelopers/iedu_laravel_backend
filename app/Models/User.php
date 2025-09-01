@@ -10,6 +10,7 @@ use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Spatie\Permission\Traits\HasRoles;
 use Tymon\JWTAuth\Contracts\JWTSubject;
+use Illuminate\Support\Facades\Cache;
 
 class User extends Authenticatable implements JWTSubject
 {
@@ -78,25 +79,53 @@ class User extends Authenticatable implements JWTSubject
 
     public function getCurrentTenant(): ?Tenant
     {
-        // logger()->debug('User::getCurrentTenant called');
+        // Check session first
         $tenantId = session('tenant_id');
 
-        if (!$tenantId) {
-            $tenant = $this->tenants()->wherePivot('current_tenant', true)->first();
+        if ($tenantId) {
+            // Use cache to avoid repeated database queries
+            $cacheKey = "tenant_{$tenantId}";
+            $cachedTenant = Cache::get($cacheKey);
 
-            if ($tenant) {
-                session(['tenant_id' => $tenant->id]);
-                return $tenant;
+            if ($cachedTenant !== null) {
+                return $cachedTenant;
             }
 
-            $tenant = $this->tenants()->first();
+            // Query database and cache result
+            $tenant = $this->tenants()->find($tenantId);
             if ($tenant) {
-                session(['tenant_id' => $tenant->id]);
+                Cache::put($cacheKey, $tenant, 300); // Cache for 5 minutes
                 return $tenant;
             }
         }
 
-        return $this->tenants()->find($tenantId);
+        // If no session or cached tenant, query database
+        $cacheKey = "user_current_tenant_{$this->id}";
+        $cachedTenant = Cache::get($cacheKey);
+
+        if ($cachedTenant !== null) {
+            session(['tenant_id' => $cachedTenant->id]);
+            return $cachedTenant;
+        }
+
+        // Query for current tenant
+        $tenant = $this->tenants()->wherePivot('current_tenant', true)->first();
+
+        if ($tenant) {
+            session(['tenant_id' => $tenant->id]);
+            Cache::put($cacheKey, $tenant, 300); // Cache for 5 minutes
+            return $tenant;
+        }
+
+        // Fallback to first tenant
+        $tenant = $this->tenants()->first();
+        if ($tenant) {
+            session(['tenant_id' => $tenant->id]);
+            Cache::put($cacheKey, $tenant, 300); // Cache for 5 minutes
+            return $tenant;
+        }
+
+        return null;
     }
 
     public function switchTenant(int $tenantId): bool
@@ -112,7 +141,23 @@ class User extends Authenticatable implements JWTSubject
         $this->tenants()->updateExistingPivot($tenantId, ['current_tenant' => true]);
         session(['tenant_id' => $tenantId]);
 
+        // Clear tenant cache
+        $this->clearTenantCache();
+
         return true;
+    }
+
+    /**
+     * Clear tenant-related cache
+     */
+    public function clearTenantCache(): void
+    {
+        $oldTenantId = session('tenant_id');
+        if ($oldTenantId) {
+            Cache::forget("tenant_{$oldTenantId}");
+        }
+        Cache::forget("user_current_tenant_{$this->id}");
+        Cache::forget("user_tenant_{$this->id}");
     }
 
     public function belongsToTenant(int $tenantId): bool
