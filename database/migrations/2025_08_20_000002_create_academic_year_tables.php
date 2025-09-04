@@ -67,27 +67,45 @@ class CreateAcademicYearTables extends Migration
             $table->id();
             $table->foreignId('academic_year_id')->constrained()->onDelete('cascade');
             $table->foreignId('school_id')->constrained()->onDelete('cascade');
+            $table->foreignId('tenant_id')->constrained()->onDelete('cascade');
 
             // Term Identity
             $table->string('name', 100); // "Fall Semester", "First Quarter"
-            $table->integer('term_number');
+            $table->string('type', 50)->default('semester'); // semester, quarter, trimester, other
+            $table->integer('term_number')->nullable();
+            $table->text('description')->nullable();
 
             // Date Boundaries
             $table->date('start_date');
             $table->date('end_date');
-            $table->integer('instructional_days');
+            $table->integer('instructional_days')->nullable();
+            $table->date('enrollment_start_date')->nullable();
+            $table->date('enrollment_end_date')->nullable();
+            $table->date('registration_deadline')->nullable();
+            $table->date('grades_due_date')->nullable();
 
-            // Status
+            // Holidays and Events
+            $table->json('holidays_json')->nullable();
+
+            // Status & Current
             $table->enum('status', [
-                'planned', 'active', 'completed'
-            ])->default('planned');
+                'planning', 'active', 'completed', 'archived'
+            ])->default('planning');
+            $table->boolean('is_current')->default(false);
 
+            // Audit fields
+            $table->foreignId('created_by')->nullable()->constrained('users')->onDelete('set null');
             $table->timestamps();
+            $table->softDeletes();
 
             // Indexes
             $table->index('academic_year_id');
             $table->index('school_id');
+            $table->index('tenant_id');
+            $table->index('is_current');
+            $table->index('status');
             $table->index(['start_date', 'end_date']);
+            $table->index('created_by');
         });
     }
 

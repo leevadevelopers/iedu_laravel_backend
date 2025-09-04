@@ -5,7 +5,11 @@ namespace App\Models\V1\SIS\School;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
+use App\Models\User;
+use App\Models\V1\SIS\Student\Student;
 
 /**
  * Academic Term Model
@@ -15,18 +19,29 @@ use Illuminate\Support\Carbon;
  * @property int $id
  * @property int $academic_year_id
  * @property int $school_id
+ * @property int $tenant_id
  * @property string $name
- * @property int $term_number
+ * @property string $type
+ * @property int|null $term_number
+ * @property string|null $description
  * @property string $start_date
  * @property string $end_date
- * @property int $instructional_days
+ * @property int|null $instructional_days
+ * @property string|null $enrollment_start_date
+ * @property string|null $enrollment_end_date
+ * @property string|null $registration_deadline
+ * @property string|null $grades_due_date
+ * @property array|null $holidays_json
  * @property string $status
+ * @property bool $is_current
+ * @property int|null $created_by
  * @property \Carbon\Carbon|null $created_at
  * @property \Carbon\Carbon|null $updated_at
+ * @property \Carbon\Carbon|null $deleted_at
  */
 class AcademicTerm extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes;
 
     /**
      * The table associated with the model.
@@ -39,12 +54,22 @@ class AcademicTerm extends Model
     protected $fillable = [
         'academic_year_id',
         'school_id',
+        'tenant_id',
         'name',
+        'type',
         'term_number',
+        'description',
         'start_date',
         'end_date',
         'instructional_days',
+        'enrollment_start_date',
+        'enrollment_end_date',
+        'registration_deadline',
+        'grades_due_date',
+        'holidays_json',
         'status',
+        'is_current',
+        'created_by',
     ];
 
     /**
@@ -53,8 +78,14 @@ class AcademicTerm extends Model
     protected $casts = [
         'start_date' => 'date',
         'end_date' => 'date',
+        'enrollment_start_date' => 'date',
+        'enrollment_end_date' => 'date',
+        'registration_deadline' => 'date',
+        'grades_due_date' => 'date',
         'term_number' => 'integer',
         'instructional_days' => 'integer',
+        'is_current' => 'boolean',
+        'holidays_json' => 'array',
     ];
 
     /**
@@ -71,6 +102,22 @@ class AcademicTerm extends Model
     public function school(): BelongsTo
     {
         return $this->belongsTo(School::class);
+    }
+
+    /**
+     * Get the user who created the term.
+     */
+    public function createdBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
+
+    /**
+     * Get the students enrolled in this term.
+     */
+    public function students()
+    {
+        return $this->hasMany(Student::class, 'current_term_id');
     }
 
     /**

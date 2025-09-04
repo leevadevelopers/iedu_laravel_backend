@@ -102,6 +102,7 @@ use Illuminate\Support\Facades\Route;
     | Academic Term Management Routes
     |--------------------------------------------------------------------------
     */
+    Route::middleware(['auth:api'])->group(function () {
 
     Route::apiResource('academic-terms', \App\Http\Controllers\API\V1\School\AcademicTermController::class);
 
@@ -128,4 +129,4 @@ use Illuminate\Support\Facades\Route;
         Route::get('trends', [\App\Http\Controllers\API\V1\School\AcademicTermController::class, 'getTrends'])
             ->name('academic-terms.trends');
     });
-
+});

@@ -97,9 +97,11 @@ class AcademicTermController extends Controller
     public function store(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
+            'tenant_id' => 'required|exists:tenants,id',
             'academic_year_id' => 'required|exists:academic_years,id',
             'name' => 'required|string|max:255',
             'type' => 'required|in:semester,quarter,trimester,other',
+            'term_number' => 'nullable|integer|min:1',
             'start_date' => 'required|date',
             'end_date' => 'required|date|after:start_date',
             'description' => 'nullable|string|max:1000',
@@ -146,10 +148,21 @@ class AcademicTermController extends Controller
                 ], 422);
             }
 
+            // Get school_id from academic year
+            $academicYear = AcademicYear::findOrFail($request->academic_year_id);
+
+            // Auto-generate term_number if not provided
+            if (!$request->has('term_number') || is_null($request->term_number)) {
+                $maxTermNumber = AcademicTerm::where('academic_year_id', $request->academic_year_id)
+                    ->max('term_number') ?? 0;
+                $request->merge(['term_number' => $maxTermNumber + 1]);
+            }
+
             // Create academic term
             $termData = $request->except(['form_data', 'holidays']);
             $termData['created_by'] = Auth::id();
-            $termData['tenant_id'] = Auth::user()->current_tenant_id;
+            $termData['tenant_id'] = $request->tenant_id;
+            $termData['school_id'] = $academicYear->school_id;
             $termData['holidays_json'] = $request->holidays ? json_encode($request->holidays) : null;
 
             $academicTerm = AcademicTerm::create($termData);
@@ -163,18 +176,48 @@ class AcademicTermController extends Controller
 
             // Process form data through Form Engine if provided
             if ($request->has('form_data')) {
-                $processedData = $this->formEngineService->processFormData('academic_term_setup', $request->form_data);
-                $this->formEngineService->createFormInstance('academic_term_setup', $processedData, 'AcademicTerm', $academicTerm->id);
+                $processedData = $this->formEngineService->processFormData('academic_year_setup', $request->form_data);
+                $this->formEngineService->createFormInstance('academic_year_setup', $processedData, 'AcademicTerm', $academicTerm->id, $academicTerm->tenant_id);
             }
 
             // Start term setup workflow
             $workflow = $this->workflowService->startWorkflow($academicTerm, 'term_setup', [
                 'steps' => [
-                    'initial_setup',
-                    'curriculum_planning',
-                    'staff_assignment',
-                    'schedule_setup',
-                    'final_approval'
+                    [
+                        'step_number' => 1,
+                        'step_name' => 'Initial Setup',
+                        'step_type' => 'review',
+                        'required_role' => 'administrator',
+                        'instructions' => 'Complete initial term setup and configuration'
+                    ],
+                    [
+                        'step_number' => 2,
+                        'step_name' => 'Curriculum Planning',
+                        'step_type' => 'review',
+                        'required_role' => 'curriculum_coordinator',
+                        'instructions' => 'Review and approve curriculum for the term'
+                    ],
+                    [
+                        'step_number' => 3,
+                        'step_name' => 'Staff Assignment',
+                        'step_type' => 'review',
+                        'required_role' => 'principal',
+                        'instructions' => 'Assign staff and teachers to classes'
+                    ],
+                    [
+                        'step_number' => 4,
+                        'step_name' => 'Schedule Setup',
+                        'step_type' => 'review',
+                        'required_role' => 'scheduler',
+                        'instructions' => 'Create and finalize class schedules'
+                    ],
+                    [
+                        'step_number' => 5,
+                        'step_name' => 'Final Approval',
+                        'step_type' => 'approval',
+                        'required_role' => 'superintendent',
+                        'instructions' => 'Final approval to activate the academic term'
+                    ]
                 ]
             ]);
 
@@ -247,6 +290,7 @@ class AcademicTermController extends Controller
         $validator = Validator::make($request->all(), [
             'name' => 'sometimes|required|string|max:255',
             'type' => 'sometimes|required|in:semester,quarter,trimester,other',
+            'term_number' => 'nullable|integer|min:1',
             'start_date' => 'sometimes|required|date',
             'end_date' => 'sometimes|required|date|after:start_date',
             'description' => 'nullable|string|max:1000',
@@ -458,7 +502,7 @@ class AcademicTermController extends Controller
                     'registration_deadline' => $academicTerm->registration_deadline,
                     'grades_due_date' => $academicTerm->grades_due_date
                 ],
-                'holidays' => $academicTerm->holidays_json ? json_decode($academicTerm->holidays_json, true) : []
+                'holidays' => $academicTerm->holidays_json ?? []
             ];
 
             return response()->json([
@@ -485,6 +529,7 @@ class AcademicTermController extends Controller
             'academic_terms' => 'required|array|min:1',
             'academic_terms.*.name' => 'required|string|max:255',
             'academic_terms.*.type' => 'required|in:semester,quarter,trimester,other',
+            'academic_terms.*.term_number' => 'nullable|integer|min:1',
             'academic_terms.*.start_date' => 'required|date',
             'academic_terms.*.end_date' => 'required|date|after:academic_terms.*.start_date',
             'academic_terms.*.description' => 'nullable|string|max:1000',
@@ -501,10 +546,20 @@ class AcademicTermController extends Controller
         try {
             DB::beginTransaction();
 
+            // Get school_id from academic year
+            $academicYear = AcademicYear::findOrFail($request->academic_year_id);
+
             $createdCount = 0;
             $academicTerms = [];
+            $currentTermNumber = AcademicTerm::where('academic_year_id', $request->academic_year_id)
+                ->max('term_number') ?? 0;
 
             foreach ($request->academic_terms as $termData) {
+                // Auto-generate term_number if not provided
+                if (!isset($termData['term_number']) || is_null($termData['term_number'])) {
+                    $currentTermNumber++;
+                    $termData['term_number'] = $currentTermNumber;
+                }
                 // Check for overlapping dates within the same academic year
                 $overlapping = AcademicTerm::where('academic_year_id', $request->academic_year_id)
                     ->where(function($query) use ($termData) {
@@ -520,8 +575,10 @@ class AcademicTermController extends Controller
                 if (!$overlapping) {
                     $academicTerm = AcademicTerm::create([
                         'academic_year_id' => $request->academic_year_id,
+                        'school_id' => $academicYear->school_id,
                         'name' => $termData['name'],
                         'type' => $termData['type'],
+                        'term_number' => $termData['term_number'] ?? null,
                         'start_date' => $termData['start_date'],
                         'end_date' => $termData['end_date'],
                         'description' => $termData['description'] ?? null,

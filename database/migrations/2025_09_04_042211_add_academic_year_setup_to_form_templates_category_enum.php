@@ -26,7 +26,7 @@ return new class extends Migration
             'technology_management', 'security_management', 'maintenance_requests',
             'financial_aid', 'tuition_management', 'donation_management',
             'alumni_relations', 'community_outreach', 'partnership_management',
-            'academic_year_setup'
+            'academic_year_setup', 'academic_term_setup'
         )");
     }
 
@@ -48,7 +48,8 @@ return new class extends Migration
             'transportation', 'cafeteria_management', 'library_management',
             'technology_management', 'security_management', 'maintenance_requests',
             'financial_aid', 'tuition_management', 'donation_management',
-            'alumni_relations', 'community_outreach', 'partnership_management'
+            'alumni_relations', 'community_outreach', 'partnership_management',
+            'academic_year_setup', 'academic_term_setup'
         )");
     }
 };
