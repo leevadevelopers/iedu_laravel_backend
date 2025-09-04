@@ -34,21 +34,28 @@ class FormEngineService
     /**
      * Create a form instance from processed data.
      */
-    public function createFormInstance(string $formType, array $data, ?string $relatedEntityType = null, ?int $relatedEntityId = null): FormInstance
+    public function createFormInstance(string $formType, array $data, ?string $relatedEntityType = null, ?int $relatedEntityId = null, ?int $tenantId = null): FormInstance
     {
         $template = $this->getFormTemplate($formType);
 
+        // Ensure we have a valid tenant_id
+        $finalTenantId = $tenantId ?? Auth::user()->current_tenant_id ?? null;
+
+        if (!$finalTenantId) {
+            throw new \Exception('Tenant ID is required to create form instance');
+        }
+
         $instance = \App\Models\Forms\FormInstance::create([
+            'tenant_id' => $finalTenantId,
             'form_template_id' => $template->id,
-            'instance_name' => $data['name'] ?? "Form Instance - {$formType}",
-            'reference_number' => $this->generateReferenceNumber($formType),
-            'data_json' => $data,
-            'submitted_by' => Auth::id(),
-            'submission_date' => now(),
+            'user_id' => Auth::id(),
+            'form_type' => $formType,
+            'reference_type' => $relatedEntityType,
+            'reference_id' => $relatedEntityId,
+            'form_data' => $data,
             'status' => 'submitted',
-            'validation_status' => 'valid',
-            'related_entity_type' => $relatedEntityType,
-            'related_entity_id' => $relatedEntityId
+            'created_by' => Auth::id(),
+            'submitted_at' => now()
         ]);
 
         return $instance;

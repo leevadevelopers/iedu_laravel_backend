@@ -69,16 +69,29 @@ class WorkflowService
         // Create new form instance
         $formData = $this->extractFormData($model, $workflowType);
 
+                $user = auth('api')->user();
+
+        if (!$user) {
+            throw new \Exception('User must be authenticated to create form instance');
+        }
+
+        // Ensure we have a valid tenant_id
+        $tenantId = $model->tenant_id ?? null;
+
+        if (!$tenantId) {
+            throw new \Exception('Model must have a valid tenant_id to create form instance');
+        }
+
         return FormInstance::create([
-            'tenant_id' => $model->tenant_id ?? null,
+            'tenant_id' => $tenantId,
             'form_template_id' => $formTemplate->id,
-            'user_id' => Auth::id(),
+            'user_id' => $user->id,
             'form_type' => $workflowType,
             'reference_type' => get_class($model),
             'reference_id' => $model->id,
             'form_data' => $formData,
             'status' => 'submitted',
-            'created_by' => Auth::id(),
+            'created_by' => $user->id,
             'submitted_at' => now()
         ]);
     }
@@ -101,6 +114,12 @@ class WorkflowService
      */
     public function advanceWorkflow(FormWorkflow $workflow, string $decision, array $data = []): bool
     {
+        $user = auth('api')->user();
+
+        if (!$user) {
+            throw new \Exception('User must be authenticated to advance workflow');
+        }
+
         $currentStep = $workflow->steps()
             ->where('step_number', $workflow->current_step)
             ->first();
@@ -115,7 +134,7 @@ class WorkflowService
             'completed_at' => now(),
             'decision' => $decision,
             'comments' => $data['comments'] ?? null,
-            'decision_by' => Auth::id(),
+            'decision_by' => $user->id,
             'decision_date' => now()
         ]);
 
@@ -146,6 +165,7 @@ class WorkflowService
     {
         return match($workflowType) {
             'school_setup' => $this->getSchoolSetupWorkflow($model),
+            'academic_year_setup' => $this->getAcademicYearSetupWorkflow($model),
             'grade_approval' => $this->getGradeApprovalWorkflow($model),
             'attendance_approval' => $this->getAttendanceApprovalWorkflow($model),
             'behavior_incident_approval' => $this->getBehaviorIncidentApprovalWorkflow($model),
@@ -317,6 +337,52 @@ class WorkflowService
     }
 
     /**
+     * Get academic year setup workflow configuration.
+     */
+    private function getAcademicYearSetupWorkflow(Model $academicYear): array
+    {
+        $steps = [
+            [
+                'step_number' => 1,
+                'step_name' => 'Initial Setup',
+                'step_type' => 'setup',
+                'required_role' => 'school_admin',
+                'instructions' => 'Complete initial academic year configuration'
+            ],
+            [
+                'step_number' => 2,
+                'step_name' => 'Term Planning',
+                'step_type' => 'planning',
+                'required_role' => 'academic_coordinator',
+                'instructions' => 'Plan and configure academic terms and periods'
+            ],
+            [
+                'step_number' => 3,
+                'step_name' => 'Curriculum Setup',
+                'step_type' => 'setup',
+                'required_role' => 'curriculum_coordinator',
+                'instructions' => 'Configure curriculum and course offerings for the academic year'
+            ],
+            [
+                'step_number' => 4,
+                'step_name' => 'Staff Assignment',
+                'step_type' => 'assignment',
+                'required_role' => 'school_admin',
+                'instructions' => 'Assign staff and teachers to academic year activities'
+            ],
+            [
+                'step_number' => 5,
+                'step_name' => 'Final Approval',
+                'step_type' => 'approval',
+                'required_role' => 'principal',
+                'instructions' => 'Final review and approval of academic year setup'
+            ]
+        ];
+
+        return ['steps' => $steps];
+    }
+
+    /**
      * Create workflow steps.
      */
     private function createWorkflowSteps(FormWorkflow $workflow, array $steps): void
@@ -336,6 +402,7 @@ class WorkflowService
             }
 
             FormWorkflowStep::create([
+                'tenant_id' => $workflow->tenant_id,
                 'workflow_id' => $workflow->id,
                 'step_number' => $stepConfig['step_number'],
                 'step_name' => $stepConfig['step_name'],
@@ -397,6 +464,7 @@ class WorkflowService
     private function createEscalationStep(FormWorkflow $workflow): void
     {
         $escalationStep = FormWorkflowStep::create([
+            'tenant_id' => $workflow->tenant_id,
             'workflow_id' => $workflow->id,
             'step_number' => $workflow->total_steps + 1,
             'step_name' => 'Escalation Review',
@@ -452,6 +520,12 @@ class WorkflowService
      */
     private function createDefaultTemplate(string $workflowType, Model $model): \App\Models\Forms\FormTemplate
     {
+        $user = auth('api')->user();
+
+        if (!$user) {
+            throw new \Exception('User must be authenticated to create form template');
+        }
+
         $templateName = $this->getTemplateNameForWorkflowType($workflowType);
         $workflowConfig = $this->getWorkflowConfiguration($workflowType, $model);
 
@@ -483,7 +557,7 @@ class WorkflowService
                     ]
                 ]
             ],
-            'created_by' => Auth::id()
+            'created_by' => $user->id
         ]);
     }
 }

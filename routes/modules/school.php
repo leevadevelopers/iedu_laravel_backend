@@ -69,9 +69,10 @@ use Illuminate\Support\Facades\Route;
     |--------------------------------------------------------------------------
     */
 
-    Route::apiResource('academic-years', \App\Http\Controllers\API\V1\School\AcademicYearController::class);
+    Route::middleware(['auth:api'])->group(function () {
+        Route::apiResource('academic-years', \App\Http\Controllers\API\V1\School\AcademicYearController::class);
 
-    Route::prefix('academic-years')->group(function () {
+        Route::prefix('academic-years')->group(function () {
         // Academic year queries
         Route::get('by-school/{schoolId}', [\App\Http\Controllers\API\V1\School\AcademicYearController::class, 'getBySchool'])
             ->name('academic-years.by-school');
@@ -93,6 +94,7 @@ use Illuminate\Support\Facades\Route;
             ->name('academic-years.statistics');
         Route::get('trends', [\App\Http\Controllers\API\V1\School\AcademicYearController::class, 'getTrends'])
             ->name('academic-years.trends');
+        });
     });
 
     /*

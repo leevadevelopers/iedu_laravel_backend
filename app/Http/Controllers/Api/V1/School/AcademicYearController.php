@@ -34,7 +34,7 @@ class AcademicYearController extends Controller
     {
         try {
             $query = AcademicYear::with([
-                'school:id,name,code',
+                'school:id,official_name,school_code',
                 'terms:id,academic_year_id,name,start_date,end_date',
                 'createdBy:id,name'
             ]);
@@ -96,8 +96,18 @@ class AcademicYearController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
+        $user = auth('api')->user();
+
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User not authenticated'
+            ], 401);
+        }
+
         $validator = Validator::make($request->all(), [
             'school_id' => 'required|exists:schools,id',
+            'tenant_id' => 'required|exists:tenants,id',
             'name' => 'required|string|max:255',
             'year' => 'required|string|max:10',
             'start_date' => 'required|date',
@@ -108,6 +118,9 @@ class AcademicYearController extends Controller
             'enrollment_start_date' => 'nullable|date|after_or_equal:start_date',
             'enrollment_end_date' => 'nullable|date|before:end_date',
             'registration_deadline' => 'nullable|date|before:start_date',
+            'term_structure' => 'nullable|in:semesters,trimesters,quarters,year_round',
+            'total_terms' => 'nullable|integer|min:1',
+            'total_instructional_days' => 'nullable|integer|min:1',
             'holidays' => 'nullable|array',
             'holidays.*.name' => 'string|max:255',
             'holidays.*.date' => 'date',
@@ -147,8 +160,8 @@ class AcademicYearController extends Controller
 
             // Create academic year
             $academicYearData = $request->except(['form_data', 'holidays']);
-            $academicYearData['created_by'] = Auth::id();
-            $academicYearData['tenant_id'] = Auth::user()->current_tenant_id;
+            $academicYearData['created_by'] = $user->id;
+            $academicYearData['tenant_id'] = $request->tenant_id;
             $academicYearData['holidays_json'] = $request->holidays ? json_encode($request->holidays) : null;
 
             $academicYear = AcademicYear::create($academicYearData);
@@ -163,19 +176,11 @@ class AcademicYearController extends Controller
             // Process form data through Form Engine if provided
             if ($request->has('form_data')) {
                 $processedData = $this->formEngineService->processFormData('academic_year_setup', $request->form_data);
-                $this->formEngineService->createFormInstance('academic_year_setup', $processedData, 'AcademicYear', $academicYear->id);
+                $this->formEngineService->createFormInstance('academic_year_setup', $processedData, 'AcademicYear', $academicYear->id, $request->tenant_id);
             }
 
             // Start academic year setup workflow
-            $workflow = $this->workflowService->startWorkflow($academicYear, 'academic_year_setup', [
-                'steps' => [
-                    'initial_setup',
-                    'term_planning',
-                    'curriculum_setup',
-                    'staff_assignment',
-                    'final_approval'
-                ]
-            ]);
+            $workflow = $this->workflowService->startWorkflow($academicYear, 'academic_year_setup');
 
             DB::commit();
 
@@ -183,7 +188,7 @@ class AcademicYearController extends Controller
                 'success' => true,
                 'message' => 'Academic year created successfully',
                 'data' => [
-                    'academic_year' => $academicYear->load(['school:id,name,code']),
+                    'academic_year' => $academicYear->load(['school:id,official_name,school_code']),
                     'workflow_id' => $workflow->id
                 ]
             ], 201);
@@ -205,7 +210,7 @@ class AcademicYearController extends Controller
     {
         try {
             $academicYear->load([
-                'school:id,name,code,type',
+                'school:id,official_name,school_code,type',
                 'terms:id,academic_year_id,name,start_date,end_date,status',
                 'createdBy:id,name',
                 'students:id,first_name,last_name,grade_level,status'
@@ -256,6 +261,9 @@ class AcademicYearController extends Controller
             'enrollment_start_date' => 'nullable|date|after_or_equal:start_date',
             'enrollment_end_date' => 'nullable|date|before:end_date',
             'registration_deadline' => 'nullable|date|before:start_date',
+            'term_structure' => 'nullable|in:semesters,trimesters,quarters,year_round',
+            'total_terms' => 'nullable|integer|min:1',
+            'total_instructional_days' => 'nullable|integer|min:1',
             'holidays' => 'nullable|array',
             'holidays.*.name' => 'string|max:255',
             'holidays.*.date' => 'date',
@@ -293,7 +301,7 @@ class AcademicYearController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Academic year updated successfully',
-                'data' => $academicYear->fresh()->load(['school:id,name,code'])
+                'data' => $academicYear->fresh()->load(['school:id,official_name,school_code'])
             ]);
 
         } catch (\Exception $e) {
@@ -430,7 +438,7 @@ class AcademicYearController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Academic year set as current successfully',
-                'data' => $academicYear->fresh()->load(['school:id,name,code'])
+                'data' => $academicYear->fresh()->load(['school:id,official_name,school_code'])
             ]);
 
         } catch (\Exception $e) {
@@ -482,8 +490,18 @@ class AcademicYearController extends Controller
      */
     public function bulkCreate(Request $request): JsonResponse
     {
+        $user = auth()->user();
+
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User not authenticated'
+            ], 401);
+        }
+
         $validator = Validator::make($request->all(), [
             'school_id' => 'required|exists:schools,id',
+            'tenant_id' => 'required|exists:tenants,id',
             'academic_years' => 'required|array|min:1',
             'academic_years.*.name' => 'required|string|max:255',
             'academic_years.*.year' => 'required|string|max:10',
@@ -529,8 +547,8 @@ class AcademicYearController extends Controller
                         'description' => $yearData['description'] ?? null,
                         'status' => 'planning',
                         'is_current' => false,
-                        'created_by' => Auth::id(),
-                        'tenant_id' => Auth::user()->current_tenant_id
+                        'created_by' => $user->id,
+                        'tenant_id' => $request->tenant_id
                     ]);
 
                     $academicYears[] = $academicYear;
@@ -571,7 +589,7 @@ class AcademicYearController extends Controller
                     ->groupBy('status')
                     ->get(),
                 'by_school' => AcademicYear::selectRaw('school_id, COUNT(*) as count')
-                    ->with('school:id,name')
+                    ->with('school:id,official_name')
                     ->groupBy('school_id')
                     ->get(),
                 'current_years' => AcademicYear::where('is_current', true)->count(),

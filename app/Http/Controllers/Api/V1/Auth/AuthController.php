@@ -21,10 +21,57 @@ class AuthController extends Controller
             'name' => 'required|string|max:255',
             'identifier' => 'required|string|max:255|unique:users',
             'type' => 'required|in:email,phone',
-            'role_id' => 'required|',
+            'role_id' => 'required|int|exists:roles,id',
             'password' => 'required|string|min:8|confirmed',
             'organization_name' => 'required|string|max:255',
         ]);
+
+        // Validação condicional baseada no tipo de identifier
+        $validator->after(function ($validator) use ($request) {
+            $type = $request->input('type');
+            $identifier = $request->input('identifier');
+
+            if ($type === 'email') {
+                if (!filter_var($identifier, FILTER_VALIDATE_EMAIL)) {
+                    $validator->errors()->add('identifier', 'O campo identifier deve ser um email válido quando o tipo for email.');
+                }
+
+                // Validação adicional para formato de email
+                if (!preg_match('/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/', $identifier)) {
+                    $validator->errors()->add('identifier', 'Formato de email inválido.');
+                }
+
+                // Verificar se não contém caracteres perigosos
+                if (preg_match('/[<>"\']/', $identifier)) {
+                    $validator->errors()->add('identifier', 'O email não pode conter caracteres especiais como < > " \'.');
+                }
+            } elseif ($type === 'phone') {
+                // Remover todos os caracteres não numéricos para validação
+                $cleanPhone = preg_replace('/[^0-9]/', '', $identifier);
+
+                // Validar se contém apenas números após limpeza
+                if (!preg_match('/^[0-9]+$/', $cleanPhone)) {
+                    $validator->errors()->add('identifier', 'O telefone deve conter apenas números e caracteres de formatação válidos.');
+                }
+
+                // Validar comprimento do telefone (8-15 dígitos é um padrão internacional)
+                if (strlen($cleanPhone) < 8 || strlen($cleanPhone) > 15) {
+                    $validator->errors()->add('identifier', 'O telefone deve ter entre 8 e 15 dígitos.');
+                }
+
+                // Validar formato brasileiro se começar com +55 ou 55
+                if (preg_match('/^(\+?55|55)/', $cleanPhone)) {
+                    if (strlen($cleanPhone) < 10 || strlen($cleanPhone) > 13) {
+                        $validator->errors()->add('identifier', 'Telefone brasileiro deve ter entre 10 e 13 dígitos (incluindo DDD).');
+                    }
+                }
+
+                // Validar se não é apenas zeros ou números repetidos
+                if (preg_match('/^(.)\1+$/', $cleanPhone)) {
+                    $validator->errors()->add('identifier', 'O telefone não pode conter apenas números repetidos.');
+                }
+            }
+        });
 
         if ($validator->fails()) {
             return response()->json(['errors' => $validator->errors()], 422);
@@ -117,7 +164,55 @@ class AuthController extends Controller
             $validator = Validator::make($request->all(), [
                 'identifier' => 'required|string',
                 'password' => 'required|string',
+                'type' => 'required|in:email,phone',
             ]);
+
+            // Validação condicional baseada no tipo de identifier
+            $validator->after(function ($validator) use ($request) {
+                $type = $request->input('type');
+                $identifier = $request->input('identifier');
+
+                if ($type === 'email') {
+                    if (!filter_var($identifier, FILTER_VALIDATE_EMAIL)) {
+                        $validator->errors()->add('identifier', 'O campo identifier deve ser um email válido quando o tipo for email.');
+                    }
+
+                    // Validação adicional para formato de email
+                    if (!preg_match('/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/', $identifier)) {
+                        $validator->errors()->add('identifier', 'Formato de email inválido.');
+                    }
+
+                    // Verificar se não contém caracteres perigosos
+                    if (preg_match('/[<>"\']/', $identifier)) {
+                        $validator->errors()->add('identifier', 'O email não pode conter caracteres especiais como < > " \'.');
+                    }
+                } elseif ($type === 'phone') {
+                    // Remover todos os caracteres não numéricos para validação
+                    $cleanPhone = preg_replace('/[^0-9]/', '', $identifier);
+
+                    // Validar se contém apenas números após limpeza
+                    if (!preg_match('/^[0-9]+$/', $cleanPhone)) {
+                        $validator->errors()->add('identifier', 'O telefone deve conter apenas números e caracteres de formatação válidos.');
+                    }
+
+                    // Validar comprimento do telefone (8-15 dígitos é um padrão internacional)
+                    if (strlen($cleanPhone) < 8 || strlen($cleanPhone) > 15) {
+                        $validator->errors()->add('identifier', 'O telefone deve ter entre 8 e 15 dígitos.');
+                    }
+
+                    // Validar formato brasileiro se começar com +55 ou 55
+                    if (preg_match('/^(\+?55|55)/', $cleanPhone)) {
+                        if (strlen($cleanPhone) < 10 || strlen($cleanPhone) > 13) {
+                            $validator->errors()->add('identifier', 'Telefone brasileiro deve ter entre 10 e 13 dígitos (incluindo DDD).');
+                        }
+                    }
+
+                    // Validar se não é apenas zeros ou números repetidos
+                    if (preg_match('/^(.)\1+$/', $cleanPhone)) {
+                        $validator->errors()->add('identifier', 'O telefone não pode conter apenas números repetidos.');
+                    }
+                }
+            });
 
             if ($validator->fails()) {
                 return response()->json(['errors' => $validator->errors()], 422);

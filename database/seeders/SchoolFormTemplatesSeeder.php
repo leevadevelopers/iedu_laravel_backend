@@ -27,6 +27,9 @@ class SchoolFormTemplatesSeeder extends Seeder
 
         // Attendance Form
         $this->createAttendanceForm($tenant);
+
+        // Academic Year Setup Form
+        $this->createAcademicYearSetupForm($tenant);
     }
 
     private function createStudentEnrollmentForm(Tenant $tenant)
@@ -185,6 +188,171 @@ class SchoolFormTemplatesSeeder extends Seeder
                 'show_progress_bar' => false,
                 'allow_step_navigation' => false,
                 'auto_save_interval' => 30
+            ]
+        ]);
+    }
+
+    private function createAcademicYearSetupForm(Tenant $tenant)
+    {
+        FormTemplate::create([
+            'tenant_id' => $tenant->id,
+            'name' => 'Academic Year Setup Form',
+            'description' => 'Form for setting up and configuring academic year details',
+            'category' => 'academic_year_setup',
+            'version' => '1.0',
+            'is_multi_step' => true,
+            'auto_save' => true,
+            'compliance_level' => 'standard',
+            'is_active' => true,
+            'is_default' => true,
+            'created_by' => 1,
+            'steps' => [
+                [
+                    'step_number' => 1,
+                    'title' => 'Basic Information',
+                    'sections' => [
+                        [
+                            'title' => 'Academic Year Details',
+                            'fields' => [
+                                [
+                                    'field_id' => 'name',
+                                    'label' => 'Academic Year Name',
+                                    'type' => 'text',
+                                    'required' => true,
+                                    'validation' => 'required|string|max:255'
+                                ],
+                                [
+                                    'field_id' => 'year',
+                                    'label' => 'Academic Year',
+                                    'type' => 'text',
+                                    'required' => true,
+                                    'validation' => 'required|string|max:10'
+                                ],
+                                [
+                                    'field_id' => 'description',
+                                    'label' => 'Description',
+                                    'type' => 'textarea',
+                                    'required' => false,
+                                    'validation' => 'nullable|string|max:1000'
+                                ]
+                            ]
+                        ]
+                    ]
+                ],
+                [
+                    'step_number' => 2,
+                    'title' => 'Date Configuration',
+                    'sections' => [
+                        [
+                            'title' => 'Academic Year Dates',
+                            'fields' => [
+                                [
+                                    'field_id' => 'start_date',
+                                    'label' => 'Start Date',
+                                    'type' => 'date',
+                                    'required' => true,
+                                    'validation' => 'required|date'
+                                ],
+                                [
+                                    'field_id' => 'end_date',
+                                    'label' => 'End Date',
+                                    'type' => 'date',
+                                    'required' => true,
+                                    'validation' => 'required|date|after:start_date'
+                                ],
+                                [
+                                    'field_id' => 'enrollment_start_date',
+                                    'label' => 'Enrollment Start Date',
+                                    'type' => 'date',
+                                    'required' => false,
+                                    'validation' => 'nullable|date|after_or_equal:start_date'
+                                ],
+                                [
+                                    'field_id' => 'enrollment_end_date',
+                                    'label' => 'Enrollment End Date',
+                                    'type' => 'date',
+                                    'required' => false,
+                                    'validation' => 'nullable|date|before:end_date'
+                                ]
+                            ]
+                        ]
+                    ]
+                ],
+                [
+                    'step_number' => 3,
+                    'title' => 'Term Structure',
+                    'sections' => [
+                        [
+                            'title' => 'Academic Term Configuration',
+                            'fields' => [
+                                [
+                                    'field_id' => 'term_structure',
+                                    'label' => 'Term Structure',
+                                    'type' => 'select',
+                                    'required' => false,
+                                    'options' => [
+                                        ['value' => 'semesters', 'label' => 'Semesters'],
+                                        ['value' => 'trimesters', 'label' => 'Trimesters'],
+                                        ['value' => 'quarters', 'label' => 'Quarters'],
+                                        ['value' => 'year_round', 'label' => 'Year Round']
+                                    ],
+                                    'validation' => 'nullable|in:semesters,trimesters,quarters,year_round'
+                                ],
+                                [
+                                    'field_id' => 'total_terms',
+                                    'label' => 'Total Terms',
+                                    'type' => 'number',
+                                    'required' => false,
+                                    'validation' => 'nullable|integer|min:1'
+                                ],
+                                [
+                                    'field_id' => 'total_instructional_days',
+                                    'label' => 'Total Instructional Days',
+                                    'type' => 'number',
+                                    'required' => false,
+                                    'validation' => 'nullable|integer|min:1'
+                                ]
+                            ]
+                        ]
+                    ]
+                ],
+                [
+                    'step_number' => 4,
+                    'title' => 'Status & Settings',
+                    'sections' => [
+                        [
+                            'title' => 'Academic Year Status',
+                            'fields' => [
+                                [
+                                    'field_id' => 'status',
+                                    'label' => 'Status',
+                                    'type' => 'select',
+                                    'required' => true,
+                                    'options' => [
+                                        ['value' => 'planning', 'label' => 'Planning'],
+                                        ['value' => 'active', 'label' => 'Active'],
+                                        ['value' => 'completed', 'label' => 'Completed'],
+                                        ['value' => 'archived', 'label' => 'Archived']
+                                    ],
+                                    'validation' => 'required|in:planning,active,completed,archived'
+                                ],
+                                [
+                                    'field_id' => 'is_current',
+                                    'label' => 'Set as Current Academic Year',
+                                    'type' => 'checkbox',
+                                    'required' => false,
+                                    'validation' => 'boolean'
+                                ]
+                            ]
+                        ]
+                    ]
+                ]
+            ],
+            'form_configuration' => [
+                'theme' => 'school_theme',
+                'show_progress_bar' => true,
+                'allow_step_navigation' => true,
+                'auto_save_interval' => 60
             ]
         ]);
     }

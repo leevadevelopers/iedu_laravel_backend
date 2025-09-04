@@ -50,6 +50,7 @@ Route::prefix('v1')->middleware(['auth:api', 'tenant'])->group(function () {
     Route::prefix('user')->group(function () {
         Route::get('/profile', [UserProfileController::class, 'getProfile'])->name('user.profile');
         Route::put('/profile', [UserProfileController::class, 'updateProfile'])->name('user.profile.update');
+        Route::patch('/profile/fields', [UserProfileController::class, 'updateSpecificFields'])->name('user.profile.fields.update');
         Route::post('/avatar', [UserProfileController::class, 'uploadAvatar'])->name('user.avatar.upload');
         Route::post('/switch-tenant', [UserProfileController::class, 'switchTenant'])->name('user.switch-tenant');
         Route::get('/tenants', [UserProfileController::class, 'getUserTenants'])->name('user.tenants');
@@ -115,7 +116,7 @@ Route::bind('user', function ($value, $route) {
         if (auth('api')->check() && method_exists(auth('api')->user(), 'tenant_id')) {
             $currentUser = auth('api')->user();
             $tenant = $currentUser->getCurrentTenant();
-            
+
             if ($tenant && !$user->tenants()->where('tenant_id', $tenant->id)->exists()) {
                 abort(403, 'Access denied to this user');
             }
@@ -123,7 +124,7 @@ Route::bind('user', function ($value, $route) {
 
         return $user;
     }
-    
+
     // For non-user routes, just return the value as is
     return $value;
-}); 
+});

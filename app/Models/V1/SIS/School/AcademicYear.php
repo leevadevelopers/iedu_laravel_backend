@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 
 /**
@@ -30,7 +31,7 @@ use Illuminate\Support\Carbon;
  */
 class AcademicYear extends Model
 {
-    use HasFactory;
+    use HasFactory, SoftDeletes;
 
     /**
      * The table associated with the model.
@@ -42,15 +43,23 @@ class AcademicYear extends Model
      */
     protected $fillable = [
         'school_id',
+        'tenant_id',
         'name',
         'code',
+        'year',
+        'description',
         'start_date',
         'end_date',
+        'enrollment_start_date',
+        'enrollment_end_date',
+        'registration_deadline',
         'term_structure',
         'total_terms',
         'total_instructional_days',
+        'holidays_json',
         'status',
         'is_current',
+        'created_by',
     ];
 
     /**
@@ -59,8 +68,12 @@ class AcademicYear extends Model
     protected $casts = [
         'start_date' => 'date',
         'end_date' => 'date',
+        'enrollment_start_date' => 'date',
+        'enrollment_end_date' => 'date',
+        'registration_deadline' => 'date',
         'total_terms' => 'integer',
         'total_instructional_days' => 'integer',
+        'holidays_json' => 'array',
         'is_current' => 'boolean',
     ];
 
@@ -70,6 +83,30 @@ class AcademicYear extends Model
     public function school(): BelongsTo
     {
         return $this->belongsTo(School::class);
+    }
+
+    /**
+     * Get the tenant that owns the academic year.
+     */
+    public function tenant(): BelongsTo
+    {
+        return $this->belongsTo(\App\Models\Settings\Tenant::class);
+    }
+
+    /**
+     * Get the user who created the academic year.
+     */
+    public function createdBy(): BelongsTo
+    {
+        return $this->belongsTo(\App\Models\User::class, 'created_by');
+    }
+
+    /**
+     * Get the students enrolled in this academic year.
+     */
+    public function students(): HasMany
+    {
+        return $this->hasMany(\App\Models\V1\SIS\Student\Student::class, 'academic_year_id');
     }
 
     /**
@@ -219,5 +256,69 @@ class AcademicYear extends Model
                        ->where('end_date', '>=', $endDate);
               });
         });
+    }
+
+    /**
+     * Boot method to handle model events.
+     */
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::creating(function ($academicYear) {
+            if (empty($academicYear->code)) {
+                $academicYear->code = $academicYear->generateCode();
+            }
+        });
+    }
+
+    /**
+     * Generate automatic code for academic year.
+     */
+    public function generateCode(): string
+    {
+        $year = $this->year ?? date('Y');
+        $schoolCode = $this->school ? $this->school->code : 'SCH';
+
+        // Extract year from year field (e.g., "2025-2026" -> "25-26")
+        if (strpos($year, '-') !== false) {
+            $years = explode('-', $year);
+            $shortYear = substr($years[0], -2) . '-' . substr($years[1], -2);
+        } else {
+            $shortYear = substr($year, -2);
+        }
+
+        $prefix = 'AY'; // Academic Year prefix
+        $baseCode = $prefix . $shortYear;
+
+        // Check for duplicates and add counter if needed
+        $counter = 1;
+        $code = $baseCode;
+
+        while (static::where('school_id', $this->school_id)
+                    ->where('code', $code)
+                    ->where('id', '!=', $this->id ?? 0)
+                    ->exists()) {
+            $code = $baseCode . '-' . $counter;
+            $counter++;
+        }
+
+        return $code;
+    }
+
+    /**
+     * Get holidays as array.
+     */
+    public function getHolidaysAttribute()
+    {
+        return $this->holidays_json ?? [];
+    }
+
+    /**
+     * Set holidays from array.
+     */
+    public function setHolidaysAttribute($value)
+    {
+        $this->attributes['holidays_json'] = is_array($value) ? json_encode($value) : $value;
     }
 }
