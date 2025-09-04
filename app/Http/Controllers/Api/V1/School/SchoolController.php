@@ -469,7 +469,7 @@ class SchoolController extends Controller
                 });
             }
 
-            $templates = $query->with(['creator:id,name,email'])
+            $templates = $query->with(['creator:id,name,identifier'])
                 ->orderBy('is_default', 'desc')
                 ->orderBy('name')
                 ->paginate($request->get('per_page', 15));
@@ -494,7 +494,7 @@ class SchoolController extends Controller
     public function getFormTemplate(FormTemplate $template): JsonResponse
     {
         try {
-            $template->load(['creator:id,name,email']);
+            $template->load(['creator:id,name,identifier']);
 
             return response()->json([
                 'success' => true,
@@ -522,6 +522,7 @@ class SchoolController extends Controller
             'category' => 'required|string|max:100',
             'compliance_level' => 'required|in:basic,standard,strict,comprehensive',
             'form_configuration' => 'required|array',
+            'steps' => 'required|array',
             'validation_rules' => 'nullable|array',
             'workflow_configuration' => 'nullable|array',
             'is_multi_step' => 'boolean',
@@ -555,7 +556,7 @@ class SchoolController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Form template created successfully',
-                'data' => $template->load(['creator:id,name,email'])
+                'data' => $template->load(['creator:id,name,identifier'])
             ], 201);
 
         } catch (\Exception $e) {
@@ -579,6 +580,7 @@ class SchoolController extends Controller
             'category' => 'sometimes|required|string|max:100',
             'compliance_level' => 'sometimes|required|in:basic,standard,strict,comprehensive',
             'form_configuration' => 'sometimes|required|array',
+            'steps' => 'sometimes|required|array',
             'validation_rules' => 'nullable|array',
             'workflow_configuration' => 'nullable|array',
             'is_multi_step' => 'boolean',
@@ -606,7 +608,7 @@ class SchoolController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Form template updated successfully',
-                'data' => $template->fresh()->load(['creator:id,name,email'])
+                'data' => $template->fresh()->load(['creator:id,name,identifier'])
             ]);
 
         } catch (\Exception $e) {
@@ -684,7 +686,7 @@ class SchoolController extends Controller
     {
         try {
             $query = $school->formInstances()
-                ->with(['template:id,name,category', 'creator:id,name,email']);
+                ->with(['template:id,name,category', 'creator:id,name,identifier']);
 
             // Filter by status
             if ($request->has('status')) {
@@ -740,7 +742,7 @@ class SchoolController extends Controller
     {
         try {
             $instance = $school->formInstances()
-                ->with(['template:id,name,category,form_configuration', 'creator:id,name,email'])
+                ->with(['template:id,name,category,form_configuration', 'creator:id,name,identifier'])
                 ->findOrFail($instanceId);
 
             return response()->json([
@@ -800,7 +802,7 @@ class SchoolController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Form instance status updated successfully',
-                'data' => $instance->fresh()->load(['template:id,name,category'])
+                'data' => $instance->fresh()->load(['template:id,name,category', 'creator:id,name,identifier'])
             ]);
 
         } catch (\Exception $e) {
@@ -905,7 +907,7 @@ class SchoolController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Form template duplicated successfully',
-                'data' => $newTemplate->load(['creator:id,name,email'])
+                'data' => $newTemplate->load(['creator:id,name,identifier'])
             ], 201);
 
         } catch (\Exception $e) {
