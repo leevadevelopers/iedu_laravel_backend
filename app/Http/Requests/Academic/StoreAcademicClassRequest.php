@@ -65,7 +65,7 @@ class StoreAcademicClassRequest extends BaseAcademicRequest
         $validator->after(function ($validator) {
             // Validate that subject supports the grade level
             if ($this->filled('subject_id') && $this->filled('grade_level')) {
-                $subject = \App\Models\Academic\Subject::find($this->subject_id);
+                $subject = \App\Models\V1\Academic\Subject::find($this->subject_id);
                 if ($subject && !in_array($this->grade_level, $subject->grade_levels ?? [])) {
                     $validator->errors()->add('grade_level', 'The selected subject does not support this grade level.');
                 }
@@ -73,7 +73,7 @@ class StoreAcademicClassRequest extends BaseAcademicRequest
 
             // Validate academic term belongs to academic year
             if ($this->filled('academic_year_id') && $this->filled('academic_term_id')) {
-                $term = \App\Models\Academic\AcademicTerm::find($this->academic_term_id);
+                $term = \App\Models\V1\SIS\School\AcademicTerm::find($this->academic_term_id);
                 if ($term && $term->academic_year_id != $this->academic_year_id) {
                     $validator->errors()->add('academic_term_id', 'The selected term does not belong to the specified academic year.');
                 }
@@ -88,7 +88,7 @@ class StoreAcademicClassRequest extends BaseAcademicRequest
     {
         // Generate class code if not provided
         if (!$this->filled('class_code') && $this->filled('subject_id') && $this->filled('grade_level')) {
-            $subject = \App\Models\Academic\Subject::find($this->subject_id);
+            $subject = \App\Models\V1\Academic\Subject::find($this->subject_id);
             if ($subject) {
                 $section = $this->section ?? 'A';
                 $classCode = strtoupper($subject->code . '-' . $this->grade_level . '-' . $section);

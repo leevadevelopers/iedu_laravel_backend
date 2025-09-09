@@ -8,7 +8,6 @@ use App\Http\Controllers\API\V1\Transport\TransportTrackingController;
 use App\Http\Controllers\API\V1\Transport\ParentPortalController;
 use App\Http\Controllers\API\V1\Transport\BusStopController;
 use App\Http\Controllers\API\V1\Transport\TransportIncidentController;
-use App\Http\Controllers\API\V1\Transport\TransportReportsController;
 use App\Http\Controllers\API\V1\Transport\DriverPortalController;
 
 /*
@@ -21,7 +20,7 @@ use App\Http\Controllers\API\V1\Transport\DriverPortalController;
 |
 */
 
-Route::middleware(['auth:api', 'multi-tenant'])->prefix('transport')->name('transport.')->group(function () {
+Route::middleware(['auth:api'])->prefix('transport')->name('transport.')->group(function () {
 
     // ==========================================
     // TRANSPORT ROUTES MANAGEMENT
@@ -113,15 +112,15 @@ Route::middleware(['auth:api', 'multi-tenant'])->prefix('transport')->name('tran
     // ==========================================
     // REPORTS & ANALYTICS
     // ==========================================
-    Route::prefix('reports')->name('reports.')->group(function () {
-        Route::get('/dashboard', [TransportReportsController::class, 'dashboard'])->name('dashboard');
-        Route::get('/attendance', [TransportReportsController::class, 'attendanceReport'])->name('attendance');
-        Route::get('/performance', [TransportReportsController::class, 'performanceReport'])->name('performance');
-        Route::get('/financial', [TransportReportsController::class, 'financialReport'])->name('financial');
-        Route::get('/safety', [TransportReportsController::class, 'safetyReport'])->name('safety');
-        Route::get('/utilization', [TransportReportsController::class, 'utilizationReport'])->name('utilization');
-        Route::post('/custom', [TransportReportsController::class, 'generateCustomReport'])->name('custom');
-    });
+    // Route::prefix('reports')->name('reports.')->group(function () {
+    //     Route::get('/dashboard', [TransportReportsController::class, 'dashboard'])->name('dashboard');
+    //     Route::get('/attendance', [TransportReportsController::class, 'attendanceReport'])->name('attendance');
+    //     Route::get('/performance', [TransportReportsController::class, 'performanceReport'])->name('performance');
+    //     Route::get('/financial', [TransportReportsController::class, 'financialReport'])->name('financial');
+    //     Route::get('/safety', [TransportReportsController::class, 'safetyReport'])->name('safety');
+    //     Route::get('/utilization', [TransportReportsController::class, 'utilizationReport'])->name('utilization');
+    //     Route::post('/custom', [TransportReportsController::class, 'generateCustomReport'])->name('custom');
+    // });
 });
 
 // ==========================================

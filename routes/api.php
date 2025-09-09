@@ -14,6 +14,7 @@ Route::prefix('v1')->group(function () {
     require __DIR__ . '/modules/school.php';
     require __DIR__ . '/modules/students.php';
     require __DIR__ . '/modules/roles_permission/roles.php';
+    require __DIR__ . '/modules/academic/academic.php';
 });
 
 // Transport Module Routes
@@ -21,7 +22,7 @@ Route::middleware(['api', 'throttle:api'])->group(function () {
     require_once __DIR__ . '/modules/transport/transport.php';
 });
 
-    
+
 
 
 

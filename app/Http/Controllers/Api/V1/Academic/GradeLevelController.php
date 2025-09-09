@@ -77,7 +77,7 @@ class GradeLevelController extends Controller
     /**
      * Update the specified grade level
      */
-    public function update(UpdateGradeLevelRequest $request, GradeLevel $gradeLevel): JsonResponse
+    public function update(\App\Http\Requests\Academic\UpdateGradeLevelRequest $request, GradeLevel $gradeLevel): JsonResponse
     {
         $this->authorize('update', $gradeLevel);
 

@@ -8,6 +8,7 @@ use App\Http\Controllers\API\V1\Academic\GradeEntryController;
 use App\Http\Controllers\API\V1\Academic\GradeLevelController;
 use App\Http\Controllers\API\V1\Academic\GradeScaleController;
 use App\Http\Controllers\API\V1\Academic\GradingSystemController;
+use App\Http\Controllers\API\V1\Academic\TeacherController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -67,13 +68,32 @@ Route::middleware(['auth:api', 'school.context'])->group(function () {
 
     // Grade Scales Management
     Route::prefix('grade-scales')->name('grade-scales.')->group(function () {
+        Route::get('/', [GradeScaleController::class, 'index'])->name('index');
+        Route::post('/', [GradeScaleController::class, 'store'])->name('store');
+        Route::get('/default', [GradeScaleController::class, 'default'])->name('default');
+        Route::get('/type/{type}', [GradeScaleController::class, 'byType'])->name('by-type');
         Route::get('/{gradeScale}', [GradeScaleController::class, 'show'])->name('show');
         Route::put('/{gradeScale}', [GradeScaleController::class, 'update'])->name('update');
         Route::delete('/{gradeScale}', [GradeScaleController::class, 'destroy'])->name('destroy');
+        Route::post('/{gradeScale}/set-default', [GradeScaleController::class, 'setDefault'])->name('set-default');
+        Route::get('/{gradeScale}/grade-for-percentage', [GradeScaleController::class, 'getGradeForPercentage'])->name('grade-for-percentage');
 
         // Grade Levels Management
         Route::get('/{gradeScale}/levels', [GradeLevelController::class, 'index'])->name('levels.index');
         Route::post('/{gradeScale}/levels', [GradeLevelController::class, 'store'])->name('levels.store');
+    });
+
+    // Grade Levels Management
+    Route::prefix('grade-levels')->name('grade-levels.')->group(function () {
+        Route::get('/', [GradeLevelController::class, 'index'])->name('index');
+        Route::post('/', [GradeLevelController::class, 'store'])->name('store');
+        Route::get('/passing', [GradeLevelController::class, 'passing'])->name('passing');
+        Route::get('/failing', [GradeLevelController::class, 'failing'])->name('failing');
+        Route::post('/reorder', [GradeLevelController::class, 'reorder'])->name('reorder');
+        Route::get('/grade-for-percentage', [GradeLevelController::class, 'getGradeForPercentage'])->name('grade-for-percentage');
+        Route::get('/{gradeLevel}', [GradeLevelController::class, 'show'])->name('show');
+        Route::put('/{gradeLevel}', [GradeLevelController::class, 'update'])->name('update');
+        Route::delete('/{gradeLevel}', [GradeLevelController::class, 'destroy'])->name('destroy');
     });
 
     // Grade Entries Management
@@ -96,6 +116,10 @@ Route::middleware(['auth:api', 'school.context'])->group(function () {
         Route::get('/subject-performance', [AnalyticsController::class, 'subjectPerformance'])->name('subject-performance');
         Route::get('/teacher-stats', [AnalyticsController::class, 'teacherStats'])->name('teacher-stats');
         Route::get('/class-stats/{class}', [AnalyticsController::class, 'classStats'])->name('class-stats');
+        Route::get('/student-performance-trends', [AnalyticsController::class, 'studentPerformanceTrends'])->name('student-performance-trends');
+        Route::get('/attendance-analytics', [AnalyticsController::class, 'attendanceAnalytics'])->name('attendance-analytics');
+        Route::get('/comparative-analytics', [AnalyticsController::class, 'comparativeAnalytics'])->name('comparative-analytics');
+        Route::post('/export', [AnalyticsController::class, 'exportAnalytics'])->name('export');
     });
 
     // Bulk Operations
@@ -104,6 +128,38 @@ Route::middleware(['auth:api', 'school.context'])->group(function () {
         Route::post('/student-enrollment', [BulkOperationsController::class, 'enrollStudents'])->name('enroll-students');
         Route::post('/grade-import', [BulkOperationsController::class, 'importGrades'])->name('import-grades');
         Route::post('/report-cards', [BulkOperationsController::class, 'generateReportCards'])->name('generate-report-cards');
+        Route::post('/update-students', [BulkOperationsController::class, 'updateStudents'])->name('update-students');
+        Route::post('/create-teachers', [BulkOperationsController::class, 'createTeachers'])->name('create-teachers');
+        Route::post('/create-subjects', [BulkOperationsController::class, 'createSubjects'])->name('create-subjects');
+        Route::post('/transfer-students', [BulkOperationsController::class, 'transferStudents'])->name('transfer-students');
+        Route::get('/operation-status/{operationId}', [BulkOperationsController::class, 'getOperationStatus'])->name('operation-status');
+        Route::delete('/cancel-operation/{operationId}', [BulkOperationsController::class, 'cancelOperation'])->name('cancel-operation');
+    });
+
+    // Teachers Management
+    Route::prefix('teachers')->name('teachers.')->group(function () {
+        Route::get('/', [TeacherController::class, 'index'])->name('index');
+        Route::post('/', [TeacherController::class, 'store'])->name('store');
+        Route::get('/search', [TeacherController::class, 'search'])->name('search');
+        Route::get('/by-department', [TeacherController::class, 'byDepartment'])->name('by-department');
+        Route::get('/by-employment-type', [TeacherController::class, 'byEmploymentType'])->name('by-employment-type');
+        Route::get('/by-specialization', [TeacherController::class, 'bySpecialization'])->name('by-specialization');
+        Route::get('/by-grade-level', [TeacherController::class, 'byGradeLevel'])->name('by-grade-level');
+        Route::get('/available-at', [TeacherController::class, 'availableAt'])->name('available-at');
+        Route::get('/for-class-assignment', [TeacherController::class, 'forClassAssignment'])->name('for-class-assignment');
+        Route::get('/{teacher}', [TeacherController::class, 'show'])->name('show');
+        Route::put('/{teacher}', [TeacherController::class, 'update'])->name('update');
+        Route::delete('/{teacher}', [TeacherController::class, 'destroy'])->name('destroy');
+
+        // Teacher-specific actions
+        Route::get('/{teacher}/workload', [TeacherController::class, 'workload'])->name('workload');
+        Route::get('/{teacher}/classes', [TeacherController::class, 'classes'])->name('classes');
+        Route::get('/{teacher}/statistics', [TeacherController::class, 'statistics'])->name('statistics');
+        Route::get('/{teacher}/dashboard', [TeacherController::class, 'dashboard'])->name('dashboard');
+        Route::put('/{teacher}/schedule', [TeacherController::class, 'updateSchedule'])->name('update-schedule');
+        Route::post('/{teacher}/check-availability', [TeacherController::class, 'checkAvailability'])->name('check-availability');
+        Route::post('/{teacher}/assign-to-class', [TeacherController::class, 'assignToClass'])->name('assign-to-class');
+        Route::get('/{teacher}/performance-metrics', [TeacherController::class, 'performanceMetrics'])->name('performance-metrics');
     });
 
 });
