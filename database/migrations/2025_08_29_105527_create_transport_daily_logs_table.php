@@ -29,6 +29,7 @@ return new class extends Migration
             $table->text('notes')->nullable();
             $table->enum('status', ['completed', 'cancelled', 'partial'])->default('completed');
             $table->timestamps();
+            $table->softDeletes();
 
             $table->foreign('school_id')->references('id')->on('schools')->onDelete('cascade');
             $table->foreign('fleet_bus_id')->references('id')->on('fleet_buses')->onDelete('cascade');

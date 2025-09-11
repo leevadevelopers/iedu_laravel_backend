@@ -147,7 +147,8 @@ trait TenantPermission
             return $this->hasTenantPermission($permission);
         }
 
-        return parent::hasPermissionTo($permission, $guardName);
+        // Fallback to the original HasRoles trait method
+        return $this->hasRolePermissionTo($permission, $guardName);
     }
 
     public function hasRole($roles, string $guard = null): bool
@@ -156,7 +157,8 @@ trait TenantPermission
             return $this->hasTenantRole($roles);
         }
 
-        return parent::hasRole($roles, $guard);
+        // Fallback to the original HasRoles trait method
+        return $this->hasRoleBase($roles, $guard);
     }
 
     public function getTenantContext($tenantId = null): array

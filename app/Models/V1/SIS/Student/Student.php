@@ -13,6 +13,8 @@ use App\Models\V1\SIS\Student\StudentDocument;
 use App\Models\V1\SIS\Student\StudentEnrollmentHistory;
 use App\Models\V1\SIS\School\School;
 use App\Models\V1\SIS\School\AcademicYear;
+use App\Models\V1\Transport\StudentTransportSubscription;
+use App\Models\User;
 use Illuminate\Support\Carbon;
 
 /**
@@ -68,7 +70,6 @@ class Student extends Model
         'first_name',
         'middle_name',
         'last_name',
-        'preferred_name',
         'date_of_birth',
         'birth_place',
         'gender',
@@ -120,6 +121,14 @@ class Student extends Model
     ];
 
     /**
+     * Get the user account associated with the student.
+     */
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    /**
      * Get the school that owns the student.
      */
     public function school(): BelongsTo
@@ -157,6 +166,14 @@ class Student extends Model
     public function documents(): HasMany
     {
         return $this->hasMany(StudentDocument::class);
+    }
+
+    /**
+     * Get the transport subscriptions for the student.
+     */
+    public function transportSubscriptions(): HasMany
+    {
+        return $this->hasMany(StudentTransportSubscription::class);
     }
 
     /**
@@ -199,7 +216,7 @@ class Student extends Model
     public function displayName(): Attribute
     {
         return Attribute::make(
-            get: fn () => $this->preferred_name ?: $this->full_name
+            get: fn () => $this->full_name
         );
     }
 

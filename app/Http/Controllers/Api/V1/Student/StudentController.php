@@ -37,7 +37,7 @@ class StudentController extends Controller
     {
         try {
             $query = Student::with([
-                'enrollments',
+                'enrollmentHistory',
                 'documents',
                 'familyRelationships',
                 'school',
@@ -45,20 +45,20 @@ class StudentController extends Controller
             ]);
 
             // Apply filters
-            if ($request->has('status')) {
-                $query->where('status', $request->status);
+            if ($request->has('enrollment_status')) {
+                $query->where('enrollment_status', $request->enrollment_status);
             }
 
-            if ($request->has('grade_level')) {
-                $query->where('grade_level', $request->grade_level);
+            if ($request->has('current_grade_level')) {
+                $query->where('current_grade_level', $request->current_grade_level);
             }
 
             if ($request->has('school_id')) {
                 $query->where('school_id', $request->school_id);
             }
 
-            if ($request->has('academic_year_id')) {
-                $query->where('academic_year_id', $request->academic_year_id);
+            if ($request->has('current_academic_year_id')) {
+                $query->where('current_academic_year_id', $request->current_academic_year_id);
             }
 
             if ($request->has('search')) {
@@ -95,25 +95,33 @@ class StudentController extends Controller
     public function store(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'first_name' => 'required|string|max:255',
-            'last_name' => 'required|string|max:255',
+            'tenant_id' => 'required|exists:tenants,id',
+            'user_id' => 'required|exists:users,id',
+            'first_name' => 'required|string|max:100',
+            'middle_name' => 'nullable|string|max:100',
+            'last_name' => 'required|string|max:100',
+            'date_of_birth' => 'required|date|before:today',
+            'birth_place' => 'nullable|string|max:255',
+            'gender' => 'required|in:male,female,other',
+            'nationality' => 'nullable|string|max:100',
             'email' => 'nullable|email|max:255|unique:students,email',
             'phone' => 'nullable|string|max:20',
-            'date_of_birth' => 'required|date|before:today',
-            'gender' => 'required|in:male,female,other',
-            'address' => 'nullable|string|max:500',
-            'city' => 'nullable|string|max:100',
-            'state' => 'nullable|string|max:100',
-            'postal_code' => 'nullable|string|max:20',
-            'country' => 'nullable|string|max:100',
-            'emergency_contact_name' => 'nullable|string|max:255',
-            'emergency_contact_phone' => 'nullable|string|max:20',
-            'emergency_contact_relationship' => 'nullable|string|max:100',
+            'address_json' => 'nullable|array',
             'school_id' => 'required|exists:schools,id',
-            'academic_year_id' => 'required|exists:academic_years,id',
-            'grade_level' => 'required|string|max:10',
-            'enrollment_date' => 'required|date',
-            'status' => 'required|in:active,inactive,transferred,graduated,suspended',
+            'current_academic_year_id' => 'required|exists:academic_years,id',
+            'current_grade_level' => 'required|string|max:20',
+            'admission_date' => 'required|date',
+            'enrollment_status' => 'required|in:enrolled,transferred,graduated,withdrawn,suspended',
+            'expected_graduation_date' => 'nullable|date|after:admission_date',
+            'learning_profile_json' => 'nullable|array',
+            'accommodation_needs_json' => 'nullable|array',
+            'language_profile_json' => 'nullable|array',
+            'medical_information_json' => 'nullable|array',
+            'emergency_contacts_json' => 'nullable|array',
+            'special_circumstances_json' => 'nullable|array',
+            'current_gpa' => 'nullable|numeric|min:0|max:4',
+            'attendance_rate' => 'nullable|numeric|min:0|max:100',
+            'behavioral_points' => 'nullable|integer|min:0',
             'form_data' => 'nullable|array', // For Form Engine integration
         ]);
 
@@ -130,24 +138,37 @@ class StudentController extends Controller
 
             // Create student
             $studentData = $request->except(['form_data', 'family_relationships']);
-            $studentData['tenant_id'] = Auth::user()->current_tenant_id;
+            $studentData['tenant_id'] = Auth::user()->tenant_id ?? $request->tenant_id;
+
+            // Ensure tenant_id is not null
+            if (empty($studentData['tenant_id'])) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Tenant ID is required',
+                    'error' => 'No tenant ID available from user or request'
+                ], 422);
+            }
+
             $studentData['student_number'] = $this->generateStudentNumber();
+
+            // Set default values
+            $studentData['behavioral_points'] = $studentData['behavioral_points'] ?? 0;
 
             $student = Student::create($studentData);
 
             // Process form data through Form Engine if provided
             if ($request->has('form_data')) {
                 $processedData = $this->formEngineService->processFormData('student_registration', $request->form_data);
-                $this->formEngineService->createFormInstance('student_registration', $processedData, 'Student', $student->id);
+                $this->formEngineService->createFormInstance('student_registration', $processedData, 'Student', $student->id, $studentData['tenant_id']);
             }
 
             // Start enrollment workflow
             $workflow = $this->workflowService->startWorkflow($student, 'student_enrollment', [
                 'steps' => [
-                    'document_verification',
-                    'parent_consent',
-                    'medical_assessment',
-                    'final_approval'
+                    ['step_number' => 1, 'step_name' => 'document_verification', 'step_type' => 'verification', 'required_role' => 'admin', 'status' => 'pending'],
+                    ['step_number' => 2, 'step_name' => 'parent_consent', 'step_type' => 'approval', 'required_role' => 'parent', 'status' => 'pending'],
+                    ['step_number' => 3, 'step_name' => 'medical_assessment', 'step_type' => 'assessment', 'required_role' => 'nurse', 'status' => 'pending'],
+                    ['step_number' => 4, 'step_name' => 'final_approval', 'step_type' => 'approval', 'required_role' => 'admin', 'status' => 'pending']
                 ]
             ]);
 
@@ -180,12 +201,11 @@ class StudentController extends Controller
     {
         try {
             $student->load([
-                'enrollments',
+                'enrollmentHistory',
                 'documents',
                 'familyRelationships',
                 'school',
-                'currentAcademicYear',
-                'currentAcademicTerm'
+                'currentAcademicYear'
             ]);
 
             return response()->json([
@@ -208,24 +228,33 @@ class StudentController extends Controller
     public function update(Request $request, Student $student): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'first_name' => 'sometimes|required|string|max:255',
-            'last_name' => 'sometimes|required|string|max:255',
+            'tenant_id' => 'required|exists:tenants,id',
+            'user_id' => 'sometimes|exists:users,id',
+            'first_name' => 'sometimes|required|string|max:100',
+            'middle_name' => 'nullable|string|max:100',
+            'last_name' => 'sometimes|required|string|max:100',
+            'date_of_birth' => 'sometimes|required|date|before:today',
+            'birth_place' => 'nullable|string|max:255',
+            'gender' => 'sometimes|required|in:male,female,other',
+            'nationality' => 'nullable|string|max:100',
             'email' => 'sometimes|required|email|max:255|unique:students,email,' . $student->id,
             'phone' => 'nullable|string|max:20',
-            'date_of_birth' => 'sometimes|required|date|before:today',
-            'gender' => 'sometimes|required|in:male,female,other',
-            'address' => 'nullable|string|max:500',
-            'city' => 'nullable|string|max:100',
-            'state' => 'nullable|string|max:100',
-            'postal_code' => 'nullable|string|max:20',
-            'country' => 'nullable|string|max:100',
-            'emergency_contact_name' => 'nullable|string|max:255',
-            'emergency_contact_phone' => 'nullable|string|max:20',
-            'emergency_contact_relationship' => 'nullable|string|max:100',
+            'address_json' => 'nullable|array',
             'school_id' => 'sometimes|required|exists:schools,id',
-            'academic_year_id' => 'sometimes|required|exists:academic_years,id',
-            'grade_level' => 'sometimes|required|string|max:10',
-            'status' => 'sometimes|required|in:active,inactive,transferred,graduated,suspended',
+            'current_academic_year_id' => 'sometimes|required|exists:academic_years,id',
+            'current_grade_level' => 'sometimes|required|string|max:20',
+            'admission_date' => 'sometimes|required|date',
+            'enrollment_status' => 'sometimes|required|in:enrolled,transferred,graduated,withdrawn,suspended',
+            'expected_graduation_date' => 'nullable|date|after:admission_date',
+            'learning_profile_json' => 'nullable|array',
+            'accommodation_needs_json' => 'nullable|array',
+            'language_profile_json' => 'nullable|array',
+            'medical_information_json' => 'nullable|array',
+            'emergency_contacts_json' => 'nullable|array',
+            'special_circumstances_json' => 'nullable|array',
+            'current_gpa' => 'nullable|numeric|min:0|max:4',
+            'attendance_rate' => 'nullable|numeric|min:0|max:100',
+            'behavioral_points' => 'nullable|integer|min:0',
         ]);
 
         if ($validator->fails()) {
@@ -241,11 +270,11 @@ class StudentController extends Controller
 
             $student->update($request->all());
 
-            // If status changed, create enrollment history
-            if ($request->has('status') && $request->status !== $student->getOriginal('status')) {
+            // If enrollment status changed, create enrollment history
+            if ($request->has('enrollment_status') && $request->enrollment_status !== $student->getOriginal('enrollment_status')) {
                 StudentEnrollmentHistory::create([
                     'student_id' => $student->id,
-                    'status' => $request->status,
+                    'status' => $request->enrollment_status,
                     'changed_by' => Auth::id(),
                     'changed_at' => now(),
                     'reason' => $request->get('status_change_reason'),
@@ -283,7 +312,7 @@ class StudentController extends Controller
             $student->delete();
 
             // Archive related records
-            $student->enrollments()->update(['status' => 'archived']);
+            $student->enrollmentHistory()->update(['status' => 'archived']);
             $student->documents()->update(['status' => 'archived']);
 
             DB::commit();
@@ -310,8 +339,8 @@ class StudentController extends Controller
     {
         try {
             $summary = [
-                'student' => $student->only(['id', 'first_name', 'last_name', 'student_number', 'grade_level']),
-                'current_enrollment' => $student->enrollments()->latest()->first(),
+                'student' => $student->only(['id', 'first_name', 'last_name', 'student_number', 'current_grade_level']),
+                'current_enrollment' => $student->enrollmentHistory()->latest()->first(),
                 'academic_progress' => $this->getAcademicProgress($student),
                 'attendance_summary' => $this->getAttendanceSummary($student),
                 'documents_status' => $this->getDocumentsStatus($student),
@@ -358,8 +387,7 @@ class StudentController extends Controller
             // Update student status and school
             $student->update([
                 'school_id' => $request->new_school_id,
-                'status' => 'transferred',
-                'transfer_date' => $request->transfer_date
+                'enrollment_status' => 'transferred'
             ]);
 
             // Create enrollment history
@@ -375,10 +403,10 @@ class StudentController extends Controller
             // Start transfer workflow
             $workflow = $this->workflowService->startWorkflow($student, 'student_transfer', [
                 'steps' => [
-                    'document_verification',
-                    'new_school_approval',
-                    'records_transfer',
-                    'final_confirmation'
+                    ['step_number' => 1, 'step_name' => 'document_verification', 'step_type' => 'verification', 'required_role' => 'admin', 'status' => 'pending'],
+                    ['step_number' => 2, 'step_name' => 'new_school_approval', 'step_type' => 'approval', 'required_role' => 'admin', 'status' => 'pending'],
+                    ['step_number' => 3, 'step_name' => 'records_transfer', 'step_type' => 'transfer', 'required_role' => 'admin', 'status' => 'pending'],
+                    ['step_number' => 4, 'step_name' => 'final_confirmation', 'step_type' => 'confirmation', 'required_role' => 'admin', 'status' => 'pending']
                 ]
             ]);
 
@@ -411,8 +439,8 @@ class StudentController extends Controller
         $validator = Validator::make($request->all(), [
             'student_ids' => 'required|array|min:1',
             'student_ids.*' => 'exists:students,id',
-            'new_grade_level' => 'required|string|max:10',
-            'academic_year_id' => 'required|exists:academic_years,id',
+            'new_grade_level' => 'required|string|max:20',
+            'current_academic_year_id' => 'required|exists:academic_years,id',
             'promotion_date' => 'required|date',
         ]);
 
@@ -433,8 +461,8 @@ class StudentController extends Controller
             foreach ($students as $student) {
                 // Update grade level and academic year
                 $student->update([
-                    'grade_level' => $request->new_grade_level,
-                    'academic_year_id' => $request->academic_year_id
+                    'current_grade_level' => $request->new_grade_level,
+                    'current_academic_year_id' => $request->current_academic_year_id
                 ]);
 
                 // Create enrollment history
@@ -458,7 +486,7 @@ class StudentController extends Controller
                 'data' => [
                     'promoted_count' => $promotedCount,
                     'new_grade_level' => $request->new_grade_level,
-                    'academic_year_id' => $request->academic_year_id
+                    'current_academic_year_id' => $request->current_academic_year_id
                 ]
             ]);
 
@@ -480,11 +508,11 @@ class StudentController extends Controller
         try {
             $stats = [
                 'total_students' => Student::count(),
-                'by_status' => Student::selectRaw('status, COUNT(*) as count')
-                    ->groupBy('status')
+                'by_enrollment_status' => Student::selectRaw('enrollment_status, COUNT(*) as count')
+                    ->groupBy('enrollment_status')
                     ->get(),
-                'by_grade_level' => Student::selectRaw('grade_level, COUNT(*) as count')
-                    ->groupBy('grade_level')
+                'by_grade_level' => Student::selectRaw('current_grade_level, COUNT(*) as count')
+                    ->groupBy('current_grade_level')
                     ->get(),
                 'by_school' => Student::selectRaw('school_id, COUNT(*) as count')
                     ->with('school:id,name')
@@ -527,9 +555,12 @@ class StudentController extends Controller
     {
         // Implementation for academic progress
         return [
-            'current_grade' => $student->grade_level,
+            'current_grade_level' => $student->current_grade_level,
             'academic_year' => $student->currentAcademicYear?->name,
-            'term' => $student->currentAcademicTerm?->name
+            'enrollment_status' => $student->enrollment_status,
+            'current_gpa' => $student->current_gpa,
+            'attendance_rate' => $student->attendance_rate,
+            'behavioral_points' => $student->behavioral_points
         ];
     }
 
@@ -543,7 +574,7 @@ class StudentController extends Controller
             'total_days' => 0,
             'present_days' => 0,
             'absent_days' => 0,
-            'attendance_rate' => 0
+            'attendance_rate' => $student->attendance_rate ?? 0
         ];
     }
 
@@ -558,7 +589,11 @@ class StudentController extends Controller
             'total_documents' => $documents->count(),
             'valid_documents' => $documents->where('status', 'valid')->count(),
             'expired_documents' => $documents->where('expiry_date', '<', now())->count(),
-            'missing_documents' => $this->getMissingDocuments($student)
+            'missing_documents' => $this->getMissingDocuments($student),
+            'learning_profile' => $student->learning_profile_json,
+            'accommodation_needs' => $student->accommodation_needs_json,
+            'language_profile' => $student->language_profile_json,
+            'emergency_contacts' => $student->emergency_contacts_json
         ];
     }
 

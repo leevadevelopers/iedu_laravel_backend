@@ -23,6 +23,7 @@ return new class extends Migration
             $table->enum('shift', ['morning', 'afternoon', 'both'])->default('morning');
             $table->json('operating_days')->default('["monday","tuesday","wednesday","thursday","friday"]');
             $table->timestamps();
+            $table->softDeletes();
 
             $table->foreign('school_id')->references('id')->on('schools')->onDelete('cascade');
             $table->index(['school_id', 'status']);

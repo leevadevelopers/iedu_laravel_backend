@@ -42,11 +42,11 @@ abstract class BaseAcademicResource extends JsonResource
     /**
      * Check if a relation should be loaded
      */
-    protected function whenLoaded(string $relation, $value = null)
+    protected function whenLoaded($relationship, $value = null, $default = null)
     {
-        return $this->resource->relationLoaded($relation) ?
-            ($value ?? $this->resource->{$relation}) :
-            $this->missingValue();
+        return $this->resource->relationLoaded($relationship) ?
+            ($value ?? $this->resource->{$relationship}) :
+            ($default ?? $this->missingValue());
     }
 
     /**

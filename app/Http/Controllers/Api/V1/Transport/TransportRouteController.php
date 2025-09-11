@@ -45,6 +45,7 @@ class TransportRouteController extends Controller
     public function store(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
+            'school_id' => 'required|exists:schools,id',
             'name' => 'required|string|max:255',
             'code' => 'required|string|max:20|unique:transport_routes,code',
             'description' => 'nullable|string',
@@ -104,6 +105,7 @@ class TransportRouteController extends Controller
     public function update(Request $request, TransportRoute $route): JsonResponse
     {
         $validator = Validator::make($request->all(), [
+            'school_id' => 'sometimes|exists:schools,id',
             'name' => 'sometimes|string|max:255',
             'description' => 'nullable|string',
             'waypoints' => 'sometimes|array',

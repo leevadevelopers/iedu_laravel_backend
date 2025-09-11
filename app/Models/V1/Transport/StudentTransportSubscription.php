@@ -4,6 +4,9 @@ namespace App\Models\V1\Transport;
 
 use App\Models\V1\SIS\School\School;
 use App\Models\V1\SIS\Student\Student;
+use App\Models\V1\Transport\BusStop;
+use App\Models\V1\Transport\TransportRoute;
+use App\Models\V1\Transport\StudentTransportEvent;
 use App\Traits\MultiTenant;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;

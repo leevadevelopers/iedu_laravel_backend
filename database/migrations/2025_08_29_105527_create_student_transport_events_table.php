@@ -26,6 +26,7 @@ return new class extends Migration
             $table->text('notes')->nullable();
             $table->json('metadata')->nullable(); // additional context data
             $table->timestamps();
+            $table->softDeletes();
 
             $table->foreign('school_id')->references('id')->on('schools')->onDelete('cascade');
             $table->foreign('student_id')->references('id')->on('students')->onDelete('cascade');

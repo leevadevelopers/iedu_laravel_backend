@@ -55,6 +55,7 @@ class BusStopController extends Controller
     public function store(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
+            'school_id' => 'required|exists:schools,id',
             'transport_route_id' => 'required|exists:transport_routes,id',
             'name' => 'required|string|max:255',
             'code' => 'required|string|max:20',
@@ -131,6 +132,7 @@ class BusStopController extends Controller
     public function update(Request $request, BusStop $stop): JsonResponse
     {
         $validator = Validator::make($request->all(), [
+            'school_id' => 'sometimes|exists:schools,id',
             'name' => 'sometimes|string|max:255',
             'address' => 'sometimes|string',
             'latitude' => 'sometimes|numeric|between:-90,90',

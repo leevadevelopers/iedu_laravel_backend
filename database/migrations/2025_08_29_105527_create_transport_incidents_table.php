@@ -32,6 +32,7 @@ return new class extends Migration
             $table->boolean('parents_notified')->default(false);
             $table->timestamp('parents_notified_at')->nullable();
             $table->timestamps();
+            $table->softDeletes();
 
             $table->foreign('school_id')->references('id')->on('schools')->onDelete('cascade');
             $table->foreign('fleet_bus_id')->references('id')->on('fleet_buses')->onDelete('cascade');

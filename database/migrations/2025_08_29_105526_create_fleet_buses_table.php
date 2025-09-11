@@ -28,6 +28,7 @@ return new class extends Migration
             $table->enum('status', ['active', 'maintenance', 'out_of_service', 'retired'])->default('active');
             $table->text('notes')->nullable();
             $table->timestamps();
+            $table->softDeletes();
 
             $table->foreign('school_id')->references('id')->on('schools')->onDelete('cascade');
             $table->unique(['school_id', 'internal_code']);

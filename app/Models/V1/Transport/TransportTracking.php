@@ -12,6 +12,8 @@ class TransportTracking extends Model
 {
     use HasFactory, MultiTenant;
 
+    protected $table = 'transport_tracking';
+
     protected $fillable = [
         'school_id',
         'fleet_bus_id',

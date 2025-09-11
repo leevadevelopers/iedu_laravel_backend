@@ -26,6 +26,7 @@ return new class extends Migration
             $table->json('landmarks')->nullable(); // nearby landmarks for easy identification
             $table->enum('status', ['active', 'inactive', 'temporary'])->default('active');
             $table->timestamps();
+            $table->softDeletes();
 
             $table->foreign('school_id')->references('id')->on('schools')->onDelete('cascade');
             $table->foreign('transport_route_id')->references('id')->on('transport_routes')->onDelete('cascade');

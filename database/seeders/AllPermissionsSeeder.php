@@ -51,6 +51,14 @@ class AllPermissionsSeeder extends Seeder
             'teams.remove',
             'teams.assign_roles',
 
+            // Transport permissions
+            'view-transport',
+            'create-transport',
+            'edit-transport',
+            'delete-transport',
+
+            'view-students',
+
 
 
         ];

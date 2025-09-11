@@ -123,7 +123,7 @@ class StudentTransportService
             'event_type' => 'check_in',
             'transport_route_id' => $subscription->transport_route_id,
             'event_timestamp' => now(),
-            'recorded_by' => auth()->id(),
+            'recorded_by' => auth()->user()?->id,
             'is_automated' => $data['validation_method'] !== 'manual'
         ]);
 
@@ -169,7 +169,7 @@ class StudentTransportService
             'event_type' => 'check_out',
             'transport_route_id' => $subscription->transport_route_id,
             'event_timestamp' => now(),
-            'recorded_by' => auth()->id(),
+            'recorded_by' => auth()->user()?->id,
             'is_automated' => $data['validation_method'] !== 'manual'
         ]);
 
@@ -278,7 +278,8 @@ class StudentTransportService
         $attendedDays = StudentTransportEvent::where('student_id', $subscription->student_id)
             ->where('event_type', 'check_in')
             ->where('event_timestamp', '>=', $subscription->created_at)
-            ->distinct('event_timestamp::date')
+            ->selectRaw('DATE(event_timestamp) as event_date')
+            ->distinct()
             ->count();
 
         return [
@@ -311,7 +312,9 @@ class StudentTransportService
             ->with('busStop')
             ->get()
             ->groupBy('bus_stop_id')
-            ->map->count()
+            ->map(function($events) {
+                return $events->count();
+            })
             ->sortDesc()
             ->first();
 

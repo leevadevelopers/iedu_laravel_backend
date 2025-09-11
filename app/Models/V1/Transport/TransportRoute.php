@@ -3,6 +3,12 @@
 namespace App\Models\V1\Transport;
 
 use App\Models\V1\SIS\School\School;
+use App\Models\V1\Transport\BusStop;
+use App\Models\V1\Transport\BusRouteAssignment;
+use App\Models\V1\Transport\StudentTransportSubscription;
+use App\Models\V1\Transport\StudentTransportEvent;
+use App\Models\V1\Transport\TransportDailyLog;
+use App\Models\V1\Transport\TransportIncident;
 use App\Traits\MultiTenant;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -68,6 +74,11 @@ class TransportRoute extends Model implements Auditable
     public function dailyLogs(): HasMany
     {
         return $this->hasMany(TransportDailyLog::class);
+    }
+
+    public function incidents(): HasMany
+    {
+        return $this->hasMany(TransportIncident::class);
     }
 
     // Scopes

@@ -16,6 +16,15 @@ return Application::configure(basePath: dirname(__DIR__))
         //
         $middleware->alias([
             'tenant' => TenantMiddleware::class,
+
+            'form.session' => \App\Http\Middleware\Forms\FormSessionMiddleware::class,
+            'form.validation' => \App\Http\Middleware\Forms\FormValidationMiddleware::class,
+            'public.form.access' => \App\Http\Middleware\PublicFormAccessMiddleware::class,
+
+            // Spatie Permission middleware
+            'permission' => \Spatie\Permission\Middleware\PermissionMiddleware::class,
+            'role' => \Spatie\Permission\Middleware\RoleMiddleware::class,
+            'role_or_permission' => \Spatie\Permission\Middleware\RoleOrPermissionMiddleware::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

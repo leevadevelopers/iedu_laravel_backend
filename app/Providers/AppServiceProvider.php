@@ -3,6 +3,8 @@ namespace App\Providers;
 
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Cache\RateLimiting\Limit;
 use Dedoc\Scramble\Scramble;
 use Dedoc\Scramble\Support\Generator\OpenApi;
 use Dedoc\Scramble\Support\Generator\SecurityScheme;
@@ -18,16 +20,19 @@ class AppServiceProvider extends ServiceProvider
         // Register services
         $this->app->singleton(\App\Services\TenantService::class);
         $this->app->singleton(\App\Services\ActivityLogService::class);
-        $this->app->bind(
-            \App\Repositories\Project\Contracts\ProjectRepositoryInterface::class,
-            \App\Repositories\Project\ProjectRepository::class
-        );
+
     }
 
     public function boot(): void
     {
         // Set default string length for schema
         Schema::defaultStringLength(191);
+
+        // Configure rate limiters
+        RateLimiter::for('api', function ($request) {
+            return Limit::perMinute(60)->by($request->user()?->id ?: $request->ip());
+        });
+
         Scramble::afterOpenApiGenerated(function (OpenApi $openApi) {
             $openApi->secure(
                 SecurityScheme::http('bearer', 'JWT')
@@ -42,9 +47,7 @@ class AppServiceProvider extends ServiceProvider
             }
         });
 
-
         FormTemplate::observe(FormTemplateObserver::class);
-    FormInstance::observe(FormInstanceObserver::class);
-
+        FormInstance::observe(FormInstanceObserver::class);
     }
 }

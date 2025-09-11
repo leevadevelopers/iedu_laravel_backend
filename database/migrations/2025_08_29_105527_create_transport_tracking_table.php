@@ -25,6 +25,7 @@ return new class extends Migration
             $table->integer('eta_minutes')->nullable(); // estimated time to next stop
             $table->json('raw_gps_data')->nullable(); // store raw GPS payload
             $table->timestamps();
+            $table->softDeletes();
 
             $table->foreign('school_id')->references('id')->on('schools')->onDelete('cascade');
             $table->foreign('fleet_bus_id')->references('id')->on('fleet_buses')->onDelete('cascade');

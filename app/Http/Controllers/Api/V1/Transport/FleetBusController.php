@@ -45,6 +45,7 @@ class FleetBusController extends Controller
     public function store(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
+            'school_id' => 'required|exists:schools,id',
             'license_plate' => 'required|string|max:20|unique:fleet_buses,license_plate',
             'internal_code' => 'required|string|max:20',
             'make' => 'required|string|max:100',
@@ -106,6 +107,7 @@ class FleetBusController extends Controller
     public function update(Request $request, FleetBus $bus): JsonResponse
     {
         $validator = Validator::make($request->all(), [
+            'school_id' => 'sometimes|exists:schools,id',
             'license_plate' => 'sometimes|string|max:20|unique:fleet_buses,license_plate,' . $bus->id,
             'internal_code' => 'sometimes|string|max:20',
             'make' => 'sometimes|string|max:100',

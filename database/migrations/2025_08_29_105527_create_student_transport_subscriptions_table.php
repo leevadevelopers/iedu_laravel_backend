@@ -26,6 +26,7 @@ return new class extends Migration
             $table->enum('status', ['active', 'suspended', 'cancelled', 'pending_approval'])->default('pending_approval');
             $table->text('special_needs')->nullable(); // wheelchair, medication, etc.
             $table->timestamps();
+            $table->softDeletes();
 
             $table->foreign('school_id')->references('id')->on('schools')->onDelete('cascade');
             $table->foreign('student_id')->references('id')->on('students')->onDelete('cascade');
