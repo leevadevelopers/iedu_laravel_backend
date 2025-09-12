@@ -26,6 +26,7 @@ return new class extends Migration
             $table->integer('retry_count')->default(0);
             $table->timestamp('next_retry_at')->nullable();
             $table->timestamps();
+            $table->softDeletes();
 
             $table->foreign('school_id')->references('id')->on('schools')->onDelete('cascade');
             $table->foreign('student_id')->references('id')->on('students')->onDelete('cascade');

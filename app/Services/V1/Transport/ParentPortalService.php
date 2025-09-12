@@ -231,15 +231,21 @@ class ParentPortalService
     public function hasAccessToStudent(User $parent, Student $student): bool
     {
         // Check if the user is the parent/guardian of the student
-        // This would check the family relationships
-        return true; // Simplified for this example
+        // through the family relationships table
+        return $student->familyRelationships()
+            ->where('guardian_user_id', $parent->id)
+            ->where('status', 'active')
+            ->exists();
     }
 
     private function getParentStudents(User $parent): Collection
     {
         // Get students where this user is listed as a parent/guardian
-        // This would query the family relationships
-        return collect(); // Simplified for this example
+        // through the family relationships table
+        return Student::whereHas('familyRelationships', function($query) use ($parent) {
+            $query->where('guardian_user_id', $parent->id)
+                  ->where('status', 'active');
+        })->get();
     }
 
     private function getTodayEvents(Student $student): Collection
@@ -337,7 +343,9 @@ class ParentPortalService
     {
         $stopCounts = $events->where('event_type', 'check_in')
             ->groupBy('bus_stop_id')
-            ->map->count()
+            ->map(function($group) {
+                return $group->count();
+            })
             ->sortDesc();
 
         return $stopCounts->keys()->first();
