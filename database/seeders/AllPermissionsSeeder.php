@@ -59,6 +59,12 @@ class AllPermissionsSeeder extends Seeder
 
             'view-students',
 
+            'view-transport-subscriptions',
+            'create-transport-subscriptions',
+            'edit-transport-subscriptions',
+            'delete-transport-subscriptions',
+
+            'view-own-students'
 
 
         ];

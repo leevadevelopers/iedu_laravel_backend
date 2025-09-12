@@ -4,6 +4,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\API\V1\Transport\TransportRouteController;
 use App\Http\Controllers\API\V1\Transport\FleetBusController;
 use App\Http\Controllers\API\V1\Transport\StudentTransportController;
+use App\Http\Controllers\API\V1\Transport\TransportSubscriptionController;
 use App\Http\Controllers\API\V1\Transport\TransportTrackingController;
 use App\Http\Controllers\API\V1\Transport\ParentPortalController;
 use App\Http\Controllers\API\V1\Transport\BusStopController;
@@ -67,6 +68,13 @@ Route::middleware(['auth:api'])->prefix('transport')->name('transport.')->group(
     // STUDENT TRANSPORT MANAGEMENT
     // ==========================================
     Route::prefix('students')->name('students.')->group(function () {
+
+        // Student History & Reports
+        Route::get('/student/{student}/history', [StudentTransportController::class, 'getStudentHistory'])->name('history');
+        Route::get('/student/{student}/subscription-status', [StudentTransportController::class, 'checkSubscriptionStatus'])->name('subscription-status');
+        Route::get('/roster', [StudentTransportController::class, 'getBusRoster'])->name('roster');
+
+
         Route::get('/', [StudentTransportController::class, 'index'])->name('index');
         Route::post('/subscribe', [StudentTransportController::class, 'subscribe'])->name('subscribe');
         Route::get('/{subscription}', [StudentTransportController::class, 'show'])->name('show');
@@ -77,21 +85,46 @@ Route::middleware(['auth:api'])->prefix('transport')->name('transport.')->group(
         Route::post('/checkout', [StudentTransportController::class, 'checkout'])->name('checkout');
         Route::post('/validate-qr', [StudentTransportController::class, 'validateQrCode'])->name('validate-qr');
         Route::get('/{subscription}/qr-code', [StudentTransportController::class, 'generateQrCode'])->name('qr-code');
+    });
 
-        // Student History & Reports
-        Route::get('/student/{student}/history', [StudentTransportController::class, 'getStudentHistory'])->name('history');
-        Route::get('/roster', [StudentTransportController::class, 'getBusRoster'])->name('roster');
+    // ==========================================
+    // TRANSPORT SUBSCRIPTIONS MANAGEMENT
+    // ==========================================
+    Route::prefix('subscriptions')->name('subscriptions.')->group(function () {
+        // Reports & Analytics (must come before parameterized routes)
+        Route::get('/statistics', [TransportSubscriptionController::class, 'getStatistics'])->name('statistics');
+        Route::get('/expiring', [TransportSubscriptionController::class, 'getExpiring'])->name('expiring');
+        Route::get('/by-route', [TransportSubscriptionController::class, 'getByRoute'])->name('by-route');
+        Route::get('/student/{student}', [TransportSubscriptionController::class, 'getByStudent'])->name('by-student');
+
+        // CRUD Operations
+        Route::get('/', [TransportSubscriptionController::class, 'index'])->name('index');
+        Route::post('/', [TransportSubscriptionController::class, 'store'])->name('store');
+
+        // Parameterized routes (must come after specific routes)
+        Route::get('/{subscription}', [TransportSubscriptionController::class, 'show'])->name('show');
+        Route::put('/{subscription}', [TransportSubscriptionController::class, 'update'])->name('update');
+        Route::delete('/{subscription}', [TransportSubscriptionController::class, 'destroy'])->name('destroy');
+
+        // Status Management
+        Route::post('/{subscription}/activate', [TransportSubscriptionController::class, 'activate'])->name('activate');
+        Route::post('/{subscription}/suspend', [TransportSubscriptionController::class, 'suspend'])->name('suspend');
+        Route::post('/{subscription}/cancel', [TransportSubscriptionController::class, 'cancel'])->name('cancel');
+        Route::post('/{subscription}/renew', [TransportSubscriptionController::class, 'renew'])->name('renew');
+
+        // QR Code Management
+        Route::get('/{subscription}/qr-code', [TransportSubscriptionController::class, 'generateQrCode'])->name('qr-code');
     });
 
     // ==========================================
     // GPS TRACKING & MONITORING
     // ==========================================
     Route::prefix('tracking')->name('tracking.')->group(function () {
+        Route::get('/eta', [TransportTrackingController::class, 'getEta'])->name('eta');
         Route::post('/location', [TransportTrackingController::class, 'updateLocation'])->name('update-location');
         Route::get('/active-buses', [TransportTrackingController::class, 'getActiveBuses'])->name('active-buses');
         Route::get('/bus/{bus}/location', [TransportTrackingController::class, 'getBusLocation'])->name('bus-location');
         Route::get('/route-progress', [TransportTrackingController::class, 'getRouteProgress'])->name('route-progress');
-        Route::get('/eta', [TransportTrackingController::class, 'getEta'])->name('eta');
         Route::get('/bus/{bus}/history', [TransportTrackingController::class, 'getTrackingHistory'])->name('history');
         Route::post('/geofence', [TransportTrackingController::class, 'generateGeofence'])->name('geofence');
     });
@@ -126,7 +159,7 @@ Route::middleware(['auth:api'])->prefix('transport')->name('transport.')->group(
 // ==========================================
 // PARENT PORTAL ROUTES
 // ==========================================
-Route::middleware(['auth:api', 'multi-tenant'])->prefix('parent/transport')->name('parent.transport.')->group(function () {
+Route::middleware(['auth:api'])->prefix('parent/transport')->name('parent.transport.')->group(function () {
     Route::get('/dashboard', [ParentPortalController::class, 'dashboard'])->name('dashboard');
     Route::get('/student/{student}/status', [ParentPortalController::class, 'getStudentStatus'])->name('student-status');
     Route::get('/student/{student}/location', [ParentPortalController::class, 'getBusLocation'])->name('bus-location');

@@ -18,9 +18,9 @@ class StudentTransportController extends Controller
     {
         $this->studentTransportService = $studentTransportService;
         $this->middleware('auth:api');
-        // $this->middleware('permission:view-students')->only(['index', 'show']);
-        // $this->middleware('permission:create-transport')->only(['subscribe', 'checkin', 'checkout']);
-        // $this->middleware('permission:edit-transport')->only(['update']);
+        $this->middleware('permission:view-students')->only(['index', 'show']);
+        $this->middleware('permission:create-transport')->only(['subscribe', 'checkin', 'checkout']);
+        $this->middleware('permission:edit-transport')->only(['update']);
     }
 
     public function index(Request $request): JsonResponse
@@ -54,9 +54,11 @@ class StudentTransportController extends Controller
             'start_date' => 'required|date|after_or_equal:today',
             'end_date' => 'nullable|date|after:start_date',
             'monthly_fee' => 'nullable|numeric|min:0',
+            'auto_renewal' => 'nullable|boolean',
             'authorized_parents' => 'nullable|array',
             'authorized_parents.*' => 'exists:users,id',
-            'special_needs' => 'nullable|string'
+            'special_needs' => 'nullable|string',
+            'rfid_card_id' => 'nullable|string|max:50|unique:student_transport_subscriptions,rfid_card_id'
         ]);
 
         if ($validator->fails()) {
@@ -104,14 +106,17 @@ class StudentTransportController extends Controller
     public function checkin(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
+            'school_id' => 'required|exists:schools,id',
             'student_id' => 'required|exists:students,id',
-            'bus_id' => 'required|exists:fleet_buses,id',
-            'stop_id' => 'required|exists:bus_stops,id',
+            'fleet_bus_id' => 'required|exists:fleet_buses,id',
+            'bus_stop_id' => 'required|exists:bus_stops,id',
             'validation_method' => 'required|in:qr_code,rfid,manual,facial_recognition',
             'validation_data' => 'nullable|string',
-            'latitude' => 'nullable|numeric|between:-90,90',
-            'longitude' => 'nullable|numeric|between:-180,180',
-            'notes' => 'nullable|string'
+            'event_latitude' => 'nullable|numeric|between:-90,90',
+            'event_longitude' => 'nullable|numeric|between:-180,180',
+            'notes' => 'nullable|string',
+            'metadata' => 'nullable|array',
+            'event_timestamp' => 'nullable|date'
         ]);
 
         if ($validator->fails()) {
@@ -141,14 +146,17 @@ class StudentTransportController extends Controller
     public function checkout(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
+            'school_id' => 'required|exists:schools,id',
             'student_id' => 'required|exists:students,id',
-            'bus_id' => 'required|exists:fleet_buses,id',
-            'stop_id' => 'required|exists:bus_stops,id',
+            'fleet_bus_id' => 'required|exists:fleet_buses,id',
+            'bus_stop_id' => 'required|exists:bus_stops,id',
             'validation_method' => 'required|in:qr_code,rfid,manual,facial_recognition',
             'validation_data' => 'nullable|string',
-            'latitude' => 'nullable|numeric|between:-90,90',
-            'longitude' => 'nullable|numeric|between:-180,180',
-            'notes' => 'nullable|string'
+            'event_latitude' => 'nullable|numeric|between:-90,90',
+            'event_longitude' => 'nullable|numeric|between:-180,180',
+            'notes' => 'nullable|string',
+            'metadata' => 'nullable|array',
+            'event_timestamp' => 'nullable|date'
         ]);
 
         if ($validator->fails()) {
@@ -272,6 +280,43 @@ class StudentTransportController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Error retrieving roster: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Check if student has active transport subscription
+     */
+    public function checkSubscriptionStatus(Student $student): JsonResponse
+    {
+        try {
+            $subscription = StudentTransportSubscription::where('student_id', $student->id)
+                ->where('status', 'active')
+                ->with(['pickupStop', 'dropoffStop', 'transportRoute'])
+                ->first();
+
+            if (!$subscription) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Student does not have an active transport subscription',
+                    'data' => null
+                ], 404);
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'subscription' => $subscription,
+                    'is_active' => $subscription->isActive(),
+                    'remaining_days' => $subscription->getRemainingDays(),
+                    'can_auto_renew' => $subscription->canAutoRenew()
+                ],
+                'message' => 'Student has active transport subscription'
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error checking subscription status: ' . $e->getMessage()
             ], 500);
         }
     }

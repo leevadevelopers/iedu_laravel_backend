@@ -317,6 +317,6 @@ class Student extends Model
      */
     public function getRouteKeyName(): string
     {
-        return 'student_number';
+        return 'id'; // Changed from 'student_number' to 'id' for numeric route binding
     }
 }

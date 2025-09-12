@@ -22,15 +22,19 @@ class TransportTrackingController extends Controller
     public function updateLocation(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'bus_id' => 'required|exists:fleet_buses,id',
-            'route_id' => 'required|exists:transport_routes,id',
+            'school_id' => 'required|exists:schools,id',
+            'fleet_bus_id' => 'required|exists:fleet_buses,id',
+            'transport_route_id' => 'required|exists:transport_routes,id',
             'latitude' => 'required|numeric|between:-90,90',
             'longitude' => 'required|numeric|between:-180,180',
             'speed_kmh' => 'required|numeric|min:0|max:120',
             'heading' => 'nullable|integer|min:0|max:359',
             'altitude' => 'nullable|numeric',
+            'tracked_at' => 'nullable|date',
             'status' => 'nullable|string|in:departed,in_transit,at_stop,arrived',
             'current_stop_id' => 'nullable|exists:bus_stops,id',
+            'next_stop_id' => 'nullable|exists:bus_stops,id',
+            'eta_minutes' => 'nullable|integer|min:0',
             'raw_gps_data' => 'nullable|array'
         ]);
 

@@ -16,6 +16,7 @@ use App\Notifications\Transport\TransportIncidentNotification;
 // use App\Notifications\Transport\EmergencyAlertNotification;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Log;
@@ -31,7 +32,7 @@ class IncidentManagementService
             'reportedBy:id,name,email',
             'assignedTo:id,name,email',
             'fleetBus:id,license_plate,internal_code',
-            'transportRoute:id,route_name'
+            'transportRoute:id,name'
         ]);
 
         // Apply filters
@@ -61,7 +62,7 @@ class IncidentManagementService
                                ->orWhere('internal_code', 'like', "%{$search}%");
                   })
                   ->orWhereHas('transportRoute', function($routeQuery) use ($search) {
-                      $routeQuery->where('route_name', 'like', "%{$search}%");
+                      $routeQuery->where('name', 'like', "%{$search}%");
                   });
             });
         }
@@ -83,7 +84,7 @@ class IncidentManagementService
             // Set default values
             $data['incident_datetime'] = $data['incident_datetime'] ?? now();
             $data['status'] = 'reported';
-            $data['reported_by'] = auth()->id();
+            $data['reported_by'] = Auth::id();
 
             // Create incident
             $incident = TransportIncident::create($data);
@@ -121,10 +122,10 @@ class IncidentManagementService
     public function getIncidentDetails(TransportIncident $incident): array
     {
         $incident->load([
-            'reportedBy:id,name,email,phone',
-            'assignedTo:id,name,email,phone',
+            'reportedBy:id,name,identifier,phone',
+            'assignedTo:id,name,identifier,phone',
             'fleetBus:id,license_plate,internal_code,make,model',
-            'transportRoute:id,route_name,departure_time,arrival_time'
+            'transportRoute:id,name,departure_time,arrival_time'
         ]);
 
         // Get related incidents
@@ -268,18 +269,30 @@ class IncidentManagementService
         DB::beginTransaction();
 
         try {
+            // Map emergency_type to valid incident_type ENUM value
+            $incidentTypeMap = [
+                'breakdown' => 'breakdown',
+                'accident' => 'accident',
+                'delay' => 'delay',
+                'behavioral' => 'behavioral',
+                'medical' => 'medical',
+                'emergency' => 'other' // Map 'emergency' to 'other' for ENUM compatibility
+            ];
+
+            $incidentType = $incidentTypeMap[$data['emergency_type']] ?? 'other';
+
             // Create emergency incident
             $emergencyIncident = TransportIncident::create([
-                'school_id' => auth()->user()->school_id ?? 1,
-                'fleet_bus_id' => $data['bus_id'],
-                'incident_type' => 'emergency',
+                'school_id' => $data['school_id'],
+                'fleet_bus_id' => $data['fleet_bus_id'],
+                'incident_type' => $incidentType,
                 'severity' => 'critical',
                 'title' => 'Emergency Alert: ' . $data['emergency_type'],
                 'description' => $data['description'] ?? 'Emergency situation reported',
                 'incident_datetime' => now(),
                 'incident_latitude' => $data['location']['lat'],
                 'incident_longitude' => $data['location']['lng'],
-                'reported_by' => auth()->user()->id,
+                'reported_by' => 1, // System user for public endpoints
                 'status' => 'reported'
             ]);
 

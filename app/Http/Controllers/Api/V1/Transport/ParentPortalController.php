@@ -18,10 +18,10 @@ class ParentPortalController extends Controller
     {
         $this->parentPortalService = $parentPortalService;
         $this->middleware('auth:api');
-        $this->middleware('permission:view-own-students');
+        // $this->middleware('permission:view-own-students');
     }
 
-    public function dashboard(): JsonResponse
+    public function dashboard()
     {
         try {
             $dashboard = $this->parentPortalService->getDashboard(auth()->user());

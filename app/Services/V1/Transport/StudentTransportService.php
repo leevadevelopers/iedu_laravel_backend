@@ -10,6 +10,7 @@ use App\Events\V1\Transport\StudentCheckedOut;
 use App\Models\V1\Transport\TransportRoute;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\Auth;
 use Endroid\QrCode\QrCode;
 use Endroid\QrCode\Writer\PngWriter;
 
@@ -122,8 +123,8 @@ class StudentTransportService
         $eventData = array_merge($data, [
             'event_type' => 'check_in',
             'transport_route_id' => $subscription->transport_route_id,
-            'event_timestamp' => now(),
-            'recorded_by' => auth()->user()?->id,
+            'event_timestamp' => $data['event_timestamp'] ?? now(),
+            'recorded_by' => Auth::user()?->id,
             'is_automated' => $data['validation_method'] !== 'manual'
         ]);
 
@@ -168,8 +169,8 @@ class StudentTransportService
         $eventData = array_merge($data, [
             'event_type' => 'check_out',
             'transport_route_id' => $subscription->transport_route_id,
-            'event_timestamp' => now(),
-            'recorded_by' => auth()->user()?->id,
+            'event_timestamp' => $data['event_timestamp'] ?? now(),
+            'recorded_by' => Auth::user()?->id,
             'is_automated' => $data['validation_method'] !== 'manual'
         ]);
 
