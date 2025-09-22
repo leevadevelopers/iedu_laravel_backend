@@ -16,36 +16,51 @@ trait Tenantable
 
         static::creating(function ($model) {
             if (!$model->tenant_id) {
-                // Use the same logic as RiskReportService
-                $tenantId = session('tenant_id');
-                
+                $tenantId = null;
+
+                // First: Try to get tenant_id from authenticated user's tenant_id field
+                $user = auth('api')->user();
+                if ($user && $user instanceof \App\Models\User && $user->tenant_id) {
+                    $tenantId = $user->tenant_id;
+                    session(['tenant_id' => $tenantId]);
+                    Log::info('Tenantable trait set tenant_id from user field', ['tenant_id' => $tenantId, 'model' => get_class($model)]);
+                }
+
+                // Second: Try session
                 if (!$tenantId) {
-                    $user = auth('api')->user();
-                    if ($user && $user instanceof \App\Models\User) {
-                        // Get tenant directly from user relationship without triggering TenantScope
-                        $tenant = $user->tenants()->withoutGlobalScope(\App\Models\Scopes\TenantScope::class)
-                            ->wherePivot('current_tenant', true)->first();
+                    $tenantId = session('tenant_id');
+                    if ($tenantId) {
+                        Log::info('Tenantable trait set tenant_id from session', ['tenant_id' => $tenantId, 'model' => get_class($model)]);
+                    }
+                }
+
+                // Third: Try user's tenant relationship
+                if (!$tenantId && $user && $user instanceof \App\Models\User) {
+                    // Get tenant directly from user relationship without triggering TenantScope
+                    $tenant = $user->tenants()->withoutGlobalScope(\App\Models\Scopes\TenantScope::class)
+                        ->wherePivot('current_tenant', true)->first();
+                    if ($tenant && isset($tenant->id)) {
+                        $tenantId = $tenant->id;
+                        session(['tenant_id' => $tenant->id]);
+                        Log::info('Tenantable trait set tenant_id from user relationship (current)', ['tenant_id' => $tenantId, 'model' => get_class($model)]);
+                    } else {
+                        // Fallback to first tenant
+                        $tenant = $user->tenants()->withoutGlobalScope(\App\Models\Scopes\TenantScope::class)->first();
                         if ($tenant && isset($tenant->id)) {
                             $tenantId = $tenant->id;
                             session(['tenant_id' => $tenant->id]);
-                        } else {
-                            // Fallback to first tenant
-                            $tenant = $user->tenants()->withoutGlobalScope(\App\Models\Scopes\TenantScope::class)->first();
-                            if ($tenant && isset($tenant->id)) {
-                                $tenantId = $tenant->id;
-                                session(['tenant_id' => $tenant->id]);
-                            }
+                            Log::info('Tenantable trait set tenant_id from user relationship (first)', ['tenant_id' => $tenantId, 'model' => get_class($model)]);
                         }
                     }
                 }
-                
+
                 if ($tenantId) {
                     $model->tenant_id = $tenantId;
-                    Log::info('Tenantable trait set tenant_id', ['tenant_id' => $tenantId, 'model' => get_class($model)]);
                 } else {
                     Log::warning('Creating model without tenant context', [
                         'model' => get_class($model),
                         'user_id' => auth('api')->id(),
+                        'user_tenant_id' => $user->tenant_id ?? 'NULL',
                         'session_tenant_id' => session('tenant_id'),
                     ]);
                 }
@@ -92,11 +107,11 @@ trait Tenantable
                 }
             }
         }
-        
+
         if ($tenantId) {
             return $query->where($this->getTable() . '.tenant_id', $tenantId);
         }
-        
+
         return $query;
     }
 
@@ -175,24 +190,24 @@ trait Tenantable
                 }
             }
         }
-        
+
         if (!$tenantId) {
             throw new \Exception('Cannot create model without tenant context');
         }
-        
+
         $attributes['tenant_id'] = $tenantId;
-        
+
         return static::create($attributes);
     }
 
     public function userCanAccess($user = null): bool
     {
         $user = $user ?? auth('api')->user();
-        
+
         if (!$user) {
             return false;
         }
-        
+
         return $user->belongsToTenant($this->tenant_id);
     }
 

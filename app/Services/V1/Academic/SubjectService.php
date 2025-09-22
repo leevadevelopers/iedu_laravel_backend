@@ -11,11 +11,8 @@ class SubjectService extends BaseAcademicService
 {
     protected SubjectRepository $subjectRepository;
 
-    public function __construct(
-        \App\Services\SchoolContextService $schoolContextService,
-        SubjectRepository $subjectRepository
-    ) {
-        parent::__construct($schoolContextService);
+    public function __construct(SubjectRepository $subjectRepository)
+    {
         $this->subjectRepository = $subjectRepository;
     }
 

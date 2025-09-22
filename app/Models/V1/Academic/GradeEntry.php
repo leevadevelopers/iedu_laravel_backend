@@ -3,6 +3,8 @@
 namespace App\Models\V1\Academic;
 
 use App\Models\BaseModel;
+use App\Models\Settings\Tenant;
+use App\Models\Traits\Tenantable;
 use App\Models\V1\SIS\School\School;
 use App\Models\V1\SIS\Student\Student;
 use App\Models\User;
@@ -12,7 +14,9 @@ use Illuminate\Database\Eloquent\Builder;
 
 class GradeEntry extends BaseModel
 {
+    use Tenantable;
     protected $fillable = [
+        'tenant_id',
         'school_id',
         'student_id',
         'class_id',
@@ -58,6 +62,11 @@ class GradeEntry extends BaseModel
     }
 
     // Relationships
+    public function tenant(): BelongsTo
+    {
+        return $this->belongsTo(Tenant::class);
+    }
+
     public function school(): BelongsTo
     {
         return $this->belongsTo(School::class);

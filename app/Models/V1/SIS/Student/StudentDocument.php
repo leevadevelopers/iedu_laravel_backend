@@ -2,6 +2,7 @@
 
 namespace App\Models\V1\SIS\Student;
 
+use App\Enums\DocumentType;
 use App\Models\V1\SIS\School\School;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -88,6 +89,7 @@ class StudentDocument extends Model
         'access_permissions_json' => 'array',
         'ferpa_protected' => 'boolean',
         'file_size' => 'integer',
+        'document_type' => DocumentType::class,
     ];
 
     /**

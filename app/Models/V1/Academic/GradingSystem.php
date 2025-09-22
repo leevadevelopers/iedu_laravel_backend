@@ -3,15 +3,18 @@
 namespace App\Models\V1\Academic;
 
 use App\Models\BaseModel;
+use App\Models\Settings\Tenant;
+use App\Models\Traits\Tenantable;
 use App\Models\V1\SIS\School\School;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Casts\AsArray;
 
 class GradingSystem extends BaseModel
 {
+    use Tenantable;
     protected $fillable = [
+        'tenant_id',
         'school_id',
         'name',
         'system_type',
@@ -23,8 +26,8 @@ class GradingSystem extends BaseModel
     ];
 
     protected $casts = [
-        'applicable_grades' => AsArray::class,
-        'applicable_subjects' => AsArray::class,
+        'applicable_grades' => 'array',
+        'applicable_subjects' => 'array',
         'configuration_json' => 'array',
         'is_primary' => 'boolean'
     ];
@@ -50,6 +53,11 @@ class GradingSystem extends BaseModel
     }
 
     // Relationships
+    public function tenant(): BelongsTo
+    {
+        return $this->belongsTo(Tenant::class);
+    }
+
     public function school(): BelongsTo
     {
         return $this->belongsTo(School::class);

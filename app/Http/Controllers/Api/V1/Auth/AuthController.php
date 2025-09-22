@@ -12,9 +12,20 @@ use App\Models\Settings\Tenant;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
+use App\Services\ActivityLogService;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Validation\ValidationException;
+use App\Http\Resources\UserResource;
+use App\Http\Resources\TenantResource;
 
 class AuthController extends Controller
 {
+
+    public function __construct(private ActivityLogService $activityLogService)
+    {
+        $this->middleware('auth:api', ['except' => ['login', 'register']]);
+    }
+
     public function register(Request $request)
     {
         $validator = Validator::make($request->all(), [
@@ -158,104 +169,69 @@ class AuthController extends Controller
         }
     }
 
-    public function login(Request $request)
+    public function login(Request $request): JsonResponse
     {
-        try {
-            $validator = Validator::make($request->all(), [
-                'identifier' => 'required|string',
-                'password' => 'required|string',
-                'type' => 'required|in:email,phone',
+        $request->validate([
+            'identifier' => 'required',
+            'password' => 'required|string',
+            'tenant_id' => 'nullable|integer|exists:tenants,id',
+        ]);
+
+        $identifier = $request->get('identifier');
+        $password = $request->get('password');
+
+        // Buscar usuário por identifier (email ou telefone)
+        $user = \App\Models\User::where('identifier', $identifier)->first();
+        if (!$user || !\Illuminate\Support\Facades\Hash::check($password, $user->password)) {
+            $this->activityLogService->logSecurityEvent('failed_login_attempt', [
+                'identifier' => $identifier,
+                'ip' => $request->ip(),
             ]);
 
-            // Validação condicional baseada no tipo de identifier
-            $validator->after(function ($validator) use ($request) {
-                $type = $request->input('type');
-                $identifier = $request->input('identifier');
-
-                if ($type === 'email') {
-                    if (!filter_var($identifier, FILTER_VALIDATE_EMAIL)) {
-                        $validator->errors()->add('identifier', 'O campo identifier deve ser um email válido quando o tipo for email.');
-                    }
-
-                    // Validação adicional para formato de email
-                    if (!preg_match('/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/', $identifier)) {
-                        $validator->errors()->add('identifier', 'Formato de email inválido.');
-                    }
-
-                    // Verificar se não contém caracteres perigosos
-                    if (preg_match('/[<>"\']/', $identifier)) {
-                        $validator->errors()->add('identifier', 'O email não pode conter caracteres especiais como < > " \'.');
-                    }
-                } elseif ($type === 'phone') {
-                    // Remover todos os caracteres não numéricos para validação
-                    $cleanPhone = preg_replace('/[^0-9]/', '', $identifier);
-
-                    // Validar se contém apenas números após limpeza
-                    if (!preg_match('/^[0-9]+$/', $cleanPhone)) {
-                        $validator->errors()->add('identifier', 'O telefone deve conter apenas números e caracteres de formatação válidos.');
-                    }
-
-                    // Validar comprimento do telefone (8-15 dígitos é um padrão internacional)
-                    if (strlen($cleanPhone) < 8 || strlen($cleanPhone) > 15) {
-                        $validator->errors()->add('identifier', 'O telefone deve ter entre 8 e 15 dígitos.');
-                    }
-
-                    // Validar formato brasileiro se começar com +55 ou 55
-                    if (preg_match('/^(\+?55|55)/', $cleanPhone)) {
-                        if (strlen($cleanPhone) < 10 || strlen($cleanPhone) > 13) {
-                            $validator->errors()->add('identifier', 'Telefone brasileiro deve ter entre 10 e 13 dígitos (incluindo DDD).');
-                        }
-                    }
-
-                    // Validar se não é apenas zeros ou números repetidos
-                    if (preg_match('/^(.)\1+$/', $cleanPhone)) {
-                        $validator->errors()->add('identifier', 'O telefone não pode conter apenas números repetidos.');
-                    }
-                }
-            });
-
-            if ($validator->fails()) {
-                return response()->json(['errors' => $validator->errors()], 422);
-            }
-
-            $credentials = $validator->validated();
-
-            // Log para debug
-            Log::info('Login attempt', ['identifier' => $credentials['identifier']]);
-
-            if (! $token = auth('api')->attempt($credentials)) {
-                Log::warning('Login failed - invalid credentials', ['identifier' => $credentials['identifier']]);
-                return response()->json(['error' => 'Invalid credentials'], 401);
-            }
-
-            $user = auth('api')->user();
-            Log::info('Login successful', ['user_id' => $user->id, 'identifier' => $user->identifier]);
-
-            if ($user->must_change) {
-                return response()->json([
-                    'access_token' => $token,
-                    'token_type' => 'bearer',
-                    'expires_in' => 60 * 60 * 24, // 24 hours default
-                    'must_change' => true
-                ]);
-            }
-
-            return $this->respondWithToken($token);
-        } catch (\Exception $e) {
-            Log::error('Login error', [
-                'message' => $e->getMessage(),
-                'file' => $e->getFile(),
-                'line' => $e->getLine(),
-                'trace' => $e->getTraceAsString()
+            throw ValidationException::withMessages([
+                'identifier' => ['The provided credentials are incorrect.'],
             ]);
-
-            return response()->json([
-                'error' => 'Internal server error',
-                'message' => 'An error occurred during login. Please try again.'
-            ], 500);
         }
-    }
 
+        if (!$user->isActive()) {
+            return response()->json([
+                'error' => 'Account is inactive. Please contact administrator.'
+            ], 403);
+        }
+
+        // Autenticar e gerar token JWT Tymon\JWTAuth\Facades\JWTAuth
+        $token = \Tymon\JWTAuth\Facades\JWTAuth::fromUser($user);
+
+        // Handle tenant context
+        if ($request->has('tenant_id') && $request->get('tenant_id') !== null) {
+            $tenantId = (int) $request->get('tenant_id');
+            if (!$user->belongsToTenant($tenantId)) {
+                return response()->json([
+                    'error' => 'You do not have access to the requested organization.'
+                ], 403);
+            }
+            $user->switchTenant($tenantId);
+        } else {
+            // Set to first available tenant
+            $firstTenant = $user->activeTenants()->first();
+            if ($firstTenant) {
+                session(['tenant_id' => $firstTenant->id]);
+            }
+        }
+
+        $user->updateLastLogin();
+
+        $this->activityLogService->logUserAction('user_logged_in', $user);
+
+        return response()->json([
+            'access_token' => $token,
+            'token_type' => 'bearer',
+            'expires_in' => \Tymon\JWTAuth\Facades\JWTAuth::factory()->getTTL() * 60,
+            'user' => new UserResource($user),
+            'current_tenant' => $user->getCurrentTenant() ?
+                new TenantResource($user->getCurrentTenant()) : null,
+        ]);
+    }
     public function me()
     {
         $user = auth('api')->user();

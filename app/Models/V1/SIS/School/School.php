@@ -16,6 +16,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 /**
  * School Model
@@ -144,11 +145,26 @@ class School extends Model
     }
 
     /**
-     * Get the users associated with this school.
+     * Get the users associated with this school through the school_users pivot table.
      */
-    public function users(): HasMany
+    public function users(): BelongsToMany
     {
-        return $this->hasMany(User::class);
+        return $this->belongsToMany(User::class, 'school_users')
+            ->withPivot(['role', 'status', 'start_date', 'end_date', 'permissions'])
+            ->withTimestamps();
+    }
+
+    /**
+     * Get the active users for this school.
+     */
+    public function activeUsers(): BelongsToMany
+    {
+        return $this->users()
+            ->wherePivot('status', 'active')
+            ->where(function ($query) {
+                $query->whereNull('school_users.end_date')
+                      ->orWhere('school_users.end_date', '>=', now());
+            });
     }
 
     /**

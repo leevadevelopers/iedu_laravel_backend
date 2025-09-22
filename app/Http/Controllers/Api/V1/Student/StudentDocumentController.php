@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\API\V1\Student;
 
+use App\Enums\DocumentType;
 use App\Http\Controllers\Controller;
 use App\Models\V1\SIS\Student\StudentDocument;
 use App\Models\V1\SIS\Student\Student;
@@ -13,7 +14,9 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Schema;
 
 class StudentDocumentController extends Controller
 {
@@ -32,7 +35,15 @@ class StudentDocumentController extends Controller
     public function index(Request $request): JsonResponse
     {
         try {
-            $query = StudentDocument::with(['student:id,first_name,last_name,student_number', 'uploadedBy:id,name']);
+            Log::info('Retrieving documents list', [
+                'user_id' => Auth::id(),
+                'filters' => $request->all()
+            ]);
+
+            $query = StudentDocument::withoutGlobalScopes()->with([
+                'student:id,first_name,last_name,student_number',
+                'uploader:id,name'
+            ]);
 
             // Apply filters
             if ($request->has('student_id')) {
@@ -48,24 +59,30 @@ class StudentDocumentController extends Controller
             }
 
             if ($request->has('expiry_date_from')) {
-                $query->where('expiry_date', '>=', $request->expiry_date_from);
+                $query->where('expiration_date', '>=', $request->expiry_date_from);
             }
 
             if ($request->has('expiry_date_to')) {
-                $query->where('expiry_date', '<=', $request->expiry_date_to);
+                $query->where('expiration_date', '<=', $request->expiry_date_to);
             }
 
             if ($request->has('search')) {
                 $search = $request->search;
                 $query->where(function($q) use ($search) {
                     $q->where('document_name', 'like', "%{$search}%")
-                      ->orWhere('document_number', 'like', "%{$search}%")
-                      ->orWhere('description', 'like', "%{$search}%");
+                      ->orWhere('file_name', 'like', "%{$search}%")
+                      ->orWhere('verification_notes', 'like', "%{$search}%");
                 });
             }
 
             $documents = $query->orderBy('created_at', 'desc')
                 ->paginate($request->get('per_page', 15));
+
+            Log::info('Documents retrieved', [
+                'total_count' => $documents->total(),
+                'current_page' => $documents->currentPage(),
+                'per_page' => $documents->perPage()
+            ]);
 
             return response()->json([
                 'success' => true,
@@ -73,6 +90,11 @@ class StudentDocumentController extends Controller
             ]);
 
         } catch (\Exception $e) {
+            Log::error('Failed to retrieve documents', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to retrieve documents',
@@ -87,19 +109,24 @@ class StudentDocumentController extends Controller
     public function store(Request $request): JsonResponse
     {
         $validator = Validator::make($request->all(), [
+            'tenant_id' => 'required|exists:tenants,id',
+            'school_id' => 'required|exists:schools,id',
             'student_id' => 'required|exists:students,id',
-            'document_type' => 'required|string|max:100',
+            'document_type' => 'required|in:' . implode(',', DocumentType::values()),
             'document_name' => 'required|string|max:255',
-            'document_number' => 'nullable|string|max:100',
-            'description' => 'nullable|string|max:1000',
+            'document_category' => 'nullable|string|max:100',
+            'file_name' => 'required|string|max:255',
             'file_path' => 'required|string|max:500',
+            'file_type' => 'required|string|max:10',
             'file_size' => 'required|integer|min:1',
-            'file_type' => 'required|string|max:100',
-            'expiry_date' => 'nullable|date|after:today',
-            'status' => 'required|in:draft,pending,valid,expired,rejected',
-            'priority' => 'nullable|in:low,medium,high,critical',
-            'tags' => 'nullable|array',
-            'tags.*' => 'string|max:50',
+            'mime_type' => 'required|string|max:100',
+            'expiration_date' => 'nullable|date|after:today',
+            'status' => 'required|in:pending,approved,rejected,expired',
+            'required' => 'nullable|boolean',
+            'verified' => 'nullable|boolean',
+            'verification_notes' => 'nullable|string|max:1000',
+            'access_permissions_json' => 'nullable|array',
+            'ferpa_protected' => 'nullable|boolean',
             'form_data' => 'nullable|array', // For Form Engine integration
         ]);
 
@@ -115,26 +142,65 @@ class StudentDocumentController extends Controller
             DB::beginTransaction();
 
             // Create document
-            $documentData = $request->except(['form_data', 'tags']);
+            $documentData = $request->except(['form_data']);
             $documentData['uploaded_by'] = Auth::id();
-            $documentData['tenant_id'] = Auth::user()->current_tenant_id;
-            $documentData['tags_json'] = $request->tags ? json_encode($request->tags) : null;
 
             $document = StudentDocument::create($documentData);
 
             // Process form data through Form Engine if provided
-            if ($request->has('form_data')) {
-                $processedData = $this->formEngineService->processFormData('document_upload', $request->form_data);
-                $this->formEngineService->createFormInstance('document_upload', $processedData, 'StudentDocument', $document->id);
+            if ($request->has('form_data') && !empty($request->form_data)) {
+                try {
+                    $processedData = $this->formEngineService->processFormData('document_upload', $request->form_data);
+
+                    // Get tenant_id from authenticated user or request
+                    $tenantId = $request->tenant_id ?? Auth::user()->tenant_id ?? Auth::user()->current_tenant_id;
+
+                    if (!$tenantId) {
+                        throw new \Exception('Tenant ID is required for form instance creation');
+                    }
+
+                    $this->formEngineService->createFormInstance('document_upload', $processedData, 'StudentDocument', $document->id, $tenantId);
+                } catch (\Exception $e) {
+                    // Log the error but don't fail the document creation
+                    Log::warning('Form Engine processing failed for document upload', [
+                        'document_id' => $document->id,
+                        'error' => $e->getMessage()
+                    ]);
+                }
             }
 
-            // Start document verification workflow
-            $workflow = $this->workflowService->startWorkflow($document, 'document_verification', [
+            // Start document verification workflow using createWorkflow method
+            $workflow = $this->workflowService->createWorkflow([
+                'workflow_type' => 'document_verification',
                 'steps' => [
-                    'initial_review',
-                    'content_verification',
-                    'approval',
-                    'final_validation'
+                    [
+                        'step_number' => 1,
+                        'step_name' => 'Initial Review',
+                        'step_type' => 'review',
+                        'required_role' => 'teacher',
+                        'instructions' => 'Review document for completeness and basic requirements'
+                    ],
+                    [
+                        'step_number' => 2,
+                        'step_name' => 'Content Verification',
+                        'step_type' => 'verification',
+                        'required_role' => 'academic_coordinator',
+                        'instructions' => 'Verify document content and authenticity'
+                    ],
+                    [
+                        'step_number' => 3,
+                        'step_name' => 'Approval',
+                        'step_type' => 'approval',
+                        'required_role' => 'principal',
+                        'instructions' => 'Final approval of the document'
+                    ],
+                    [
+                        'step_number' => 4,
+                        'step_name' => 'Final Validation',
+                        'step_type' => 'validation',
+                        'required_role' => 'school_admin',
+                        'instructions' => 'Final validation and archival'
+                    ]
                 ]
             ]);
 
@@ -162,21 +228,80 @@ class StudentDocumentController extends Controller
     /**
      * Display the specified document
      */
-    public function show(StudentDocument $document): JsonResponse
+    public function show(Request $request, $id): JsonResponse
     {
         try {
-            $document->load([
-                'student:id,first_name,last_name,student_number,grade_level',
-                'uploadedBy:id,name',
-                'approvedBy:id,name'
+            // Debug: Log the request to understand what's happening
+            Log::info('Retrieving document', [
+                'document_id' => $id,
+                'user_id' => Auth::id(),
+                'request_data' => $request->all()
             ]);
 
+            // Find the document directly by ID, bypassing any potential scopes
+            $document = StudentDocument::withoutGlobalScopes()->with([
+                'student:id,first_name,last_name,student_number',
+                'uploader:id,name',
+                'verifier:id,name',
+                'school:id,official_name,display_name'
+            ])->find($id);
+
+            // Ensure we have the document data
+            if (!$document) {
+                Log::warning('Document not found', ['document_id' => $id]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Document not found'
+                ], 404);
+            }
+
+            Log::info('Document found', [
+                'document_id' => $document->id,
+                'document_name' => $document->document_name,
+                'student_id' => $document->student_id
+            ]);
+
+            // Return the document with all its data
             return response()->json([
                 'success' => true,
-                'data' => $document
+                'data' => [
+                    'id' => $document->id,
+                    'school_id' => $document->school_id,
+                    'student_id' => $document->student_id,
+                    'document_name' => $document->document_name,
+                    'document_type' => $document->document_type,
+                    'document_category' => $document->document_category,
+                    'file_name' => $document->file_name,
+                    'file_path' => $document->file_path,
+                    'file_type' => $document->file_type,
+                    'file_size' => $document->file_size,
+                    'mime_type' => $document->mime_type,
+                    'status' => $document->status,
+                    'expiration_date' => $document->expiration_date,
+                    'required' => $document->required,
+                    'verified' => $document->verified,
+                    'uploaded_by' => $document->uploaded_by,
+                    'verified_by' => $document->verified_by,
+                    'verified_at' => $document->verified_at,
+                    'verification_notes' => $document->verification_notes,
+                    'access_permissions_json' => $document->access_permissions_json,
+                    'ferpa_protected' => $document->ferpa_protected,
+                    'created_at' => $document->created_at,
+                    'updated_at' => $document->updated_at,
+                    'student' => $document->student,
+                    'uploader' => $document->uploader,
+                    'verifier' => $document->verifier,
+                    'school' => $document->school
+                ]
             ]);
 
         } catch (\Exception $e) {
+            Log::error('Failed to retrieve document', [
+                'document_id' => $document->id ?? 'unknown',
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to retrieve document',
@@ -192,14 +317,14 @@ class StudentDocumentController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'document_name' => 'sometimes|required|string|max:255',
-            'document_number' => 'nullable|string|max:100',
-            'description' => 'nullable|string|max:1000',
-            'expiry_date' => 'nullable|date|after:today',
-            'status' => 'sometimes|required|in:draft,pending,valid,expired,rejected',
-            'priority' => 'nullable|in:low,medium,high,critical',
-            'tags' => 'nullable|array',
-            'tags.*' => 'string|max:50',
-            'rejection_reason' => 'required_if:status,rejected|string|max:500',
+            'document_category' => 'nullable|string|max:100',
+            'expiration_date' => 'nullable|date|after:today',
+            'status' => 'sometimes|required|in:pending,approved,rejected,expired',
+            'required' => 'nullable|boolean',
+            'verified' => 'nullable|boolean',
+            'verification_notes' => 'nullable|string|max:1000',
+            'access_permissions_json' => 'nullable|array',
+            'ferpa_protected' => 'nullable|boolean',
         ]);
 
         if ($validator->fails()) {
@@ -213,21 +338,18 @@ class StudentDocumentController extends Controller
         try {
             DB::beginTransaction();
 
-            $updateData = $request->except(['tags', 'rejection_reason']);
+            $updateData = $request->except([]);
 
-            if ($request->has('tags')) {
-                $updateData['tags_json'] = json_encode($request->tags);
+            if ($request->status === 'approved') {
+                $updateData['verified'] = true;
+                $updateData['verified_by'] = Auth::id();
+                $updateData['verified_at'] = now();
             }
 
             if ($request->status === 'rejected') {
-                $updateData['rejection_reason'] = $request->rejection_reason;
-                $updateData['rejected_by'] = Auth::id();
-                $updateData['rejected_at'] = now();
-            }
-
-            if ($request->status === 'valid') {
-                $updateData['approved_by'] = Auth::id();
-                $updateData['approved_at'] = now();
+                $updateData['verified'] = false;
+                $updateData['verified_by'] = Auth::id();
+                $updateData['verified_at'] = now();
             }
 
             $document->update($updateData);
@@ -290,7 +412,7 @@ class StudentDocumentController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'file' => 'required|file|max:10240', // 10MB max
-            'document_type' => 'required|string|max:100',
+            'document_type' => 'required|in:' . implode(',', DocumentType::values()),
             'student_id' => 'required|exists:students,id',
         ]);
 
@@ -373,7 +495,7 @@ class StudentDocumentController extends Controller
     {
         try {
             $documents = StudentDocument::where('student_id', $studentId)
-                ->with(['uploadedBy:id,name', 'approvedBy:id,name'])
+                ->with(['uploader:id,name', 'verifier:id,name'])
                 ->orderBy('created_at', 'desc')
                 ->get();
 
@@ -400,11 +522,11 @@ class StudentDocumentController extends Controller
             $documents = StudentDocument::where(function($query) {
                     $query->where('status', 'rejected')
                           ->orWhere('status', 'pending')
-                          ->orWhere('expiry_date', '<=', now()->addDays(30));
+                          ->orWhere('expiration_date', '<=', now()->addDays(30));
                 })
-                ->with(['student:id,first_name,last_name,student_number', 'uploadedBy:id,name'])
-                ->orderBy('priority', 'desc')
-                ->orderBy('expiry_date', 'asc')
+                ->with(['student:id,first_name,last_name,student_number', 'uploader:id,name'])
+                ->orderBy('required', 'desc')
+                ->orderBy('expiration_date', 'asc')
                 ->get();
 
             return response()->json([
@@ -429,8 +551,7 @@ class StudentDocumentController extends Controller
         $validator = Validator::make($request->all(), [
             'document_ids' => 'required|array|min:1',
             'document_ids.*' => 'exists:student_documents,id',
-            'status' => 'required|in:draft,pending,valid,expired,rejected',
-            'rejection_reason' => 'required_if:status,rejected|string|max:500',
+            'status' => 'required|in:pending,approved,rejected,expired',
         ]);
 
         if ($validator->fails()) {
@@ -450,15 +571,16 @@ class StudentDocumentController extends Controller
             foreach ($documents as $document) {
                 $updateData = ['status' => $request->status];
 
-                if ($request->status === 'rejected') {
-                    $updateData['rejection_reason'] = $request->rejection_reason;
-                    $updateData['rejected_by'] = Auth::id();
-                    $updateData['rejected_at'] = now();
+                if ($request->status === 'approved') {
+                    $updateData['verified'] = true;
+                    $updateData['verified_by'] = Auth::id();
+                    $updateData['verified_at'] = now();
                 }
 
-                if ($request->status === 'valid') {
-                    $updateData['approved_by'] = Auth::id();
-                    $updateData['approved_at'] = now();
+                if ($request->status === 'rejected') {
+                    $updateData['verified'] = false;
+                    $updateData['verified_by'] = Auth::id();
+                    $updateData['verified_at'] = now();
                 }
 
                 $document->update($updateData);
@@ -487,37 +609,22 @@ class StudentDocumentController extends Controller
     }
 
     /**
-     * Get document statistics
+     * Get available document types
      */
-    public function getStatistics(): JsonResponse
+    public function getDocumentTypes(): JsonResponse
     {
         try {
-            $stats = [
-                'total_documents' => StudentDocument::count(),
-                'by_status' => StudentDocument::selectRaw('status, COUNT(*) as count')
-                    ->groupBy('status')
-                    ->get(),
-                'by_type' => StudentDocument::selectRaw('document_type, COUNT(*) as count')
-                    ->groupBy('document_type')
-                    ->get(),
-                'expiring_soon' => StudentDocument::where('expiry_date', '<=', now()->addDays(30))
-                    ->where('status', 'valid')
-                    ->count(),
-                'recent_uploads' => StudentDocument::where('created_at', '>=', now()->subDays(7))
-                    ->count()
-            ];
-
             return response()->json([
                 'success' => true,
-                'data' => $stats
+                'data' => DocumentType::options()
             ]);
-
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Failed to get document statistics',
+                'message' => 'Failed to retrieve document types',
                 'error' => $e->getMessage()
             ], 500);
         }
     }
+
 }

@@ -12,11 +12,8 @@ class GradingSystemService extends BaseAcademicService
 {
     protected GradingSystemRepository $gradingSystemRepository;
 
-    public function __construct(
-        \App\Services\SchoolContextService $schoolContextService,
-        GradingSystemRepository $gradingSystemRepository
-    ) {
-        parent::__construct($schoolContextService);
+    public function __construct(GradingSystemRepository $gradingSystemRepository)
+    {
         $this->gradingSystemRepository = $gradingSystemRepository;
     }
 

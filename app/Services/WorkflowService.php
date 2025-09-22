@@ -12,6 +12,25 @@ use Illuminate\Support\Facades\DB;
 class WorkflowService
 {
     /**
+     * Create a workflow without a specific model.
+     */
+    public function createWorkflow(array $workflowData): FormWorkflow
+    {
+        // Create a temporary model for the workflow
+        $tempModel = new class extends Model {
+            public $tenant_id;
+
+            public function __construct() {
+                parent::__construct();
+                $user = auth('api')->user();
+                $this->tenant_id = $user?->tenant_id ?? null;
+            }
+        };
+
+        return $this->startWorkflow($tempModel, $workflowData['workflow_type'], $workflowData);
+    }
+
+    /**
      * Start a workflow for a model.
      */
     public function startWorkflow(Model $model, string $workflowType, array $config = []): FormWorkflow
@@ -107,6 +126,28 @@ class WorkflowService
         $excludeFields = ['id', 'created_at', 'updated_at', 'deleted_at'];
 
         return array_diff_key($data, array_flip($excludeFields));
+    }
+
+    /**
+     * Get workflow by ID.
+     */
+    public function getWorkflow(int $workflowId): ?FormWorkflow
+    {
+        return FormWorkflow::find($workflowId);
+    }
+
+    /**
+     * Process workflow approval.
+     */
+    public function processApproval(int $workflowId, string $action, string $comments = null): bool
+    {
+        $workflow = $this->getWorkflow($workflowId);
+
+        if (!$workflow) {
+            return false;
+        }
+
+        return $this->advanceWorkflow($workflow, $action, ['comments' => $comments]);
     }
 
     /**

@@ -25,6 +25,10 @@ class SubjectController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
+        if (!auth('api')->user()->hasPermissionTo(['subjects.view', 'academic.view'])) {
+            abort(403, 'This action is unauthorized.');
+        }
+
         $subjects = $this->subjectService->getSubjects($request->all());
 
         return response()->json([
@@ -44,6 +48,10 @@ class SubjectController extends Controller
      */
     public function store(StoreSubjectRequest $request): JsonResponse
     {
+        if (!auth('api')->user()->hasPermissionTo(['subjects.create', 'academic.create'])) {
+            abort(403, 'This action is unauthorizedsssssss.');
+        }
+
         try {
             $subject = $this->subjectService->createSubject($request->validated());
 
@@ -66,7 +74,9 @@ class SubjectController extends Controller
      */
     public function show(Subject $subject): JsonResponse
     {
-        $this->authorize('view', $subject);
+        if (!auth('api')->user()->hasPermissionTo(['subjects.view', 'academic.view'])) {
+            abort(403, 'This action is unauthorized.');
+        }
 
         return response()->json([
             'status' => 'success',
@@ -79,7 +89,9 @@ class SubjectController extends Controller
      */
     public function update(UpdateSubjectRequest $request, Subject $subject): JsonResponse
     {
-        $this->authorize('update', $subject);
+        if (!auth('api')->user()->hasPermissionTo(['subjects.edit', 'academic.edit'])) {
+            abort(403, 'This action is unauthorized.');
+        }
 
         try {
             $updatedSubject = $this->subjectService->updateSubject($subject, $request->validated());
@@ -103,7 +115,9 @@ class SubjectController extends Controller
      */
     public function destroy(Subject $subject): JsonResponse
     {
-        $this->authorize('delete', $subject);
+        if (!auth('api')->user()->hasPermissionTo(['subjects.delete', 'academic.delete'])) {
+            abort(403, 'This action is unauthorized.');
+        }
 
         try {
             $this->subjectService->deleteSubject($subject);
@@ -126,6 +140,10 @@ class SubjectController extends Controller
      */
     public function byGradeLevel(string $gradeLevel): JsonResponse
     {
+        if (!auth('api')->user()->hasPermissionTo(['subjects.view', 'academic.view'])) {
+            abort(403, 'This action is unauthorized.');
+        }
+
         $subjects = $this->subjectService->getSubjectsByGradeLevel($gradeLevel);
 
         return response()->json([
@@ -139,6 +157,10 @@ class SubjectController extends Controller
      */
     public function core(): JsonResponse
     {
+        if (!auth('api')->user()->hasPermissionTo(['subjects.view', 'academic.view'])) {
+            abort(403, 'This action is unauthorized.');
+        }
+
         $subjects = $this->subjectService->getCoreSubjects();
 
         return response()->json([
@@ -152,6 +174,10 @@ class SubjectController extends Controller
      */
     public function electives(): JsonResponse
     {
+        if (!auth('api')->user()->hasPermissionTo(['subjects.view', 'academic.view'])) {
+            abort(403, 'This action is unauthorized.');
+        }
+
         $subjects = $this->subjectService->getElectiveSubjects();
 
         return response()->json([

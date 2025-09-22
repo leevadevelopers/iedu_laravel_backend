@@ -17,6 +17,7 @@ class DatabaseSeeder extends Seeder
             PermissionRoleSeeder::class,
             UserSeeder::class,
             TenantSeeder::class,
+            SchoolSeeder::class,
             SchoolFormTemplatesSeeder::class,
         ]);
     }

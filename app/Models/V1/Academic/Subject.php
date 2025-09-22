@@ -3,15 +3,18 @@
 namespace App\Models\V1\Academic;
 
 use App\Models\BaseModel;
+use App\Models\Settings\Tenant;
+use App\Models\Traits\Tenantable;
 use App\Models\V1\SIS\School\School;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Casts\AsArray;
 
 class Subject extends BaseModel
 {
+    use Tenantable;
     protected $fillable = [
+        'tenant_id',
         'school_id',
         'name',
         'code',
@@ -27,15 +30,20 @@ class Subject extends BaseModel
     ];
 
     protected $casts = [
-        'grade_levels' => AsArray::class,
+        'grade_levels' => 'array',
         'learning_standards_json' => 'array',
-        'prerequisites' => AsArray::class,
+        'prerequisites' => 'array',
         'credit_hours' => 'decimal:1',
         'is_core_subject' => 'boolean',
         'is_elective' => 'boolean'
     ];
 
     // Relationships
+    public function tenant(): BelongsTo
+    {
+        return $this->belongsTo(Tenant::class);
+    }
+
     public function school(): BelongsTo
     {
         return $this->belongsTo(School::class);

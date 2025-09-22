@@ -3,7 +3,7 @@
 use Illuminate\Support\Facades\Route;
 
 
-Route::prefix('v1')->middleware(['auth:api'])->group(function () {
+Route::middleware(['auth:api'])->group(function () {
 
     /*
     |--------------------------------------------------------------------------
@@ -65,6 +65,11 @@ Route::prefix('v1')->middleware(['auth:api'])->group(function () {
         // Statistics
         Route::get('statistics', [\App\Http\Controllers\API\V1\Student\StudentDocumentController::class, 'getStatistics'])
             ->name('student-documents.statistics');
+
+        // Document types
+        Route::get('document-types', [\App\Http\Controllers\API\V1\Student\StudentDocumentController::class, 'getDocumentTypes'])
+            ->name('student-documents.document-types');
+
     });
 
     /*
@@ -91,10 +96,8 @@ Route::prefix('v1')->middleware(['auth:api'])->group(function () {
         });
 
         // Statistics and trends
-        Route::get('statistics', [\App\Http\Controllers\API\V1\Student\StudentEnrollmentController::class, 'getStatistics'])
-            ->name('student-enrollments.statistics');
-        Route::get('trends', [\App\Http\Controllers\API\V1\Student\StudentEnrollmentController::class, 'getEnrollmentTrends'])
-            ->name('student-enrollments.trends');
+        // Route::get('trends', [\App\Http\Controllers\API\V1\Student\StudentEnrollmentController::class, 'getEnrollmentTrends'])
+        //     ->name('student-enrollments.trends');
     });
 
     /*

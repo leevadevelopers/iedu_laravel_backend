@@ -35,11 +35,9 @@ class StudentEnrollmentController extends Controller
     {
         try {
             $query = StudentEnrollmentHistory::with([
-                'student:id,first_name,last_name,student_number,grade_level',
-                'changedBy:id,name',
-                'school:id,name',
-                'academicYear:id,name',
-                'academicTerm:id,name'
+                'student:id,first_name,last_name,student_number,current_grade_level',
+                'school:id,official_name,display_name,short_name',
+                'academicYear:id,name'
             ]);
 
             // Apply filters
@@ -47,8 +45,8 @@ class StudentEnrollmentController extends Controller
                 $query->where('student_id', $request->student_id);
             }
 
-            if ($request->has('status')) {
-                $query->where('status', $request->status);
+            if ($request->has('enrollment_type')) {
+                $query->where('enrollment_type', $request->enrollment_type);
             }
 
             if ($request->has('school_id')) {
@@ -59,16 +57,12 @@ class StudentEnrollmentController extends Controller
                 $query->where('academic_year_id', $request->academic_year_id);
             }
 
-            if ($request->has('academic_term_id')) {
-                $query->where('academic_term_id', $request->academic_term_id);
-            }
-
             if ($request->has('date_from')) {
-                $query->where('changed_at', '>=', $request->date_from);
+                $query->where('created_at', '>=', $request->date_from);
             }
 
             if ($request->has('date_to')) {
-                $query->where('changed_at', '<=', $request->date_to);
+                $query->where('created_at', '<=', $request->date_to);
             }
 
             if ($request->has('search')) {
@@ -80,7 +74,7 @@ class StudentEnrollmentController extends Controller
                 });
             }
 
-            $enrollments = $query->orderBy('changed_at', 'desc')
+            $enrollments = $query->orderBy('created_at', 'desc')
                 ->paginate($request->get('per_page', 15));
 
             return response()->json([
@@ -104,16 +98,18 @@ class StudentEnrollmentController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'student_id' => 'required|exists:students,id',
-            'status' => 'required|in:enrolled,active,inactive,transferred,graduated,suspended,withdrawn',
             'school_id' => 'required|exists:schools,id',
             'academic_year_id' => 'required|exists:academic_years,id',
-            'academic_term_id' => 'nullable|exists:academic_terms,id',
-            'grade_level' => 'required|string|max:10',
+            'grade_level_at_enrollment' => 'required|string|max:20',
             'enrollment_date' => 'required|date',
-            'start_date' => 'required|date',
-            'end_date' => 'nullable|date|after:start_date',
-            'reason' => 'nullable|string|max:500',
-            'notes' => 'nullable|string|max:1000',
+            'enrollment_type' => 'required|in:new,transfer_in,re_enrollment',
+            'previous_school' => 'nullable|string|max:255',
+            'next_school' => 'nullable|string|max:255',
+            'withdrawal_reason' => 'nullable|string|max:500',
+            'transfer_documents_json' => 'nullable|array',
+            'final_gpa' => 'nullable|numeric|min:0|max:4.0',
+            'credits_earned' => 'nullable|numeric|min:0',
+            'academic_records_json' => 'nullable|array',
             'form_data' => 'nullable|array', // For Form Engine integration
         ]);
 
@@ -128,38 +124,82 @@ class StudentEnrollmentController extends Controller
         try {
             DB::beginTransaction();
 
-            // Create enrollment record
-            $enrollmentData = $request->except(['form_data']);
-            $enrollmentData['changed_by'] = Auth::id();
-            $enrollmentData['changed_at'] = now();
-            $enrollmentData['tenant_id'] = Auth::user()->current_tenant_id;
+            // Create enrollment record using correct model attributes
+            $enrollmentData = $request->only([
+                'student_id',
+                'school_id',
+                'academic_year_id',
+                'grade_level_at_enrollment',
+                'enrollment_date',
+                'enrollment_type',
+                'previous_school',
+                'next_school',
+                'withdrawal_reason',
+                'transfer_documents_json',
+                'final_gpa',
+                'credits_earned',
+                'academic_records_json'
+            ]);
 
             $enrollment = StudentEnrollmentHistory::create($enrollmentData);
 
-            // Update student's current enrollment info
+            // Update student's current enrollment info (if Student model has these fields)
             $student = Student::find($request->student_id);
-            $student->update([
-                'status' => $request->status,
+            $studentUpdateData = [
                 'school_id' => $request->school_id,
-                'academic_year_id' => $request->academic_year_id,
-                'academic_term_id' => $request->academic_term_id,
-                'grade_level' => $request->grade_level,
-                'enrollment_date' => $request->enrollment_date
-            ]);
+                'current_academic_year_id' => $request->academic_year_id,
+                'current_grade_level' => $request->grade_level_at_enrollment,
+                'admission_date' => $request->enrollment_date
+            ];
+
+            // Only update fields that exist in Student model
+            $student->update(array_filter($studentUpdateData, function($value, $key) use ($student) {
+                return $student->isFillable($key) && $value !== null;
+            }, ARRAY_FILTER_USE_BOTH));
 
             // Process form data through Form Engine if provided
             if ($request->has('form_data')) {
                 $processedData = $this->formEngineService->processFormData('student_enrollment', $request->form_data);
-                $this->formEngineService->createFormInstance('student_enrollment', $processedData, 'StudentEnrollmentHistory', $enrollment->id);
+                $tenantId = Auth::user()->current_tenant_id ?? Auth::user()->tenant_id ?? null;
+                $this->formEngineService->createFormInstance('student_enrollment', $processedData, 'StudentEnrollmentHistory', $enrollment->id, $tenantId);
             }
 
-            // Start enrollment workflow
+            // Start enrollment workflow - add tenant_id to enrollment model temporarily
+            $tenantId = Auth::user()->current_tenant_id ?? Auth::user()->tenant_id ?? null;
+            if ($tenantId) {
+                $enrollment->tenant_id = $tenantId;
+            }
+
             $workflow = $this->workflowService->startWorkflow($enrollment, 'enrollment_processing', [
                 'steps' => [
-                    'document_verification',
-                    'academic_assessment',
-                    'parent_consent',
-                    'final_approval'
+                    [
+                        'step_number' => 1,
+                        'step_name' => 'Document Verification',
+                        'step_type' => 'verification',
+                        'required_role' => 'registrar',
+                        'instructions' => 'Verify all required documents are submitted and valid'
+                    ],
+                    [
+                        'step_number' => 2,
+                        'step_name' => 'Academic Assessment',
+                        'step_type' => 'assessment',
+                        'required_role' => 'academic_coordinator',
+                        'instructions' => 'Review academic records and determine appropriate grade placement'
+                    ],
+                    [
+                        'step_number' => 3,
+                        'step_name' => 'Parent Consent',
+                        'step_type' => 'approval',
+                        'required_role' => 'parent',
+                        'instructions' => 'Obtain parental consent for enrollment'
+                    ],
+                    [
+                        'step_number' => 4,
+                        'step_name' => 'Final Approval',
+                        'step_type' => 'approval',
+                        'required_role' => 'principal',
+                        'instructions' => 'Final review and approval of enrollment'
+                    ]
                 ]
             ]);
 
@@ -187,19 +227,26 @@ class StudentEnrollmentController extends Controller
     /**
      * Display the specified enrollment record
      */
-    public function show(StudentEnrollmentHistory $enrollment): JsonResponse
+    public function show($id): JsonResponse
     {
         try {
-            $enrollment->load([
-                'student:id,first_name,last_name,student_number,grade_level,email',
-                'changedBy:id,name',
-                'school:id,name,address',
-                'academicYear:id,name,start_date,end_date',
-                'academicTerm:id,name,start_date,end_date'
-            ]);
+            $enrollment = StudentEnrollmentHistory::with([
+                'student:id,first_name,last_name,student_number,current_grade_level,email,phone,date_of_birth',
+                'school:id,official_name,display_name,short_name,address_json,school_type,email,phone',
+                'academicYear:id,name,start_date,end_date'
+            ])->find($id);
+
+            if (!$enrollment) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Enrollment record not found',
+                    'error' => 'No enrollment record found with ID: ' . $id
+                ], 404);
+            }
 
             return response()->json([
                 'success' => true,
+                'message' => 'Enrollment record retrieved successfully',
                 'data' => $enrollment
             ]);
 
@@ -215,14 +262,21 @@ class StudentEnrollmentController extends Controller
     /**
      * Update the specified enrollment record
      */
-    public function update(Request $request, StudentEnrollmentHistory $enrollment): JsonResponse
+    public function update(Request $request, $id): JsonResponse
     {
         $validator = Validator::make($request->all(), [
-            'status' => 'sometimes|required|in:enrolled,active,inactive,transferred,graduated,suspended,withdrawn',
-            'grade_level' => 'sometimes|required|string|max:10',
-            'end_date' => 'nullable|date|after:start_date',
-            'reason' => 'nullable|string|max:500',
-            'notes' => 'nullable|string|max:1000',
+            'grade_level_at_enrollment' => 'sometimes|required|string|max:20',
+            'grade_level_at_withdrawal' => 'nullable|string|max:20',
+            'enrollment_type' => 'sometimes|required|in:new,transfer_in,re_enrollment',
+            'withdrawal_type' => 'nullable|in:graduation,transfer_out,dropout,other',
+            'withdrawal_date' => 'nullable|date',
+            'withdrawal_reason' => 'nullable|string|max:500',
+            'previous_school' => 'nullable|string|max:255',
+            'next_school' => 'nullable|string|max:255',
+            'transfer_documents_json' => 'nullable|array',
+            'final_gpa' => 'nullable|numeric|min:0|max:4.0',
+            'credits_earned' => 'nullable|numeric|min:0',
+            'academic_records_json' => 'nullable|array',
         ]);
 
         if ($validator->fails()) {
@@ -236,13 +290,33 @@ class StudentEnrollmentController extends Controller
         try {
             DB::beginTransaction();
 
-            $enrollment->update($request->all());
+            $enrollment = StudentEnrollmentHistory::find($id);
 
-            // If status changed, update student's current status
-            if ($request->has('status') && $request->status !== $enrollment->getOriginal('status')) {
-                $student = $enrollment->student;
-                $student->update(['status' => $request->status]);
+            if (!$enrollment) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Enrollment record not found',
+                    'error' => 'No enrollment record found with ID: ' . $id
+                ], 404);
             }
+
+            // Only update fields that are fillable in the model
+            $updateData = $request->only([
+                'grade_level_at_enrollment',
+                'grade_level_at_withdrawal',
+                'enrollment_type',
+                'withdrawal_type',
+                'withdrawal_date',
+                'withdrawal_reason',
+                'previous_school',
+                'next_school',
+                'transfer_documents_json',
+                'final_gpa',
+                'credits_earned',
+                'academic_records_json'
+            ]);
+
+            $enrollment->update($updateData);
 
             DB::commit();
 
@@ -265,10 +339,20 @@ class StudentEnrollmentController extends Controller
     /**
      * Remove the specified enrollment record
      */
-    public function destroy(StudentEnrollmentHistory $enrollment): JsonResponse
+    public function destroy($id): JsonResponse
     {
         try {
             DB::beginTransaction();
+
+            $enrollment = StudentEnrollmentHistory::find($id);
+
+            if (!$enrollment) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Enrollment record not found',
+                    'error' => 'No enrollment record found with ID: ' . $id
+                ], 404);
+            }
 
             // Soft delete enrollment record
             $enrollment->delete();
@@ -297,8 +381,8 @@ class StudentEnrollmentController extends Controller
     {
         try {
             $enrollments = StudentEnrollmentHistory::where('student_id', $studentId)
-                ->with(['school:id,name', 'academicYear:id,name', 'academicTerm:id,name', 'changedBy:id,name'])
-                ->orderBy('changed_at', 'desc')
+                ->with(['school:id,official_name,display_name,short_name', 'academicYear:id,name'])
+                ->orderBy('created_at', 'desc')
                 ->get();
 
             return response()->json([
@@ -322,8 +406,8 @@ class StudentEnrollmentController extends Controller
     {
         try {
             $currentEnrollment = StudentEnrollmentHistory::where('student_id', $studentId)
-                ->with(['school:id,name', 'academicYear:id,name', 'academicTerm:id,name'])
-                ->latest('changed_at')
+                ->with(['school:id,official_name,display_name,short_name', 'academicYear:id,name'])
+                ->latest('created_at')
                 ->first();
 
             if (!$currentEnrollment) {
@@ -357,12 +441,11 @@ class StudentEnrollmentController extends Controller
             'student_ids.*' => 'exists:students,id',
             'school_id' => 'required|exists:schools,id',
             'academic_year_id' => 'required|exists:academic_years,id',
-            'academic_term_id' => 'nullable|exists:academic_terms,id',
-            'grade_level' => 'required|string|max:10',
+            'grade_level_at_enrollment' => 'required|string|max:20',
             'enrollment_date' => 'required|date',
-            'start_date' => 'required|date',
-            'end_date' => 'nullable|date|after:start_date',
-            'reason' => 'nullable|string|max:500',
+            'enrollment_type' => 'required|in:new,transfer_in,re_enrollment',
+            'previous_school' => 'nullable|string|max:255',
+            'withdrawal_reason' => 'nullable|string|max:500',
         ]);
 
         if ($validator->fails()) {
@@ -380,32 +463,30 @@ class StudentEnrollmentController extends Controller
             $enrolledCount = 0;
 
             foreach ($students as $student) {
-                // Create enrollment record
+                // Create enrollment record using correct model attributes
                 StudentEnrollmentHistory::create([
                     'student_id' => $student->id,
-                    'status' => 'enrolled',
                     'school_id' => $request->school_id,
                     'academic_year_id' => $request->academic_year_id,
-                    'academic_term_id' => $request->academic_term_id,
-                    'grade_level' => $request->grade_level,
+                    'grade_level_at_enrollment' => $request->grade_level_at_enrollment,
                     'enrollment_date' => $request->enrollment_date,
-                    'start_date' => $request->start_date,
-                    'end_date' => $request->end_date,
-                    'reason' => $request->reason,
-                    'changed_by' => Auth::id(),
-                    'changed_at' => now(),
-                    'tenant_id' => $student->tenant_id
+                    'enrollment_type' => $request->enrollment_type,
+                    'previous_school' => $request->previous_school,
+                    'withdrawal_reason' => $request->withdrawal_reason,
                 ]);
 
-                // Update student's current enrollment info
-                $student->update([
-                    'status' => 'enrolled',
+                // Update student's current enrollment info (if Student model has these fields)
+                $studentUpdateData = [
                     'school_id' => $request->school_id,
-                    'academic_year_id' => $request->academic_year_id,
-                    'academic_term_id' => $request->academic_term_id,
-                    'grade_level' => $request->grade_level,
-                    'enrollment_date' => $request->enrollment_date
-                ]);
+                    'current_academic_year_id' => $request->academic_year_id,
+                    'current_grade_level' => $request->grade_level_at_enrollment,
+                    'admission_date' => $request->enrollment_date
+                ];
+
+                // Only update fields that exist in Student model
+                $student->update(array_filter($studentUpdateData, function($value, $key) use ($student) {
+                    return $student->isFillable($key) && $value !== null;
+                }, ARRAY_FILTER_USE_BOTH));
 
                 $enrolledCount++;
             }
@@ -419,7 +500,7 @@ class StudentEnrollmentController extends Controller
                     'enrolled_count' => $enrolledCount,
                     'school_id' => $request->school_id,
                     'academic_year_id' => $request->academic_year_id,
-                    'grade_level' => $request->grade_level
+                    'grade_level_at_enrollment' => $request->grade_level_at_enrollment
                 ]
             ]);
 
@@ -443,7 +524,8 @@ class StudentEnrollmentController extends Controller
             'student_ids.*' => 'exists:students,id',
             'new_school_id' => 'required|exists:schools,id',
             'transfer_date' => 'required|date|after:today',
-            'reason' => 'required|string|max:500',
+            'withdrawal_reason' => 'required|string|max:500',
+            'next_school' => 'nullable|string|max:255',
         ]);
 
         if ($validator->fails()) {
@@ -461,28 +543,27 @@ class StudentEnrollmentController extends Controller
             $transferredCount = 0;
 
             foreach ($students as $student) {
-                // Create transfer enrollment record
+                // Create transfer enrollment record using correct model attributes
                 StudentEnrollmentHistory::create([
                     'student_id' => $student->id,
-                    'status' => 'transferred',
                     'school_id' => $request->new_school_id,
-                    'academic_year_id' => $student->academic_year_id,
-                    'academic_term_id' => $student->academic_term_id,
-                    'grade_level' => $student->grade_level,
+                    'academic_year_id' => $student->current_academic_year_id ?? 1, // Default if not set
+                    'grade_level_at_enrollment' => $student->current_grade_level ?? 'Unknown',
                     'enrollment_date' => $request->transfer_date,
-                    'start_date' => $request->transfer_date,
-                    'reason' => $request->reason,
-                    'changed_by' => Auth::id(),
-                    'changed_at' => now(),
-                    'tenant_id' => $student->tenant_id
+                    'enrollment_type' => 'transfer_in',
+                    'withdrawal_reason' => $request->withdrawal_reason,
+                    'next_school' => $request->next_school,
                 ]);
 
-                // Update student's current status and school
-                $student->update([
-                    'status' => 'transferred',
+                // Update student's current school (if Student model has these fields)
+                $studentUpdateData = [
                     'school_id' => $request->new_school_id,
-                    'transfer_date' => $request->transfer_date
-                ]);
+                ];
+
+                // Only update fields that exist in Student model
+                $student->update(array_filter($studentUpdateData, function($value, $key) use ($student) {
+                    return $student->isFillable($key) && $value !== null;
+                }, ARRAY_FILTER_USE_BOTH));
 
                 $transferredCount++;
             }
@@ -510,46 +591,6 @@ class StudentEnrollmentController extends Controller
     }
 
     /**
-     * Get enrollment statistics
-     */
-    public function getStatistics(): JsonResponse
-    {
-        try {
-            $stats = [
-                'total_enrollments' => StudentEnrollmentHistory::count(),
-                'by_status' => StudentEnrollmentHistory::selectRaw('status, COUNT(*) as count')
-                    ->groupBy('status')
-                    ->get(),
-                'by_school' => StudentEnrollmentHistory::selectRaw('school_id, COUNT(*) as count')
-                    ->with('school:id,name')
-                    ->groupBy('school_id')
-                    ->get(),
-                'by_academic_year' => StudentEnrollmentHistory::selectRaw('academic_year_id, COUNT(*) as count')
-                    ->with('academicYear:id,name')
-                    ->groupBy('academic_year_id')
-                    ->get(),
-                'recent_enrollments' => StudentEnrollmentHistory::where('changed_at', '>=', now()->subDays(30))
-                    ->count(),
-                'pending_transfers' => StudentEnrollmentHistory::where('status', 'transferred')
-                    ->where('changed_at', '>=', now()->subDays(7))
-                    ->count()
-            ];
-
-            return response()->json([
-                'success' => true,
-                'data' => $stats
-            ]);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to get enrollment statistics',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
      * Get enrollment trends over time
      */
     public function getEnrollmentTrends(Request $request): JsonResponse
@@ -559,24 +600,24 @@ class StudentEnrollmentController extends Controller
             $dateFrom = $request->get('date_from', now()->subYear());
             $dateTo = $request->get('date_to', now());
 
-            $query = StudentEnrollmentHistory::selectRaw('DATE(changed_at) as date, COUNT(*) as count')
-                ->whereBetween('changed_at', [$dateFrom, $dateTo])
+            $query = StudentEnrollmentHistory::selectRaw('DATE(created_at) as date, COUNT(*) as count')
+                ->whereBetween('created_at', [$dateFrom, $dateTo])
                 ->groupBy('date')
                 ->orderBy('date');
 
             if ($period === 'weekly') {
-                $query = StudentEnrollmentHistory::selectRaw('YEARWEEK(changed_at) as week, COUNT(*) as count')
-                    ->whereBetween('changed_at', [$dateFrom, $dateTo])
+                $query = StudentEnrollmentHistory::selectRaw('YEARWEEK(created_at) as week, COUNT(*) as count')
+                    ->whereBetween('created_at', [$dateFrom, $dateTo])
                     ->groupBy('week')
                     ->orderBy('week');
             } elseif ($period === 'monthly') {
-                $query = StudentEnrollmentHistory::selectRaw('DATE_FORMAT(changed_at, "%Y-%m") as month, COUNT(*) as count')
-                    ->whereBetween('changed_at', [$dateFrom, $dateTo])
+                $query = StudentEnrollmentHistory::selectRaw('DATE_FORMAT(created_at, "%Y-%m") as month, COUNT(*) as count')
+                    ->whereBetween('created_at', [$dateFrom, $dateTo])
                     ->groupBy('month')
                     ->orderBy('month');
             } elseif ($period === 'yearly') {
-                $query = StudentEnrollmentHistory::selectRaw('YEAR(changed_at) as year, COUNT(*) as count')
-                    ->whereBetween('changed_at', [$dateFrom, $dateTo])
+                $query = StudentEnrollmentHistory::selectRaw('YEAR(created_at) as year, COUNT(*) as count')
+                    ->whereBetween('created_at', [$dateFrom, $dateTo])
                     ->groupBy('year')
                     ->orderBy('year');
             }

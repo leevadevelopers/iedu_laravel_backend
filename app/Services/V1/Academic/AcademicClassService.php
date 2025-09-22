@@ -12,11 +12,8 @@ class AcademicClassService extends BaseAcademicService
 {
     protected AcademicClassRepository $classRepository;
 
-    public function __construct(
-        \App\Services\SchoolContextService $schoolContextService,
-        AcademicClassRepository $classRepository
-    ) {
-        parent::__construct($schoolContextService);
+    public function __construct(AcademicClassRepository $classRepository)
+    {
         $this->classRepository = $classRepository;
     }
 

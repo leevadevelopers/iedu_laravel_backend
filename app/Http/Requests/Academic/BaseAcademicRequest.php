@@ -3,7 +3,6 @@
 namespace App\Http\Requests\Academic;
 
 use Illuminate\Foundation\Http\FormRequest;
-use App\Services\SchoolContextService;
 
 abstract class BaseAcademicRequest extends FormRequest
 {
@@ -12,29 +11,41 @@ abstract class BaseAcademicRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        // Default authorization - override in child classes if needed
-        return auth()->check() && $this->hasValidSchoolContext();
+        // Default authorization - user must be authenticated and have school association
+        return auth()->check() && $this->hasValidSchoolAssociation();
     }
 
     /**
-     * Check if user has valid school context
+     * Check if user has valid school association
      */
-    protected function hasValidSchoolContext(): bool
+    protected function hasValidSchoolAssociation(): bool
     {
         try {
-            $schoolContext = app(SchoolContextService::class);
-            return $schoolContext->hasSchoolContext();
+            $user = auth()->user();
+            return $user && $user->activeSchools()->exists();
         } catch (\Exception $e) {
             return false;
         }
     }
 
     /**
-     * Get the current school ID
+     * Get the current school ID from user's school_users relationship
      */
     protected function getCurrentSchoolId(): int
     {
-        return app(SchoolContextService::class)->getCurrentSchoolId();
+        $user = auth()->user();
+
+        if (!$user) {
+            throw new \Exception('User not authenticated');
+        }
+
+        $school = $user->activeSchools()->first();
+
+        if (!$school) {
+            throw new \Exception('User is not associated with any schools');
+        }
+
+        return $school->id;
     }
 
     /**

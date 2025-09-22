@@ -216,7 +216,7 @@ trait TenantPermission
         return false;
     }
 
-    private function getCustomTenantPermissions($tenantId): array
+    public function getCustomTenantPermissions($tenantId): array
     {
         // logger()->debug('TenantPermission::getCustomTenantPermissions called', ['tenantId' => $tenantId]);
         $tenantUser = $this->getTenantUserPivot($tenantId);

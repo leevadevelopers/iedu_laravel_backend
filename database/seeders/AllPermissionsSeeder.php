@@ -64,8 +64,23 @@ class AllPermissionsSeeder extends Seeder
             'edit-transport-subscriptions',
             'delete-transport-subscriptions',
 
-            'view-own-students'
+            'view-own-students',
 
+            // Academic permissions
+            'academic.view',
+            'academic.create',
+            'academic.edit',
+            'academic.delete',
+            'academic.admin',
+
+            // Subject permissions
+            'subjects.view',
+            'subjects.create',
+            'subjects.edit',
+            'subjects.delete',
+            'subjects.restore',
+            'subjects.force_delete',
+            'subjects.admin',
 
         ];
 
@@ -103,6 +118,37 @@ class AllPermissionsSeeder extends Seeder
                 'teams.invite',
                 'teams.remove',
                 'teams.assign_roles',
+            ],
+            'transport' => [
+                'view-transport',
+                'create-transport',
+                'edit-transport',
+                'delete-transport',
+            ],
+            'transport-subscriptions' => [
+                'view-transport-subscriptions',
+                'create-transport-subscriptions',
+                'edit-transport-subscriptions',
+                'delete-transport-subscriptions',
+            ],
+            'own-students' => [
+                'view-own-students',
+            ],
+            'academic' => [
+                'academic.view',
+                'academic.create',
+                'academic.edit',
+                'academic.delete',
+                'academic.admin',
+            ],
+            'subjects' => [
+                'subjects.view',
+                'subjects.create',
+                'subjects.edit',
+                'subjects.delete',
+                'subjects.restore',
+                'subjects.force_delete',
+                'subjects.admin',
             ],
         ];
 

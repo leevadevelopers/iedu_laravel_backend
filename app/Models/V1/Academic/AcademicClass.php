@@ -3,6 +3,8 @@
 namespace App\Models\V1\Academic;
 
 use App\Models\BaseModel;
+use App\Models\Settings\Tenant;
+use App\Models\Traits\Tenantable;
 use App\Models\V1\SIS\School\School;
 use App\Models\User;
 use App\Models\V1\SIS\School\AcademicTerm;
@@ -16,9 +18,11 @@ use Illuminate\Database\Eloquent\Casts\AsArray;
 
 class AcademicClass extends BaseModel
 {
+    use Tenantable;
     protected $table = 'classes';
 
     protected $fillable = [
+        'tenant_id',
         'school_id',
         'subject_id',
         'academic_year_id',
@@ -44,6 +48,11 @@ class AcademicClass extends BaseModel
     ];
 
     // Relationships
+    public function tenant(): BelongsTo
+    {
+        return $this->belongsTo(Tenant::class);
+    }
+
     public function school(): BelongsTo
     {
         return $this->belongsTo(School::class);

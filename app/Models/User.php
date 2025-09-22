@@ -169,6 +169,8 @@ class User extends Authenticatable implements JWTSubject
             ->exists();
     }
 
+
+
     public function isActive(): bool
     {
         return $this->is_active;
@@ -189,5 +191,68 @@ class User extends Authenticatable implements JWTSubject
         return $query->whereHas('tenants', function ($q) use ($tenantId) {
             $q->where('tenants.id', $tenantId)->wherePivot('status', 'active');
         });
+    }
+
+    /**
+     * Get the schools associated with this user through the school_users pivot table.
+     */
+    public function schools(): BelongsToMany
+    {
+        return $this->belongsToMany(\App\Models\V1\SIS\School\School::class, 'school_users')
+            ->withPivot(['role', 'status', 'start_date', 'end_date', 'permissions'])
+            ->withTimestamps();
+    }
+
+    /**
+     * Get the active schools for this user.
+     */
+    public function activeSchools(): BelongsToMany
+    {
+        return $this->schools()
+            ->wherePivot('status', 'active')
+            ->where(function ($query) {
+                $query->where(function ($subQuery) {
+                    // Check that start_date is not in the future
+                    $subQuery->whereNull('school_users.start_date')
+                             ->orWhere('school_users.start_date', '<=', now());
+                })
+                ->where(function ($subQuery) {
+                    // Check that end_date is not in the past
+                    $subQuery->whereNull('school_users.end_date')
+                             ->orWhere('school_users.end_date', '>=', now());
+                });
+            });
+    }
+
+    /**
+     * Get the current school for this user (from session or first active school).
+     */
+    public function getCurrentSchool(): ?\App\Models\V1\SIS\School\School
+    {
+        // Check session first
+        $schoolId = session('current_school_id');
+
+        if ($schoolId) {
+            $school = $this->activeSchools()->find($schoolId);
+            if ($school) {
+                return $school;
+            }
+        }
+
+        // Fallback to first active school
+        return $this->activeSchools()->first();
+    }
+
+    /**
+     * Switch to a different school.
+     */
+    public function switchSchool(int $schoolId): bool
+    {
+        if (!$this->activeSchools()->where('schools.id', $schoolId)->exists()) {
+            return false;
+        }
+
+        session(['current_school_id' => $schoolId]);
+        return true;
     }
 }

@@ -2,20 +2,18 @@
 
 namespace App\Repositories\V1\Academic;
 
-use App\Services\SchoolContextService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\Auth;
 
 abstract class BaseAcademicRepository
 {
     protected Model $model;
-    protected SchoolContextService $schoolContextService;
 
-    public function __construct(SchoolContextService $schoolContextService)
+    public function __construct()
     {
-        $this->schoolContextService = $schoolContextService;
         $this->model = app($this->getModelClass());
     }
 
@@ -25,43 +23,55 @@ abstract class BaseAcademicRepository
     abstract protected function getModelClass(): string;
 
     /**
-     * Get current school ID
+     * Get current school ID from user's school_users relationship
      */
     protected function getCurrentSchoolId(): int
     {
-        return $this->schoolContextService->getCurrentSchoolId();
+        $user = Auth::user();
+
+        if (!$user) {
+            throw new \Exception('User not authenticated');
+        }
+
+        $school = $user->activeSchools()->first();
+
+        if (!$school) {
+            throw new \Exception('User is not associated with any schools');
+        }
+
+        return $school->id;
     }
 
     /**
-     * Apply school scope to query
+     * Get base query (global scope handles tenant filtering automatically)
      */
-    protected function schoolScoped(): Builder
+    protected function baseQuery(): Builder
     {
-        return $this->model->where('school_id', $this->getCurrentSchoolId());
+        return $this->model->newQuery();
     }
 
     /**
-     * Find by ID with school scope
+     * Find by ID (tenant scope applied automatically)
      */
     public function find(int $id): ?Model
     {
-        return $this->schoolScoped()->find($id);
+        return $this->baseQuery()->find($id);
     }
 
     /**
-     * Find by ID or fail with school scope
+     * Find by ID or fail (tenant scope applied automatically)
      */
     public function findOrFail(int $id): Model
     {
-        return $this->schoolScoped()->findOrFail($id);
+        return $this->baseQuery()->findOrFail($id);
     }
 
     /**
-     * Get all records with school scope
+     * Get all records (tenant scope applied automatically)
      */
     public function all(): Collection
     {
-        return $this->schoolScoped()->get();
+        return $this->baseQuery()->get();
     }
 
     /**
@@ -91,11 +101,11 @@ abstract class BaseAcademicRepository
     }
 
     /**
-     * Get count with school scope
+     * Get count (tenant scope applied automatically)
      */
     public function count(): int
     {
-        return $this->schoolScoped()->count();
+        return $this->baseQuery()->count();
     }
 
     /**
@@ -128,11 +138,11 @@ abstract class BaseAcademicRepository
     }
 
     /**
-     * Get paginated results with filters
+     * Get paginated results with filters (tenant scope applied automatically)
      */
     public function getWithFilters(array $filters = []): LengthAwarePaginator
     {
-        $query = $this->schoolScoped();
+        $query = $this->baseQuery();
         $query = $this->applyFilters($query, $filters);
 
         $perPage = $filters['per_page'] ?? 15;

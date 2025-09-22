@@ -30,6 +30,9 @@ class SchoolFormTemplatesSeeder extends Seeder
 
         // Academic Year Setup Form
         $this->createAcademicYearSetupForm($tenant);
+
+        // Document Upload Form
+        $this->createDocumentUploadForm($tenant);
     }
 
     private function createStudentEnrollmentForm(Tenant $tenant)
@@ -353,6 +356,112 @@ class SchoolFormTemplatesSeeder extends Seeder
                 'show_progress_bar' => true,
                 'allow_step_navigation' => true,
                 'auto_save_interval' => 60
+            ]
+        ]);
+    }
+
+    private function createDocumentUploadForm(Tenant $tenant)
+    {
+        FormTemplate::create([
+            'tenant_id' => $tenant->id,
+            'name' => 'Document Upload Form',
+            'description' => 'Form for uploading and managing student documents',
+            'category' => 'document_upload',
+            'version' => '1.0',
+            'is_multi_step' => false,
+            'auto_save' => true,
+            'compliance_level' => 'standard',
+            'is_active' => true,
+            'is_default' => true,
+            'created_by' => 1,
+            'steps' => [
+                [
+                    'step_number' => 1,
+                    'title' => 'Document Information',
+                    'sections' => [
+                        [
+                            'title' => 'Document Details',
+                            'fields' => [
+                                [
+                                    'field_id' => 'document_name',
+                                    'label' => 'Document Name',
+                                    'type' => 'text',
+                                    'required' => true,
+                                    'validation' => 'required|string|max:255'
+                                ],
+                                [
+                                    'field_id' => 'document_type',
+                                    'label' => 'Document Type',
+                                    'type' => 'select',
+                                    'required' => true,
+                                    'options' => [
+                                        ['value' => 'birth_certificate', 'label' => 'Birth Certificate'],
+                                        ['value' => 'vaccination_records', 'label' => 'Vaccination Records'],
+                                        ['value' => 'previous_transcripts', 'label' => 'Previous Transcripts'],
+                                        ['value' => 'identification', 'label' => 'Identification'],
+                                        ['value' => 'medical_records', 'label' => 'Medical Records'],
+                                        ['value' => 'special_education', 'label' => 'Special Education'],
+                                        ['value' => 'enrollment_form', 'label' => 'Enrollment Form'],
+                                        ['value' => 'emergency_contacts', 'label' => 'Emergency Contacts'],
+                                        ['value' => 'photo_permission', 'label' => 'Photo Permission'],
+                                        ['value' => 'other', 'label' => 'Other']
+                                    ],
+                                    'validation' => 'required|in:birth_certificate,vaccination_records,previous_transcripts,identification,medical_records,special_education,enrollment_form,emergency_contacts,photo_permission,other'
+                                ],
+                                [
+                                    'field_id' => 'document_category',
+                                    'label' => 'Document Category',
+                                    'type' => 'text',
+                                    'required' => false,
+                                    'validation' => 'nullable|string|max:100'
+                                ],
+                                [
+                                    'field_id' => 'expiration_date',
+                                    'label' => 'Expiration Date',
+                                    'type' => 'date',
+                                    'required' => false,
+                                    'validation' => 'nullable|date|after:today'
+                                ],
+                                [
+                                    'field_id' => 'required',
+                                    'label' => 'Required Document',
+                                    'type' => 'checkbox',
+                                    'required' => false,
+                                    'validation' => 'boolean'
+                                ],
+                                [
+                                    'field_id' => 'ferpa_protected',
+                                    'label' => 'FERPA Protected',
+                                    'type' => 'checkbox',
+                                    'required' => false,
+                                    'validation' => 'boolean'
+                                ],
+                                [
+                                    'field_id' => 'verification_notes',
+                                    'label' => 'Verification Notes',
+                                    'type' => 'textarea',
+                                    'required' => false,
+                                    'validation' => 'nullable|string|max:1000'
+                                ]
+                            ]
+                        ]
+                    ]
+                ]
+            ],
+            'form_configuration' => [
+                'theme' => 'school_theme',
+                'show_progress_bar' => false,
+                'allow_step_navigation' => false,
+                'auto_save_interval' => 30
+            ],
+            'validation_rules' => [
+                'document_name' => 'required|string|max:255',
+                'document_type' => 'required|in:birth_certificate,vaccination_records,previous_transcripts,identification,medical_records,special_education,enrollment_form,emergency_contacts,photo_permission,other',
+                'document_category' => 'nullable|string|max:100',
+                'expiration_date' => 'nullable|date|after:today',
+                'required' => 'boolean',
+                'ferpa_protected' => 'boolean',
+                'verification_notes' => 'nullable|string|max:1000'
             ]
         ]);
     }

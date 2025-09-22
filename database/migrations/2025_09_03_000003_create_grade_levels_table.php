@@ -11,6 +11,7 @@ return new class extends Migration
         Schema::create('grade_levels', function (Blueprint $table) {
             $table->id();
             $table->foreignId('grade_scale_id')->constrained('grade_scales')->onDelete('cascade');
+            $table->foreignId('school_id')->constrained('schools')->onDelete('cascade');
 
             // Grade Definition
             $table->string('grade_value', 10); // 'A', '95', '4.0', 'Exceeds'
@@ -32,6 +33,7 @@ return new class extends Migration
 
             // Indexes
             $table->index(['grade_scale_id']);
+            $table->index(['school_id']);
             $table->index(['sort_order']);
         });
     }

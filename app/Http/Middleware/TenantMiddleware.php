@@ -52,6 +52,11 @@ class TenantMiddleware
                 'user_agent' => $request->userAgent(),
             ]);
 
+            // Check if it's a tenant-related error
+            if (str_contains($e->getMessage(), 'tenant')) {
+                return $this->forbiddenResponse($e->getMessage());
+            }
+
             return $this->serverErrorResponse('Authentication service unavailable');
         }
     }
@@ -78,6 +83,26 @@ class TenantMiddleware
 
     private function establishTenantContext($user, Request $request): void
     {
+        // Check if user is super admin (role_id=1) - allow access without tenant associations
+        if ($user->role_id == 1) {
+            Log::info('Super admin user accessing without tenant context', [
+                'user_id' => $user->id,
+                'user_identifier' => $user->identifier,
+                'role_id' => $user->role_id,
+            ]);
+            return;
+        }
+
+        // Check if user has any tenant associations
+        if ($user->tenants()->count() === 0) {
+            // User has no tenant associations, skip tenant context establishment
+            Log::info('User has no tenant associations, skipping tenant context', [
+                'user_id' => $user->id,
+                'user_identifier' => $user->identifier,
+            ]);
+            return;
+        }
+
         $requestedTenantId = $request->header('X-Tenant-ID') ?? $request->get('tenant_id');
 
         if ($requestedTenantId) {

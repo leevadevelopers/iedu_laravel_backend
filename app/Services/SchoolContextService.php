@@ -5,6 +5,7 @@ namespace App\Services;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Facades\Cache;
+use App\Models\User;
 
 /**
  * School Context Service
@@ -26,16 +27,30 @@ class SchoolContextService
     {
         // Try to get from authenticated user first
         if (Auth::check()) {
+            /** @var User $user */
             $user = Auth::user();
 
-            // Check if user has a school_id attribute
+            // Use the new getCurrentSchool method that uses school_users relationship
+            if (method_exists($user, 'getCurrentSchool')) {
+                $currentSchool = $user->getCurrentSchool();
+                if ($currentSchool) {
+                    return $currentSchool->id;
+                }
+            }
+
+            // Fallback: Check if user has a school_id attribute (for backward compatibility)
             if (isset($user->school_id) && $user->school_id) {
                 return $user->school_id;
             }
 
-            // Check if user has a school relationship
-            if (method_exists($user, 'school') && $user->school) {
-                return $user->school->id;
+            // Check if user has any schools associated
+            if (method_exists($user, 'activeSchools') && $user->activeSchools()->count() > 0) {
+                $firstSchool = $user->activeSchools()->first();
+                if ($firstSchool) {
+                    // Set this as the current school in session
+                    $this->setCurrentSchool($firstSchool->id, $firstSchool->tenant_id);
+                    return $firstSchool->id;
+                }
             }
         }
 
@@ -51,7 +66,24 @@ class SchoolContextService
             return (int) $cachedContext['school_id'];
         }
 
-        // Fallback to default or throw exception
+        // Provide more helpful error message
+        if (Auth::check()) {
+            $user = Auth::user();
+            $schoolCount = method_exists($user, 'activeSchools') ? $user->activeSchools()->count() : 0;
+
+            if ($schoolCount === 0) {
+                throw new \RuntimeException(
+                    'No school context available. User is not associated with any schools. ' .
+                    'Please contact an administrator to associate your account with a school.'
+                );
+            } else {
+                throw new \RuntimeException(
+                    'No school context available. User has access to ' . $schoolCount . ' school(s) ' .
+                    'but no current school is set. Please select a school or contact an administrator.'
+                );
+            }
+        }
+
         throw new \RuntimeException('No school context available. User must be authenticated and have school context set.');
     }
 
@@ -62,6 +94,7 @@ class SchoolContextService
     {
         // Try to get from authenticated user first
         if (Auth::check()) {
+            /** @var User $user */
             $user = Auth::user();
 
             // Check if user has a tenant_id attribute
@@ -74,7 +107,15 @@ class SchoolContextService
                 return $user->tenant->id;
             }
 
-            // Try to get tenant through school
+            // Try to get tenant through current school using school_users relationship
+            if (method_exists($user, 'getCurrentSchool')) {
+                $currentSchool = $user->getCurrentSchool();
+                if ($currentSchool && isset($currentSchool->tenant_id) && $currentSchool->tenant_id) {
+                    return $currentSchool->tenant_id;
+                }
+            }
+
+            // Fallback: Try to get tenant through school relationship (backward compatibility)
             if (method_exists($user, 'school') && $user->school && $user->school->tenant_id) {
                 return $user->school->tenant_id;
             }
@@ -195,6 +236,7 @@ class SchoolContextService
             return false;
         }
 
+        /** @var User $user */
         $user = Auth::user();
 
         // Super admin can access all schools
@@ -202,19 +244,20 @@ class SchoolContextService
             return true;
         }
 
-        // Check if user belongs to this school
+        // Check if user belongs to this school through school_users relationship
+        if (method_exists($user, 'activeSchools')) {
+            return $user->activeSchools()->where('schools.id', $schoolId)->exists();
+        }
+
+        // Fallback: Check if user belongs to this school via school_id attribute
         if (isset($user->school_id) && $user->school_id === $schoolId) {
             return true;
         }
 
-        // Check if user has school relationship
+        // Fallback: Check if user has school relationship
         if (method_exists($user, 'school') && $user->school && $user->school->id === $schoolId) {
             return true;
         }
-
-        // Check if user has permission to access this school
-        // Note: Permission checking is handled by the application's middleware and policies
-        // This method focuses on basic school access validation
 
         return false;
     }
@@ -228,19 +271,100 @@ class SchoolContextService
             return [];
         }
 
+        /** @var User $user */
         $user = Auth::user();
 
         // Super admin can access all schools
         // Note: Role checking is handled by the application's middleware and policies
         // This method focuses on basic school access validation
 
-        // Return user's school if they belong to one
+        // Get schools through school_users relationship
+        if (method_exists($user, 'activeSchools')) {
+            return $user->activeSchools()->pluck('schools.id')->toArray();
+        }
+
+        // Fallback: Return user's school if they belong to one via school_id attribute
         if (isset($user->school_id)) {
             return [$user->school_id];
         }
 
+        // Fallback: Check if user has school relationship
         if (method_exists($user, 'school') && $user->school) {
             return [$user->school->id];
+        }
+
+        return [];
+    }
+
+    /**
+     * Automatically set up school context for a user if they don't have any
+     */
+    public function setupSchoolContextForUser(User $user): bool
+    {
+        // Check if user already has school context
+        if ($this->hasSchoolContext()) {
+            return true;
+        }
+
+        // Check if user has any schools associated
+        if (method_exists($user, 'activeSchools') && $user->activeSchools()->count() > 0) {
+            $firstSchool = $user->activeSchools()->first();
+            if ($firstSchool) {
+                $this->setCurrentSchool($firstSchool->id, $firstSchool->tenant_id);
+                return true;
+            }
+        }
+
+        // If user has tenant context, try to find or create a school for that tenant
+        $tenantId = $this->getCurrentTenantId();
+        if ($tenantId) {
+            $school = \App\Models\V1\SIS\School\School::where('tenant_id', $tenantId)->first();
+
+            if ($school) {
+                // Associate user with existing school
+                if (!$user->schools()->where('schools.id', $school->id)->exists()) {
+                    $user->schools()->attach($school->id, [
+                        'role' => 'staff',
+                        'status' => 'active',
+                        'start_date' => now(),
+                        'end_date' => null,
+                        'permissions' => null,
+                    ]);
+                }
+
+                $this->setCurrentSchool($school->id, $school->tenant_id);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Get available schools for the current user with detailed information
+     */
+    public function getAvailableSchools(): array
+    {
+        if (!Auth::check()) {
+            return [];
+        }
+
+        /** @var User $user */
+        $user = Auth::user();
+
+        if (method_exists($user, 'activeSchools')) {
+            return $user->activeSchools()->get()->map(function ($school) {
+                return [
+                    'id' => $school->id,
+                    'name' => $school->official_name,
+                    'display_name' => $school->display_name,
+                    'short_name' => $school->short_name,
+                    'school_code' => $school->school_code,
+                    'tenant_id' => $school->tenant_id,
+                    'role' => $school->pivot->role ?? 'staff',
+                    'status' => $school->pivot->status ?? 'active',
+                ];
+            })->toArray();
         }
 
         return [];

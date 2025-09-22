@@ -2,23 +2,50 @@
 
 namespace App\Services\V1\Academic;
 
-use App\Services\SchoolContextService;
+use Illuminate\Support\Facades\Auth;
 
 abstract class BaseAcademicService
 {
-    protected SchoolContextService $schoolContextService;
-
-    public function __construct(SchoolContextService $schoolContextService)
-    {
-        $this->schoolContextService = $schoolContextService;
-    }
-
     /**
-     * Get current school ID
+     * Get current school ID from user's school_users relationship
      */
     protected function getCurrentSchoolId(): int
     {
-        return $this->schoolContextService->getCurrentSchoolId();
+        $user = Auth::user();
+
+        if (!$user) {
+            throw new \Exception('User not authenticated');
+        }
+
+        // Get the first active school for the user
+        $school = $user->activeSchools()->first();
+
+        if (!$school) {
+            throw new \Exception('User is not associated with any schools');
+        }
+
+        return $school->id;
+    }
+
+    /**
+     * Get current school model
+     */
+    protected function getCurrentSchool()
+    {
+        $user = Auth::user();
+
+        if (!$user) {
+            throw new \Exception('User not authenticated');
+        }
+
+        // Get the first active school for the user
+        $school = $user->activeSchools()->first();
+
+        if (!$school) {
+            throw new \Exception('User is not associated with any schools');
+        }
+
+        return $school;
     }
 
     /**
@@ -26,7 +53,9 @@ abstract class BaseAcademicService
      */
     protected function validateSchoolOwnership($model): void
     {
-        if ($model->school_id !== $this->getCurrentSchoolId()) {
+        $userSchoolId = $this->getCurrentSchoolId();
+
+        if ($model->school_id !== $userSchoolId) {
             throw new \Exception('Access denied: Resource does not belong to current school');
         }
     }

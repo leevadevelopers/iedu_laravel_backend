@@ -251,7 +251,7 @@ class PermissionController extends Controller
     public function rolePermissions(Role $role): JsonResponse
     {
         $permissions = $role->permissions->pluck('name')->toArray();
-        
+
         return response()->json([
             'role' => [
                 'id' => $role->id,
@@ -334,17 +334,17 @@ class PermissionController extends Controller
 
         $currentUser = Auth::user();
         $currentTenant = $currentUser->getCurrentTenant();
-        
+
         if (!$currentTenant) {
             return response()->json(['error' => 'No active tenant found'], 404);
         }
-        
+
         $tenantId = $currentTenant->id;
-        
+
         // Get the target user's tenant relationship
         $targetUser = User::findOrFail($request->user_id);
         $tenantUser = $targetUser->tenants()->where('tenant_id', $tenantId)->first();
-        
+
         if (!$tenantUser) {
             return response()->json(['error' => 'User not found in current tenant'], 404);
         }
@@ -395,17 +395,17 @@ class PermissionController extends Controller
 
         $currentUser = Auth::user();
         $currentTenant = $currentUser->getCurrentTenant();
-        
+
         if (!$currentTenant) {
             return response()->json(['error' => 'No active tenant found'], 404);
         }
-        
+
         $tenantId = $currentTenant->id;
-        
+
         // Get the target user's tenant relationship
         $targetUser = User::findOrFail($request->user_id);
         $tenantUser = $targetUser->tenants()->where('tenant_id', $tenantId)->first();
-        
+
         if (!$tenantUser) {
             return response()->json(['error' => 'User not found in current tenant'], 404);
         }
@@ -450,14 +450,14 @@ class PermissionController extends Controller
     {
         $user = Auth::user();
         $currentTenant = $user->getCurrentTenant();
-        
+
         if (!$currentTenant) {
             return response()->json(['error' => 'No active tenant found'], 404);
         }
-        
+
         $tenantId = $currentTenant->id;
         $tenantUser = $user->tenants()->where('tenant_id', $tenantId)->first();
-        
+
         if (!$tenantUser) {
             return response()->json(['error' => 'User not found in current tenant'], 404);
         }
@@ -501,17 +501,17 @@ class PermissionController extends Controller
 
         $currentUser = Auth::user();
         $currentTenant = $currentUser->getCurrentTenant();
-        
+
         if (!$currentTenant) {
             return response()->json(['error' => 'No active tenant found'], 404);
         }
-        
+
         $tenantId = $currentTenant->id;
-        
+
         // Get the target user's tenant relationship
         $targetUser = User::findOrFail($request->user_id);
         $tenantUser = $targetUser->tenants()->where('tenant_id', $tenantId)->first();
-        
+
         if (!$tenantUser) {
             return response()->json(['error' => 'User not found in current tenant'], 404);
         }
@@ -588,4 +588,4 @@ class PermissionController extends Controller
             'categories' => $permissions->keys()
         ]);
     }
-} 
+}
