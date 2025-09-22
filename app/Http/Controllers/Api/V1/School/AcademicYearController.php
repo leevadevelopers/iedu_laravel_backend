@@ -490,7 +490,7 @@ class AcademicYearController extends Controller
      */
     public function bulkCreate(Request $request): JsonResponse
     {
-        $user = auth()->user();
+        $user = auth('api')->user();
 
         if (!$user) {
             return response()->json([
@@ -645,6 +645,99 @@ class AcademicYearController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to get academic year trends',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Search academic years by year with various filtering options
+     */
+    public function searchByYear(Request $request): JsonResponse
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'year' => 'required|string',
+                'school_id' => 'nullable|exists:schools,id',
+                'tenant_id' => 'nullable|exists:tenants,id',
+                'status' => 'nullable|in:planning,active,completed,archived',
+                'is_current' => 'nullable|boolean',
+                'exact_match' => 'nullable|boolean',
+                'include_terms' => 'nullable|boolean',
+                'per_page' => 'nullable|integer|min:1|max:100'
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            $query = AcademicYear::query();
+
+            // Apply year filter
+            if ($request->boolean('exact_match', false)) {
+                $query->where('year', $request->year);
+            } else {
+                $query->where('year', 'like', "%{$request->year}%");
+            }
+
+            // Apply additional filters
+            if ($request->has('school_id')) {
+                $query->where('school_id', $request->school_id);
+            }
+
+            if ($request->has('tenant_id')) {
+                $query->where('tenant_id', $request->tenant_id);
+            }
+
+            if ($request->has('status')) {
+                $query->where('status', $request->status);
+            }
+
+            if ($request->has('is_current')) {
+                $query->where('is_current', $request->boolean('is_current'));
+            }
+
+            // Load relationships based on request
+            $with = ['school:id,official_name,school_code', 'createdBy:id,name'];
+
+            if ($request->boolean('include_terms', false)) {
+                $with[] = 'terms:id,academic_year_id,name,start_date,end_date,status';
+            }
+
+            $query->with($with);
+
+            // Order by year and start date
+            $academicYears = $query->orderBy('year', 'desc')
+                ->orderBy('start_date', 'desc')
+                ->paginate($request->get('per_page', 15));
+
+            // Add search metadata
+            $searchMetadata = [
+                'search_year' => $request->year,
+                'exact_match' => $request->boolean('exact_match', false),
+                'total_results' => $academicYears->total(),
+                'filters_applied' => [
+                    'school_id' => $request->school_id,
+                    'tenant_id' => $request->tenant_id,
+                    'status' => $request->status,
+                    'is_current' => $request->is_current
+                ]
+            ];
+
+            return response()->json([
+                'success' => true,
+                'data' => $academicYears,
+                'search_metadata' => $searchMetadata
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to search academic years by year',
                 'error' => $e->getMessage()
             ], 500);
         }

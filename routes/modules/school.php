@@ -94,6 +94,10 @@ use Illuminate\Support\Facades\Route;
             ->name('academic-years.statistics');
         Route::get('trends', [\App\Http\Controllers\API\V1\School\AcademicYearController::class, 'getTrends'])
             ->name('academic-years.trends');
+
+        // Search operations
+        Route::get('search/by-year', [\App\Http\Controllers\API\V1\School\AcademicYearController::class, 'searchByYear'])
+            ->name('academic-years.search-by-year');
         });
     });
 

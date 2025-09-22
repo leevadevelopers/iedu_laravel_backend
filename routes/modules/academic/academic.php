@@ -22,7 +22,7 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-Route::middleware(['auth:api'])->group(function () {
+Route::middleware(['auth:api', 'tenant'])->group(function () {
 
     // Subjects Management
     Route::prefix('subjects')->name('subjects.')->group(function () {
