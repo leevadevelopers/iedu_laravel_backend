@@ -5,16 +5,16 @@ namespace App\Services\V1\Academic;
 use App\Models\V1\Academic\GradingSystem;
 use App\Models\V1\Academic\GradeScale;
 use App\Models\V1\Academic\GradeLevel;
-use App\Repositories\V1\Academic\GradingSystemRepository;
+use App\Models\V1\SIS\School\SchoolUser;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 
 class GradingSystemService extends BaseAcademicService
 {
-    protected GradingSystemRepository $gradingSystemRepository;
-
-    public function __construct(GradingSystemRepository $gradingSystemRepository)
+    public function __construct()
     {
-        $this->gradingSystemRepository = $gradingSystemRepository;
+        // No longer using repositories
     }
 
     /**
@@ -22,17 +22,45 @@ class GradingSystemService extends BaseAcademicService
      */
     public function getGradingSystems(array $filters = [])
     {
-        return $this->gradingSystemRepository->getWithFilters($filters);
+        $user = Auth::user();
+
+        $schoolId = SchoolUser::where('user_id', $user->id)->first()->school_id;
+        $query = GradingSystem::where('tenant_id', $user->tenant_id)
+            ->where('school_id', $schoolId);
+
+        // Apply filters
+        if (isset($filters['search'])) {
+            $query->where(function ($q) use ($filters) {
+                $q->where('name', 'like', '%' . $filters['search'] . '%')
+                  ->orWhere('description', 'like', '%' . $filters['search'] . '%');
+            });
+        }
+
+        if (isset($filters['system_type'])) {
+            $query->where('system_type', $filters['system_type']);
+        }
+
+        if (isset($filters['is_primary'])) {
+            $query->where('is_primary', $filters['is_primary']);
+        }
+
+        return $query->with(['gradeScales.gradeLevels', 'school'])
+            ->orderBy('is_primary', 'desc')
+            ->orderBy('name')
+            ->paginate($filters['per_page'] ?? 15);
     }
 
     /**
      * Create new grading system
      */
-    public function createGradingSystem(array $data)
+    public function createGradingSystem(array $data): GradingSystem
     {
-        $data['school_id'] = $this->getCurrentSchoolId();
+        $user = Auth::user();
 
-        $gradingSystem = $this->gradingSystemRepository->create($data);
+        // Add tenant_id from authenticated user
+        $data['tenant_id'] = $user->tenant_id;
+
+        $gradingSystem = GradingSystem::create($data);
 
         // Create default grade scale
         $this->createDefaultGradeScale($gradingSystem);
@@ -45,9 +73,10 @@ class GradingSystemService extends BaseAcademicService
      */
     public function updateGradingSystem(GradingSystem $gradingSystem, array $data)
     {
-        $this->validateSchoolOwnership($gradingSystem);
+        $this->validateTenantAndSchoolOwnership($gradingSystem);
 
-        return $this->gradingSystemRepository->update($gradingSystem, $data);
+        $gradingSystem->update($data);
+        return $gradingSystem->fresh();
     }
 
     /**
@@ -55,7 +84,10 @@ class GradingSystemService extends BaseAcademicService
      */
     public function deleteGradingSystem(GradingSystem $gradingSystem): bool
     {
-        $this->validateSchoolOwnership($gradingSystem);
+        // Load relationships explicitly
+        $gradingSystem->load(['gradeScales.gradeLevels']);
+
+        $this->validateTenantAndSchoolOwnership($gradingSystem);
 
         // Check if it's the primary system
         if ($gradingSystem->is_primary) {
@@ -67,7 +99,7 @@ class GradingSystemService extends BaseAcademicService
             throw new \Exception('Cannot delete grading system with existing grade entries');
         }
 
-        return $this->gradingSystemRepository->delete($gradingSystem);
+        return $gradingSystem->delete();
     }
 
     /**
@@ -75,7 +107,13 @@ class GradingSystemService extends BaseAcademicService
      */
     public function getPrimaryGradingSystem(): ?GradingSystem
     {
-        return $this->gradingSystemRepository->getPrimary();
+        $user = Auth::user();
+
+        return GradingSystem::where('tenant_id', $user->tenant_id)
+            ->where('school_id', $this->getCurrentSchoolId())
+            ->where('is_primary', true)
+            ->with(['gradeScales.gradeLevels'])
+            ->first();
     }
 
     /**
@@ -83,12 +121,17 @@ class GradingSystemService extends BaseAcademicService
      */
     public function setPrimaryGradingSystem(GradingSystem $gradingSystem): GradingSystem
     {
-        $this->validateSchoolOwnership($gradingSystem);
+        $this->validateTenantAndSchoolOwnership($gradingSystem);
 
         // Remove primary flag from other systems
-        $this->gradingSystemRepository->clearPrimaryFlags();
+        $user = Auth::user();
+        GradingSystem::where('tenant_id', $user->tenant_id)
+            ->where('school_id', $gradingSystem->school_id)
+            ->where('id', '!=', $gradingSystem->id)
+            ->update(['is_primary' => false]);
 
-        return $this->gradingSystemRepository->update($gradingSystem, ['is_primary' => true]);
+        $gradingSystem->update(['is_primary' => true]);
+        return $gradingSystem->fresh();
     }
 
     /**
@@ -96,10 +139,12 @@ class GradingSystemService extends BaseAcademicService
      */
     public function createGradeScale(GradingSystem $gradingSystem, array $data): GradeScale
     {
-        $this->validateSchoolOwnership($gradingSystem);
+        $this->validateTenantAndSchoolOwnership($gradingSystem);
 
+        $user = Auth::user();
         $data['grading_system_id'] = $gradingSystem->id;
-        $data['school_id'] = $this->getCurrentSchoolId();
+        $data['school_id'] = $gradingSystem->school_id;
+        $data['tenant_id'] = $user->tenant_id;
 
         $gradeScale = GradeScale::create($data);
 
@@ -170,9 +215,13 @@ class GradingSystemService extends BaseAcademicService
             default => 'Default Scale'
         };
 
+        // Disable model events temporarily to avoid recursion
+        GradeScale::unsetEventDispatcher();
+
         $gradeScale = GradeScale::create([
             'grading_system_id' => $gradingSystem->id,
             'school_id' => $gradingSystem->school_id,
+            'tenant_id' => $gradingSystem->tenant_id,
             'name' => $scaleName,
             'scale_type' => $gradingSystem->system_type === 'traditional_letter' ? 'letter' : $gradingSystem->system_type,
             'is_default' => true
@@ -193,9 +242,14 @@ class GradingSystemService extends BaseAcademicService
             default => $this->getTraditionalLetterGrades()
         };
 
+        // Disable model events temporarily to avoid recursion
+        GradeLevel::unsetEventDispatcher();
+
         foreach ($gradeLevels as $index => $level) {
             GradeLevel::create([
                 'grade_scale_id' => $gradeScale->id,
+                'school_id' => $gradeScale->school_id,
+                'tenant_id' => $gradeScale->tenant_id,
                 'grade_value' => $level['value'],
                 'display_value' => $level['display'],
                 'numeric_value' => $level['numeric'],
@@ -279,5 +333,23 @@ class GradingSystemService extends BaseAcademicService
         }
 
         return false;
+    }
+
+    /**
+     * Validate tenant and school ownership
+     */
+    private function validateTenantAndSchoolOwnership($model): void
+    {
+        $user = Auth::user();
+
+        if ($model->tenant_id !== $user->tenant_id) {
+            throw new \Exception('Access denied: Resource does not belong to current tenant');
+        }
+
+        $currentSchoolId = $this->getCurrentSchoolId();
+
+        if ($model->school_id !== $currentSchoolId) {
+            throw new \Exception('Access denied: Resource does not belong to current school');
+        }
     }
 }

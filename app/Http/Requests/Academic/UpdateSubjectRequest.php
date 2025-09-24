@@ -4,21 +4,28 @@ namespace App\Http\Requests\Academic;
 
 class UpdateSubjectRequest extends BaseAcademicRequest
 {
+    public function authorize(): bool
+    {
+        return true;
+    }
+
     /**
      * Get the validation rules that apply to the request
      */
     public function rules(): array
     {
-        $subjectId = $this->route('subject')->id;
+        $subjectId = $this->route('id');
+        $currentSchoolId = $this->getCurrentSchoolIdOrNull();
 
         return [
+            'school_id' => 'sometimes|required|integer|exists:schools,id',
             'name' => 'sometimes|required|string|max:255',
             'code' => [
                 'sometimes',
                 'required',
                 'string',
                 'max:50',
-                'unique:subjects,code,' . $subjectId . ',id,school_id,' . $this->getCurrentSchoolId()
+                'unique:subjects,code,' . $subjectId . ',id,school_id,' . $this->input('school_id', $currentSchoolId)
             ],
             'description' => 'nullable|string|max:1000',
             'subject_area' => [

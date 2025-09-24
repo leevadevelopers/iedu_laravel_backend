@@ -4,18 +4,24 @@ namespace App\Http\Requests\Academic;
 
 class StoreSubjectRequest extends BaseAcademicRequest
 {
+    public function authorize(): bool
+    {
+        return true;
+    }
+
     /**
      * Get the validation rules that apply to the request
      */
     public function rules(): array
     {
         return [
+            'school_id' => 'required|integer|exists:schools,id',
             'name' => 'required|string|max:255',
             'code' => [
                 'required',
                 'string',
                 'max:50',
-                'unique:subjects,code,NULL,id,school_id,' . $this->getCurrentSchoolId()
+                'unique:subjects,code,NULL,id,school_id,' . $this->input('school_id')
             ],
             'description' => 'nullable|string|max:1000',
             'subject_area' => [
@@ -52,6 +58,11 @@ class StoreSubjectRequest extends BaseAcademicRequest
      */
     protected function prepareForValidation(): void
     {
+        // Add tenant_id from authenticated user
+        $this->merge([
+            'tenant_id' => auth()->user()->tenant_id
+        ]);
+
         // Set default credit hours based on subject area
         if (!$this->filled('credit_hours')) {
             $defaultCredits = [

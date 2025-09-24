@@ -4,12 +4,18 @@ namespace App\Http\Requests\Academic;
 
 class StoreGradingSystemRequest extends BaseAcademicRequest
 {
+    public function authorize(): bool
+    {
+        return true;
+    }
+
     /**
      * Get the validation rules that apply to the request
      */
     public function rules(): array
     {
         return [
+            'school_id' => 'required|integer|exists:schools,id',
             'name' => 'required|string|max:255',
             'system_type' => 'required|in:traditional_letter,percentage,points,standards_based,narrative',
             'applicable_grades' => 'nullable|array',
@@ -30,6 +36,17 @@ class StoreGradingSystemRequest extends BaseAcademicRequest
      */
     protected function prepareForValidation(): void
     {
+        // Set tenant_id automatically (school_id comes from payload)
+        $tenantId = $this->getCurrentTenantIdOrNull();
+
+        if (!$tenantId) {
+            throw new \Exception('User must have a tenant to create grading systems');
+        }
+
+        $this->merge([
+            'tenant_id' => $tenantId
+        ]);
+
         // Set default configuration based on system type
         if (!$this->filled('configuration_json')) {
             $defaultConfig = [

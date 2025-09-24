@@ -6,18 +6,25 @@ use App\Http\Controllers\Controller;
 use App\Models\V1\Academic\AcademicClass;
 use App\Http\Requests\Academic\StoreAcademicClassRequest;
 use App\Http\Requests\Academic\UpdateAcademicClassRequest;
-use App\Http\Resources\Academic\AcademicClassResource;
 use App\Services\V1\Academic\AcademicClassService;
+use App\Traits\ApiResponseTrait;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Auth;
 
 class AcademicClassController extends Controller
 {
+    use ApiResponseTrait;
     protected AcademicClassService $classService;
 
     public function __construct(AcademicClassService $classService)
     {
         $this->classService = $classService;
+        $this->middleware('permission:academic.classes.view')->only(['index', 'show', 'roster', 'teacherClasses']);
+        $this->middleware('permission:academic.classes.create')->only(['store']);
+        $this->middleware('permission:academic.classes.edit')->only(['update']);
+        $this->middleware('permission:academic.classes.delete')->only(['destroy']);
+        $this->middleware('permission:academic.classes.enroll')->only(['enrollStudent', 'removeStudent']);
     }
 
     /**
@@ -25,11 +32,16 @@ class AcademicClassController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
+        // Validate school_id is provided
+        $request->validate([
+            'school_id' => 'required|integer|exists:schools,id'
+        ]);
+
         $classes = $this->classService->getClasses($request->all());
 
         return response()->json([
             'status' => 'success',
-            'data' => AcademicClassResource::collection($classes),
+            'data' => $classes->items(),
             'meta' => [
                 'total' => $classes->total(),
                 'per_page' => $classes->perPage(),
@@ -47,11 +59,7 @@ class AcademicClassController extends Controller
         try {
             $class = $this->classService->createClass($request->validated());
 
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Class created successfully',
-                'data' => new AcademicClassResource($class)
-            ], 201);
+            return $this->successResponse($class, 'Class created successfully', 201);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
@@ -64,32 +72,55 @@ class AcademicClassController extends Controller
     /**
      * Display the specified class
      */
-    public function show(AcademicClass $class): JsonResponse
+    public function show(Request $request, $id): JsonResponse
     {
-        $this->authorize('view', $class);
+        try {
+            // Find class explicitly to avoid model binding issues with TenantScope
+            $class = $this->classService->getClassById($id);
 
-        return response()->json([
-            'status' => 'success',
-            'data' => new AcademicClassResource($class->load([
-                'subject', 'primaryTeacher', 'students', 'academicYear', 'academicTerm'
-            ]))
-        ]);
+            if (!$class) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Class not found'
+                ], 404);
+            }
+
+            return response()->json([
+                'status' => 'success',
+                'data' => $class->load([
+                    'subject', 'primaryTeacher', 'students', 'academicYear', 'academicTerm'
+                ])
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to retrieve class',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
      * Update the specified class
      */
-    public function update(UpdateAcademicClassRequest $request, AcademicClass $class): JsonResponse
+    public function update(UpdateAcademicClassRequest $request, $id): JsonResponse
     {
-        $this->authorize('update', $class);
-
         try {
+            $class = $this->classService->getClassById($id);
+
+            if (!$class) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Class not found'
+                ], 404);
+            }
+
             $updatedClass = $this->classService->updateClass($class, $request->validated());
 
             return response()->json([
                 'status' => 'success',
                 'message' => 'Class updated successfully',
-                'data' => new AcademicClassResource($updatedClass)
+                'data' => $updatedClass
             ]);
         } catch (\Exception $e) {
             return response()->json([
@@ -103,11 +134,18 @@ class AcademicClassController extends Controller
     /**
      * Remove the specified class
      */
-    public function destroy(AcademicClass $class): JsonResponse
+    public function destroy($id): JsonResponse
     {
-        $this->authorize('delete', $class);
-
         try {
+            $class = $this->classService->getClassById($id);
+
+            if (!$class) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Class not found'
+                ], 404);
+            }
+
             $this->classService->deleteClass($class);
 
             return response()->json([
@@ -126,15 +164,22 @@ class AcademicClassController extends Controller
     /**
      * Enroll student in class
      */
-    public function enrollStudent(AcademicClass $class, Request $request): JsonResponse
+    public function enrollStudent($id, Request $request): JsonResponse
     {
-        $this->authorize('update', $class);
-
         $request->validate([
             'student_id' => 'required|exists:students,id',
         ]);
 
         try {
+            $class = $this->classService->getClassById($id);
+
+            if (!$class) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Class not found'
+                ], 404);
+            }
+
             $enrollment = $this->classService->enrollStudent($class, $request->student_id);
 
             return response()->json([
@@ -154,15 +199,22 @@ class AcademicClassController extends Controller
     /**
      * Remove student from class
      */
-    public function removeStudent(AcademicClass $class, Request $request): JsonResponse
+    public function removeStudent($id, Request $request): JsonResponse
     {
-        $this->authorize('update', $class);
-
         $request->validate([
             'student_id' => 'required|exists:students,id',
         ]);
 
         try {
+            $class = $this->classService->getClassById($id);
+
+            if (!$class) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Class not found'
+                ], 404);
+            }
+
             $this->classService->removeStudent($class, $request->student_id);
 
             return response()->json([
@@ -181,16 +233,28 @@ class AcademicClassController extends Controller
     /**
      * Get class roster
      */
-    public function roster(AcademicClass $class): JsonResponse
+    public function roster($id): JsonResponse
     {
-        $this->authorize('view', $class);
+        try {
+            $class = $this->classService->getClassById($id);
 
-        $roster = $this->classService->getClassRoster($class);
+            if (!$class) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Class not found'
+                ], 404);
+            }
 
-        return response()->json([
-            'status' => 'success',
-            'data' => $roster
-        ]);
+            $roster = $this->classService->getClassRoster($class);
+
+            return $this->successResponse($roster);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to get class roster',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
@@ -198,12 +262,9 @@ class AcademicClassController extends Controller
      */
     public function teacherClasses(Request $request): JsonResponse
     {
-        $teacherId = $request->get('teacher_id', auth()->id());
+        $teacherId = $request->get('teacher_id', Auth::id());
         $classes = $this->classService->getTeacherClasses($teacherId, $request->all());
 
-        return response()->json([
-            'status' => 'success',
-            'data' => AcademicClassResource::collection($classes)
-        ]);
+        return $this->successResponse($classes);
     }
 }

@@ -41,7 +41,7 @@ class GradingSystemResource extends BaseAcademicResource
                     return [
                         'grade_scales_count' => $this->gradeScales->count(),
                         'total_grade_levels' => $this->gradeScales->sum(function ($scale) {
-                            return $scale->gradeLevels->count();
+                            return $scale->relationLoaded('gradeLevels') ? $scale->gradeLevels->count() : 0;
                         }),
                     ];
                 }

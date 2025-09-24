@@ -3,17 +3,16 @@
 namespace App\Services\V1\Academic;
 
 use App\Models\V1\Academic\Subject;
-use App\Repositories\V1\Academic\SubjectRepository;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\Auth;
+use Spatie\Permission\Models\Permission;
 
 class SubjectService extends BaseAcademicService
 {
-    protected SubjectRepository $subjectRepository;
-
-    public function __construct(SubjectRepository $subjectRepository)
+    public function __construct()
     {
-        $this->subjectRepository = $subjectRepository;
+        // No longer using repositories
     }
 
     /**
@@ -21,7 +20,42 @@ class SubjectService extends BaseAcademicService
      */
     public function getSubjects(array $filters = []): LengthAwarePaginator
     {
-        return $this->subjectRepository->getWithFilters($filters);
+        $user = Auth::user();
+
+        $query = Subject::where('tenant_id', $user->tenant_id)
+            ->where('school_id', $filters['school_id'] ?? $this->getCurrentSchoolId());
+
+        // Apply filters
+        if (isset($filters['search'])) {
+            $query->where(function ($q) use ($filters) {
+                $q->where('name', 'like', '%' . $filters['search'] . '%')
+                  ->orWhere('code', 'like', '%' . $filters['search'] . '%');
+            });
+        }
+
+        if (isset($filters['subject_area'])) {
+            $query->where('subject_area', $filters['subject_area']);
+        }
+
+        if (isset($filters['status'])) {
+            $query->where('status', $filters['status']);
+        }
+
+        if (isset($filters['is_core_subject'])) {
+            $query->where('is_core_subject', $filters['is_core_subject']);
+        }
+
+        if (isset($filters['is_elective'])) {
+            $query->where('is_elective', $filters['is_elective']);
+        }
+
+        if (isset($filters['grade_level'])) {
+            $query->whereJsonContains('grade_levels', $filters['grade_level']);
+        }
+
+        return $query->with(['school', 'classes'])
+            ->orderBy('name')
+            ->paginate($filters['per_page'] ?? 15);
     }
 
     /**
@@ -29,10 +63,13 @@ class SubjectService extends BaseAcademicService
      */
     public function createSubject(array $data): Subject
     {
-        $data['school_id'] = $this->getCurrentSchoolId();
+        $user = Auth::user();
+
+        // Add tenant_id from authenticated user
+        $data['tenant_id'] = $user->tenant_id;
 
         // Validate subject code uniqueness
-        $this->validateSubjectCode($data['code']);
+        $this->validateSubjectCode($data['code'], $data['school_id']);
 
         // Validate grade levels
         $this->validateGradeLevels($data['grade_levels'] ?? []);
@@ -42,7 +79,7 @@ class SubjectService extends BaseAcademicService
             $data['credit_hours'] = $this->getDefaultCreditHours($data['subject_area']);
         }
 
-        return $this->subjectRepository->create($data);
+        return Subject::create($data);
     }
 
     /**
@@ -50,11 +87,11 @@ class SubjectService extends BaseAcademicService
      */
     public function updateSubject(Subject $subject, array $data): Subject
     {
-        $this->validateSchoolOwnership($subject);
+        $this->validateTenantAndSchoolOwnership($subject);
 
         // Validate subject code uniqueness if changed
         if (isset($data['code']) && $data['code'] !== $subject->code) {
-            $this->validateSubjectCode($data['code']);
+            $this->validateSubjectCode($data['code'], $data['school_id'] ?? $subject->school_id);
         }
 
         // Validate grade levels if changed
@@ -62,7 +99,8 @@ class SubjectService extends BaseAcademicService
             $this->validateGradeLevels($data['grade_levels']);
         }
 
-        return $this->subjectRepository->update($subject, $data);
+        $subject->update($data);
+        return $subject->fresh();
     }
 
     /**
@@ -70,69 +108,123 @@ class SubjectService extends BaseAcademicService
      */
     public function deleteSubject(Subject $subject): bool
     {
-        $this->validateSchoolOwnership($subject);
+        $this->validateTenantAndSchoolOwnership($subject);
 
         // Check for active classes
         if ($subject->classes()->where('status', 'active')->exists()) {
             throw new \Exception('Cannot archive subject with active classes');
         }
 
-        $this->subjectRepository->update($subject, ['status' => 'archived']);
+        $subject->update(['status' => 'archived']);
         return true;
     }
 
     /**
      * Get subjects by grade level
      */
-    public function getSubjectsByGradeLevel(string $gradeLevel): Collection
+    public function getSubjectsByGradeLevel(string $gradeLevel, int $schoolId = null): Collection
     {
-        return $this->subjectRepository->getByGradeLevel($gradeLevel);
+        $user = Auth::user();
+
+        return Subject::where('tenant_id', $user->tenant_id)
+            ->where('school_id', $schoolId ?? $this->getCurrentSchoolId())
+            ->whereJsonContains('grade_levels', $gradeLevel)
+            ->active()
+            ->with(['school'])
+            ->orderBy('name')
+            ->get();
     }
 
     /**
      * Get core subjects
      */
-    public function getCoreSubjects(): Collection
+    public function getCoreSubjects(int $schoolId = null): Collection
     {
-        return $this->subjectRepository->getCoreSubjects();
+        $user = Auth::user();
+
+        return Subject::where('tenant_id', $user->tenant_id)
+            ->where('school_id', $schoolId ?? $this->getCurrentSchoolId())
+            ->core()
+            ->active()
+            ->with(['school'])
+            ->orderBy('name')
+            ->get();
     }
 
     /**
      * Get elective subjects
      */
-    public function getElectiveSubjects(): Collection
+    public function getElectiveSubjects(int $schoolId = null): Collection
     {
-        return $this->subjectRepository->getElectiveSubjects();
+        $user = Auth::user();
+
+        return Subject::where('tenant_id', $user->tenant_id)
+            ->where('school_id', $schoolId ?? $this->getCurrentSchoolId())
+            ->elective()
+            ->active()
+            ->with(['school'])
+            ->orderBy('name')
+            ->get();
     }
 
     /**
      * Get subjects by area
      */
-    public function getSubjectsByArea(string $area): Collection
+    public function getSubjectsByArea(string $area, int $schoolId = null): Collection
     {
-        return $this->subjectRepository->getByArea($area);
+        $user = Auth::user();
+
+        return Subject::where('tenant_id', $user->tenant_id)
+            ->where('school_id', $schoolId ?? $this->getCurrentSchoolId())
+            ->byArea($area)
+            ->active()
+            ->with(['school'])
+            ->orderBy('name')
+            ->get();
     }
 
     /**
      * Get subject statistics
      */
-    public function getSubjectStatistics(): array
+    public function getSubjectStatistics(int $schoolId = null): array
     {
+        $user = Auth::user();
+        $schoolId = $schoolId ?? $this->getCurrentSchoolId();
+
+        $query = Subject::where('tenant_id', $user->tenant_id)
+            ->where('school_id', $schoolId);
+
         return [
-            'total' => $this->subjectRepository->count(),
-            'core' => $this->subjectRepository->getCoreSubjects()->count(),
-            'electives' => $this->subjectRepository->getElectiveSubjects()->count(),
-            'by_area' => $this->subjectRepository->getStatsByArea(),
-            'by_grade' => $this->subjectRepository->getStatsByGrade()
+            'total' => $query->count(),
+            'core' => $query->clone()->core()->count(),
+            'electives' => $query->clone()->elective()->count(),
+            'by_area' => $query->clone()
+                ->selectRaw('subject_area, COUNT(*) as count')
+                ->groupBy('subject_area')
+                ->pluck('count', 'subject_area'),
+            'by_grade' => $query->clone()
+                ->get()
+                ->flatMap(function ($subject) {
+                    return collect($subject->grade_levels ?? [])->map(function ($grade) use ($subject) {
+                        return ['grade' => $grade, 'subject_id' => $subject->id];
+                    });
+                })
+                ->groupBy('grade')
+                ->map->count()
         ];
     }
 
     /**
      * Validate subject code uniqueness
      */
-    private function validateSubjectCode(string $code): void
+    private function validateSubjectCode(string $code, int $schoolId): void
     {
-        if ($this->subjectRepository->codeExists($code)) {
+        $user = Auth::user();
+
+        if (Subject::where('tenant_id', $user->tenant_id)
+            ->where('school_id', $schoolId)
+            ->where('code', $code)
+            ->exists()) {
             throw new \Exception('Subject code already exists');
         }
     }
@@ -170,5 +262,21 @@ class SubjectService extends BaseAcademicService
         ];
 
         return $defaultCredits[$subjectArea] ?? 1.0;
+    }
+
+    /**
+     * Validate tenant and school ownership
+     */
+    private function validateTenantAndSchoolOwnership($model): void
+    {
+        $user = Auth::user();
+
+        if ($model->tenant_id !== $user->tenant_id) {
+            throw new \Exception('Access denied: Resource does not belong to current tenant');
+        }
+
+        if ($model->school_id !== $this->getCurrentSchoolId()) {
+            throw new \Exception('Access denied: Resource does not belong to current school');
+        }
     }
 }

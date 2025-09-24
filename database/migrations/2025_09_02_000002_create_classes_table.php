@@ -11,6 +11,7 @@ return new class extends Migration
         Schema::create('classes', function (Blueprint $table) {
             $table->id();
             $table->foreignId('school_id')->constrained('schools')->onDelete('cascade');
+            $table->foreignId('tenant_id')->constrained('tenants')->onDelete('cascade');
             $table->foreignId('subject_id')->constrained('subjects')->onDelete('cascade');
             $table->foreignId('academic_year_id')->constrained('academic_years')->onDelete('cascade');
             $table->foreignId('academic_term_id')->nullable()->constrained('academic_terms')->onDelete('set null');
@@ -44,6 +45,8 @@ return new class extends Migration
             $table->index(['academic_year_id']);
             $table->index(['primary_teacher_id']);
             $table->index(['grade_level']);
+            $table->index(['tenant_id']);
+            $table->index(['school_id', 'tenant_id']);
         });
     }
 

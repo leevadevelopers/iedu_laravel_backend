@@ -31,9 +31,9 @@ Route::middleware(['auth:api', 'tenant'])->group(function () {
         Route::get('/core', [SubjectController::class, 'core'])->name('core');
         Route::get('/electives', [SubjectController::class, 'electives'])->name('electives');
         Route::get('/grade-level/{gradeLevel}', [SubjectController::class, 'byGradeLevel'])->name('by-grade-level');
-        Route::get('/{subject}', [SubjectController::class, 'show'])->name('show');
-        Route::put('/{subject}', [SubjectController::class, 'update'])->name('update');
-        Route::delete('/{subject}', [SubjectController::class, 'destroy'])->name('destroy');
+        Route::get('/{id}', [SubjectController::class, 'show'])->name('show');
+        Route::put('/{id}', [SubjectController::class, 'update'])->name('update');
+        Route::delete('/{id}', [SubjectController::class, 'destroy'])->name('destroy');
     });
 
     // Classes Management
@@ -91,9 +91,9 @@ Route::middleware(['auth:api', 'tenant'])->group(function () {
         Route::get('/failing', [GradeLevelController::class, 'failing'])->name('failing');
         Route::post('/reorder', [GradeLevelController::class, 'reorder'])->name('reorder');
         Route::get('/grade-for-percentage', [GradeLevelController::class, 'getGradeForPercentage'])->name('grade-for-percentage');
-        Route::get('/{gradeLevel}', [GradeLevelController::class, 'show'])->name('show');
-        Route::put('/{gradeLevel}', [GradeLevelController::class, 'update'])->name('update');
-        Route::delete('/{gradeLevel}', [GradeLevelController::class, 'destroy'])->name('destroy');
+        Route::get('/{id}', [GradeLevelController::class, 'show'])->name('show');
+        Route::put('/{id}', [GradeLevelController::class, 'update'])->name('update');
+        Route::delete('/{id}', [GradeLevelController::class, 'destroy'])->name('destroy');
     });
 
     // Grade Entries Management
@@ -147,19 +147,19 @@ Route::middleware(['auth:api', 'tenant'])->group(function () {
         Route::get('/by-grade-level', [TeacherController::class, 'byGradeLevel'])->name('by-grade-level');
         Route::get('/available-at', [TeacherController::class, 'availableAt'])->name('available-at');
         Route::get('/for-class-assignment', [TeacherController::class, 'forClassAssignment'])->name('for-class-assignment');
-        Route::get('/{teacher}', [TeacherController::class, 'show'])->name('show');
-        Route::put('/{teacher}', [TeacherController::class, 'update'])->name('update');
-        Route::delete('/{teacher}', [TeacherController::class, 'destroy'])->name('destroy');
+        Route::get('/{id}', [TeacherController::class, 'show'])->name('show');
+        Route::put('/{id}', [TeacherController::class, 'update'])->name('update');
+        Route::delete('/{id}', [TeacherController::class, 'destroy'])->name('destroy');
 
         // Teacher-specific actions
-        Route::get('/{teacher}/workload', [TeacherController::class, 'workload'])->name('workload');
-        Route::get('/{teacher}/classes', [TeacherController::class, 'classes'])->name('classes');
-        Route::get('/{teacher}/statistics', [TeacherController::class, 'statistics'])->name('statistics');
-        Route::get('/{teacher}/dashboard', [TeacherController::class, 'dashboard'])->name('dashboard');
-        Route::put('/{teacher}/schedule', [TeacherController::class, 'updateSchedule'])->name('update-schedule');
-        Route::post('/{teacher}/check-availability', [TeacherController::class, 'checkAvailability'])->name('check-availability');
-        Route::post('/{teacher}/assign-to-class', [TeacherController::class, 'assignToClass'])->name('assign-to-class');
-        Route::get('/{teacher}/performance-metrics', [TeacherController::class, 'performanceMetrics'])->name('performance-metrics');
+        Route::get('/{id}/workload', [TeacherController::class, 'workload'])->name('workload');
+        Route::get('/{id}/classes', [TeacherController::class, 'classes'])->name('classes');
+        Route::get('/{id}/statistics', [TeacherController::class, 'statistics'])->name('statistics');
+        Route::get('/{id}/dashboard', [TeacherController::class, 'dashboard'])->name('dashboard');
+        Route::put('/{id}/schedule', [TeacherController::class, 'updateSchedule'])->name('update-schedule');
+        Route::post('/{id}/check-availability', [TeacherController::class, 'checkAvailability'])->name('check-availability');
+        Route::post('/{id}/assign-to-class', [TeacherController::class, 'assignToClass'])->name('assign-to-class');
+        Route::get('/{id}/performance-metrics', [TeacherController::class, 'performanceMetrics'])->name('performance-metrics');
     });
 
 });

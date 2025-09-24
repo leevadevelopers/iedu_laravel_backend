@@ -7,6 +7,7 @@ use App\Models\Settings\Tenant;
 use App\Models\Traits\Tenantable;
 use App\Models\V1\SIS\School\School;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Builder;
 
 class GradeLevel extends BaseModel
@@ -51,6 +52,11 @@ class GradeLevel extends BaseModel
     public function gradeScale(): BelongsTo
     {
         return $this->belongsTo(GradeScale::class);
+    }
+
+    public function gradeEntries(): HasMany
+    {
+        return $this->hasMany(GradeEntry::class, 'letter_grade', 'grade_value');
     }
 
     // Scopes

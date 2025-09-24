@@ -150,6 +150,7 @@ class School extends Model
     public function users(): BelongsToMany
     {
         return $this->belongsToMany(User::class, 'school_users')
+            ->using(SchoolUser::class)
             ->withPivot(['role', 'status', 'start_date', 'end_date', 'permissions'])
             ->withTimestamps();
     }

@@ -91,6 +91,17 @@ class GradeLevelService extends BaseAcademicService
     }
 
     /**
+     * Get grade level by ID
+     */
+    public function getGradeLevelById(int $gradeLevelId): GradeLevel
+    {
+        $gradeLevel = GradeLevel::findOrFail($gradeLevelId);
+        $this->validateGradeLevelOwnership($gradeLevel);
+
+        return $gradeLevel;
+    }
+
+    /**
      * Get grade levels by grade scale
      */
     public function getGradeLevelsByGradeScale(int $gradeScaleId): \Illuminate\Database\Eloquent\Collection

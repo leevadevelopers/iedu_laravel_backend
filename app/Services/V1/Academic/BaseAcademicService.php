@@ -18,13 +18,13 @@ abstract class BaseAcademicService
         }
 
         // Get the first active school for the user
-        $school = $user->activeSchools()->first();
+        $schoolUsers = $user->activeSchools();
 
-        if (!$school) {
+        if ($schoolUsers->isEmpty()) {
             throw new \Exception('User is not associated with any schools');
         }
 
-        return $school->id;
+        return $schoolUsers->first()->school_id;
     }
 
     /**
@@ -39,13 +39,13 @@ abstract class BaseAcademicService
         }
 
         // Get the first active school for the user
-        $school = $user->activeSchools()->first();
+        $schoolUsers = $user->activeSchools();
 
-        if (!$school) {
+        if ($schoolUsers->isEmpty()) {
             throw new \Exception('User is not associated with any schools');
         }
 
-        return $school;
+        return $schoolUsers->first()->school;
     }
 
     /**

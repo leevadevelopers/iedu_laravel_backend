@@ -15,6 +15,13 @@ class AllPermissionsSeeder extends Seeder
      */
     public function run()
     {
+        // Run specific permission seeders
+        $this->call([
+            Permissions\AcademicPermissionsSeeder::class,
+            Permissions\TransportPermissionsSeeder::class,
+        ]);
+
+        // Core system permissions (not module-specific)
         $permissions = [
             // Forms permissions
             'forms.view',
@@ -50,38 +57,6 @@ class AllPermissionsSeeder extends Seeder
             'teams.invite',
             'teams.remove',
             'teams.assign_roles',
-
-            // Transport permissions
-            'view-transport',
-            'create-transport',
-            'edit-transport',
-            'delete-transport',
-
-            'view-students',
-
-            'view-transport-subscriptions',
-            'create-transport-subscriptions',
-            'edit-transport-subscriptions',
-            'delete-transport-subscriptions',
-
-            'view-own-students',
-
-            // Academic permissions
-            'academic.view',
-            'academic.create',
-            'academic.edit',
-            'academic.delete',
-            'academic.admin',
-
-            // Subject permissions
-            'subjects.view',
-            'subjects.create',
-            'subjects.edit',
-            'subjects.delete',
-            'subjects.restore',
-            'subjects.force_delete',
-            'subjects.admin',
-
         ];
 
         $permissionCategories = [
@@ -106,6 +81,7 @@ class AllPermissionsSeeder extends Seeder
             ],
             'users' => [
                 'users.view',
+                'users.manage',
                 'users.manage_roles',
                 'users.manage_permissions',
                 'users.create',
@@ -119,37 +95,6 @@ class AllPermissionsSeeder extends Seeder
                 'teams.remove',
                 'teams.assign_roles',
             ],
-            'transport' => [
-                'view-transport',
-                'create-transport',
-                'edit-transport',
-                'delete-transport',
-            ],
-            'transport-subscriptions' => [
-                'view-transport-subscriptions',
-                'create-transport-subscriptions',
-                'edit-transport-subscriptions',
-                'delete-transport-subscriptions',
-            ],
-            'own-students' => [
-                'view-own-students',
-            ],
-            'academic' => [
-                'academic.view',
-                'academic.create',
-                'academic.edit',
-                'academic.delete',
-                'academic.admin',
-            ],
-            'subjects' => [
-                'subjects.view',
-                'subjects.create',
-                'subjects.edit',
-                'subjects.delete',
-                'subjects.restore',
-                'subjects.force_delete',
-                'subjects.admin',
-            ],
         ];
 
         foreach ($permissionCategories as $category => $categoryPermissions) {
@@ -161,9 +106,86 @@ class AllPermissionsSeeder extends Seeder
             }
         }
 
-        $role = Role::where('guard_name', 'api')->first();
-        if ($role) {
-            $role->syncPermissions(Permission::all());
-        }
+        // Create core system roles
+        $this->createCoreSystemRoles();
+    }
+
+    private function createCoreSystemRoles(): void
+    {
+        // Super Administrator - Full access to everything
+        $superAdmin = Role::firstOrCreate([
+            'name' => 'Super Administrator',
+            'guard_name' => 'api'
+        ]);
+
+        $superAdmin->syncPermissions(Permission::all());
+
+        // System Administrator - Core system permissions
+        $systemAdmin = Role::firstOrCreate([
+            'name' => 'System Administrator',
+            'guard_name' => 'api'
+        ]);
+
+        $systemAdmin->givePermissionTo([
+            // Forms
+            'forms.view',
+            'forms.admin',
+            'forms.view_all',
+            'forms.create',
+            'forms.edit_all',
+            'forms.delete',
+            'forms.workflow',
+            'forms.create_template',
+            'forms.edit_template',
+            'forms.delete_template',
+            'forms.manage_public_access',
+
+            // Users
+            'users.view',
+            'users.manage',
+            'users.manage_roles',
+            'users.manage_permissions',
+            'users.create',
+            'users.edit',
+            'users.delete',
+
+            // Teams
+            'teams.view',
+            'teams.manage',
+            'teams.invite',
+            'teams.remove',
+            'teams.assign_roles',
+        ]);
+
+        // Tenant Administrator - Tenant management
+        $tenantAdmin = Role::firstOrCreate([
+            'name' => 'Tenant Administrator',
+            'guard_name' => 'api'
+        ]);
+
+        $tenantAdmin->givePermissionTo([
+            // Forms
+            'forms.view',
+            'forms.view_all',
+            'forms.create',
+            'forms.edit_all',
+            'forms.delete',
+            'forms.workflow',
+            'forms.create_template',
+            'forms.edit_template',
+            'forms.delete_template',
+
+            // Users (limited)
+            'users.view',
+            'users.create',
+            'users.edit',
+
+            // Teams
+            'teams.view',
+            'teams.manage',
+            'teams.invite',
+            'teams.remove',
+            'teams.assign_roles',
+        ]);
     }
 }

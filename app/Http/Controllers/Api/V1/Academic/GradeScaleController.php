@@ -6,18 +6,40 @@ use App\Http\Controllers\Controller;
 use App\Models\V1\Academic\GradeScale;
 use App\Http\Requests\Academic\StoreGradeScaleRequest;
 use App\Http\Requests\Academic\UpdateGradeScaleRequest;
-use App\Http\Resources\Academic\GradeScaleResource;
 use App\Services\V1\Academic\GradeScaleService;
+use App\Traits\ApiResponseTrait;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Auth;
 
 class GradeScaleController extends Controller
 {
+    use ApiResponseTrait;
     protected GradeScaleService $gradeScaleService;
 
     public function __construct(GradeScaleService $gradeScaleService)
     {
         $this->gradeScaleService = $gradeScaleService;
+    }
+
+    /**
+     * Get current school ID from user's school_users relationship
+     */
+    protected function getCurrentSchoolId(): int
+    {
+        $user = Auth::user();
+
+        if (!$user) {
+            throw new \Exception('User not authenticated');
+        }
+
+        $schoolUser = $user->activeSchools()->first();
+
+        if (!$schoolUser) {
+            throw new \Exception('User is not associated with any schools');
+        }
+
+        return $schoolUser->school_id;
     }
 
     /**
@@ -29,7 +51,7 @@ class GradeScaleController extends Controller
 
         return response()->json([
             'status' => 'success',
-            'data' => GradeScaleResource::collection($gradeScales),
+            'data' => $gradeScales->items(),
             'meta' => [
                 'total' => $gradeScales->total(),
                 'per_page' => $gradeScales->perPage(),
@@ -47,11 +69,7 @@ class GradeScaleController extends Controller
         try {
             $gradeScale = $this->gradeScaleService->createGradeScale($request->validated());
 
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Grade scale created successfully',
-                'data' => new GradeScaleResource($gradeScale)
-            ], 201);
+            return $this->successResponse($gradeScale, 'Grade scale created successfully', 201);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
@@ -64,30 +82,49 @@ class GradeScaleController extends Controller
     /**
      * Display the specified grade scale
      */
-    public function show(GradeScale $gradeScale): JsonResponse
+    public function show(int $gradeScaleId): JsonResponse
     {
-        $this->authorize('view', $gradeScale);
+        $gradeScale = GradeScale::where('id', $gradeScaleId)
+            ->where('school_id', $this->getCurrentSchoolId())
+            ->with(['gradeLevels', 'gradingSystem'])
+            ->first();
+
+        if (!$gradeScale) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Grade scale not found'
+            ], 404);
+        }
 
         return response()->json([
             'status' => 'success',
-            'data' => new GradeScaleResource($gradeScale->load(['gradeLevels', 'gradingSystem']))
+            'data' => $gradeScale
         ]);
     }
 
     /**
      * Update the specified grade scale
      */
-    public function update(UpdateGradeScaleRequest $request, GradeScale $gradeScale): JsonResponse
+    public function update(UpdateGradeScaleRequest $request, int $gradeScaleId): JsonResponse
     {
-        $this->authorize('update', $gradeScale);
-
         try {
+            $gradeScale = GradeScale::where('id', $gradeScaleId)
+                ->where('school_id', $this->getCurrentSchoolId())
+                ->first();
+
+            if (!$gradeScale) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Grade scale not found'
+                ], 404);
+            }
+
             $updatedGradeScale = $this->gradeScaleService->updateGradeScale($gradeScale, $request->validated());
 
             return response()->json([
                 'status' => 'success',
                 'message' => 'Grade scale updated successfully',
-                'data' => new GradeScaleResource($updatedGradeScale)
+                'data' => $updatedGradeScale
             ]);
         } catch (\Exception $e) {
             return response()->json([
@@ -101,11 +138,20 @@ class GradeScaleController extends Controller
     /**
      * Remove the specified grade scale
      */
-    public function destroy(GradeScale $gradeScale): JsonResponse
+    public function destroy(int $gradeScaleId): JsonResponse
     {
-        $this->authorize('delete', $gradeScale);
-
         try {
+            $gradeScale = GradeScale::where('id', $gradeScaleId)
+                ->where('school_id', $this->getCurrentSchoolId())
+                ->first();
+
+            if (!$gradeScale) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Grade scale not found'
+                ], 404);
+            }
+
             $this->gradeScaleService->deleteGradeScale($gradeScale);
 
             return response()->json([
@@ -124,17 +170,26 @@ class GradeScaleController extends Controller
     /**
      * Set grade scale as default
      */
-    public function setDefault(GradeScale $gradeScale): JsonResponse
+    public function setDefault(int $gradeScaleId): JsonResponse
     {
-        $this->authorize('update', $gradeScale);
-
         try {
+            $gradeScale = GradeScale::where('id', $gradeScaleId)
+                ->where('school_id', $this->getCurrentSchoolId())
+                ->first();
+
+            if (!$gradeScale) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Grade scale not found'
+                ], 404);
+            }
+
             $this->gradeScaleService->setAsDefault($gradeScale);
 
             return response()->json([
                 'status' => 'success',
                 'message' => 'Grade scale set as default successfully',
-                'data' => new GradeScaleResource($gradeScale)
+                'data' => $gradeScale
             ]);
         } catch (\Exception $e) {
             return response()->json([
@@ -154,7 +209,7 @@ class GradeScaleController extends Controller
 
         return response()->json([
             'status' => 'success',
-            'data' => GradeScaleResource::collection($gradeScales)
+            'data' => $gradeScales
         ]);
     }
 
@@ -172,26 +227,31 @@ class GradeScaleController extends Controller
             ], 404);
         }
 
-        return response()->json([
-            'status' => 'success',
-            'data' => new GradeScaleResource($gradeScale)
-        ]);
+        return $this->successResponse($gradeScale);
     }
 
     /**
      * Get grade for percentage
      */
-    public function getGradeForPercentage(GradeScale $gradeScale, Request $request): JsonResponse
+    public function getGradeForPercentage(int $gradeScaleId, Request $request): JsonResponse
     {
         $request->validate([
             'percentage' => 'required|numeric|min:0|max:100'
         ]);
 
+        $gradeScale = GradeScale::where('id', $gradeScaleId)
+            ->where('school_id', $this->getCurrentSchoolId())
+            ->first();
+
+        if (!$gradeScale) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Grade scale not found'
+            ], 404);
+        }
+
         $grade = $this->gradeScaleService->getGradeForPercentage($gradeScale, $request->percentage);
 
-        return response()->json([
-            'status' => 'success',
-            'data' => $grade ? new \App\Http\Resources\Academic\GradeLevelResource($grade) : null
-        ]);
+        return $this->successResponse($grade);
     }
 }

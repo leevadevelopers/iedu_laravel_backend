@@ -4,6 +4,11 @@ namespace App\Http\Requests\Academic;
 
 class UpdateGradeScaleRequest extends BaseAcademicRequest
 {
+    public function authorize(): bool
+    {
+        return true;
+    }
+
     /**
      * Get the validation rules that apply to the request
      */
@@ -23,8 +28,18 @@ class UpdateGradeScaleRequest extends BaseAcademicRequest
     public function withValidator($validator): void
     {
         $validator->after(function ($validator) {
-            $gradeScale = $this->route('gradeScale');
+            $gradeScaleId = $this->route('gradeScale');
+            if (!$gradeScaleId) {
+                return;
+            }
+
+            // Get the grade scale to access its current grading_system_id
+            $gradeScale = \App\Models\V1\Academic\GradeScale::where('id', $gradeScaleId)
+                ->where('school_id', $this->getCurrentSchoolId())
+                ->first();
+
             if (!$gradeScale) {
+                $validator->errors()->add('gradeScale', 'Grade scale not found');
                 return;
             }
 

@@ -12,6 +12,8 @@ return new class extends Migration
             $table->id();
             $table->foreignId('school_id')->constrained('schools')->onDelete('cascade');
             $table->foreignId('user_id')->constrained('users')->onDelete('cascade');
+            $table->foreignId('tenant_id')->constrained('tenants')->onDelete('cascade');
+
 
             // Teacher Identity
             $table->string('employee_id', 50)->unique();
@@ -65,6 +67,8 @@ return new class extends Migration
             $table->index(['status']);
             $table->index(['employment_type']);
             $table->index(['department']);
+            $table->index(['tenant_id']);
+            $table->index(['school_id', 'tenant_id']);
         });
     }
 

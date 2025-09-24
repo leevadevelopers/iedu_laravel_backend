@@ -4,6 +4,11 @@ namespace App\Http\Requests\Academic;
 
 class StoreTeacherRequest extends BaseAcademicRequest
 {
+    public function authorize(): bool
+    {
+        return true;
+    }
+
     /**
      * Get the validation rules that apply to the request
      */
@@ -11,13 +16,7 @@ class StoreTeacherRequest extends BaseAcademicRequest
     {
         return [
             // Required fields
-            'user_id' => 'required|exists:users,id',
-            'employee_id' => [
-                'required',
-                'string',
-                'max:50',
-                'unique:teachers,employee_id,NULL,id,school_id,' . $this->getCurrentSchoolId()
-            ],
+            'employee_id' => 'nullable|string|max:20',
             'first_name' => 'required|string|max:100',
             'last_name' => 'required|string|max:100',
             'hire_date' => 'required|date|before_or_equal:today',
@@ -30,7 +29,12 @@ class StoreTeacherRequest extends BaseAcademicRequest
             'date_of_birth' => 'nullable|date|before:today',
             'gender' => 'nullable|in:male,female,other,prefer_not_to_say',
             'nationality' => 'nullable|string|max:50',
-            'phone' => 'nullable|string|max:20|regex:/^[\+]?[0-9\s\-\(\)]+$/',
+            'phone' => [
+                'nullable',
+                'string',
+                'max:20',
+                'regex:/^\+?[0-9\s\-\(\)]+$/'
+            ],
             'email' => 'nullable|email|max:255',
 
             // Address information
@@ -72,13 +76,16 @@ class StoreTeacherRequest extends BaseAcademicRequest
             'schedule_json' => 'nullable|array',
             'schedule_json.*.day' => 'required_with:schedule_json|string|in:monday,tuesday,wednesday,thursday,friday,saturday,sunday',
             'schedule_json.*.available_times' => 'required_with:schedule_json|array',
-            'schedule_json.*.available_times.*' => 'string|regex:/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/',
+            'schedule_json.*.available_times.*' => [
+                'string',
+                'regex:/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/'
+            ],
 
             // Emergency contacts
             'emergency_contacts_json' => 'nullable|array',
             'emergency_contacts_json.*.name' => 'required_with:emergency_contacts_json|string|max:100',
             'emergency_contacts_json.*.relationship' => 'required_with:emergency_contacts_json|string|max:50',
-            'emergency_contacts_json.*.phone' => 'required_with:emergency_contacts_json|string|max:20|regex:/^[\+]?[0-9\s\-\(\)]+$/',
+            'emergency_contacts_json.*.phone' => 'required_with:emergency_contacts_json|string|max:20|regex:/^[+]?[0-9\s\-()]+$/',
             'emergency_contacts_json.*.email' => 'nullable|email|max:255',
             'emergency_contacts_json.*.is_primary' => 'nullable|boolean',
 
@@ -95,6 +102,21 @@ class StoreTeacherRequest extends BaseAcademicRequest
     public function withValidator($validator): void
     {
         $validator->after(function ($validator) {
+            // Validate employee_id uniqueness after it's generated
+            $employeeId = $this->input('employee_id');
+            if ($employeeId) {
+                $schoolId = $this->getCurrentSchoolIdOrNull();
+                if ($schoolId) {
+                    $exists = \App\Models\V1\Academic\Teacher::where('employee_id', $employeeId)
+                        ->where('school_id', $schoolId)
+                        ->exists();
+
+                    if ($exists) {
+                        $validator->errors()->add('employee_id', 'This employee ID is already in use for this school.');
+                    }
+                }
+            }
+
             // Ensure at least one emergency contact is marked as primary
             $emergencyContacts = $this->input('emergency_contacts_json', []);
             if (!empty($emergencyContacts)) {
@@ -130,8 +152,11 @@ class StoreTeacherRequest extends BaseAcademicRequest
         // Set school_id from context
         $this->merge(['school_id' => $this->getCurrentSchoolId()]);
 
-        // Ensure employee_id is uppercase for consistency
-        if ($this->filled('employee_id')) {
+        // Generate employee_id automatically if not provided
+        if (!$this->filled('employee_id')) {
+            $this->merge(['employee_id' => $this->generateEmployeeId()]);
+        } else {
+            // Ensure employee_id is uppercase for consistency
             $this->merge(['employee_id' => strtoupper($this->employee_id)]);
         }
 
@@ -183,4 +208,31 @@ class StoreTeacherRequest extends BaseAcademicRequest
             'preferences_json' => 'preferences',
         ]);
     }
+
+    /**
+     * Generate a unique employee ID
+     */
+    private function generateEmployeeId(): string
+    {
+        $schoolId = $this->getCurrentSchoolId();
+        $year = date('Y');
+
+        // Get the last employee ID for this school and year
+        $lastTeacher = \App\Models\V1\Academic\Teacher::where('school_id', $schoolId)
+            ->where('employee_id', 'like', "T{$year}%")
+            ->orderBy('employee_id', 'desc')
+            ->first();
+
+        if ($lastTeacher) {
+            // Extract the number from the last employee ID
+            $lastNumber = (int) substr($lastTeacher->employee_id, 5); // Remove "T2024" prefix
+            $newNumber = $lastNumber + 1;
+        } else {
+            $newNumber = 1;
+        }
+
+        // Format: T{year}{4-digit-number} (e.g., T20240001)
+        return 'T' . $year . str_pad($newNumber, 4, '0', STR_PAD_LEFT);
+    }
+
 }

@@ -24,7 +24,6 @@ class GradeScaleResource extends BaseAcademicResource
 
             // Relationships
             'school' => $this->whenLoaded('school', new SchoolResource($this->school)),
-            'grading_system' => $this->whenLoaded('gradingSystem', new GradingSystemResource($this->gradingSystem)),
             'grade_levels' => $this->whenLoaded('gradeLevels', GradeLevelResource::collection($this->gradeLevels)),
 
             // Statistics

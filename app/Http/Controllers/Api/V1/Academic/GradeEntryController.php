@@ -7,13 +7,14 @@ use App\Models\V1\Academic\GradeEntry;
 use App\Http\Requests\Academic\StoreGradeEntryRequest;
 use App\Http\Requests\Academic\UpdateGradeEntryRequest;
 use App\Http\Requests\Academic\BulkGradeEntryRequest;
-use App\Http\Resources\Academic\GradeEntryResource;
 use App\Services\V1\Academic\GradeEntryService;
+use App\Traits\ApiResponseTrait;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 
 class GradeEntryController extends Controller
 {
+    use ApiResponseTrait;
     protected GradeEntryService $gradeEntryService;
 
     public function __construct(GradeEntryService $gradeEntryService)
@@ -30,7 +31,7 @@ class GradeEntryController extends Controller
 
         return response()->json([
             'status' => 'success',
-            'data' => GradeEntryResource::collection($gradeEntries),
+            'data' => $gradeEntries->items(),
             'meta' => [
                 'total' => $gradeEntries->total(),
                 'per_page' => $gradeEntries->perPage(),
@@ -48,11 +49,7 @@ class GradeEntryController extends Controller
         try {
             $gradeEntry = $this->gradeEntryService->createGradeEntry($request->validated());
 
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Grade entry created successfully',
-                'data' => new GradeEntryResource($gradeEntry)
-            ], 201);
+            return $this->successResponse($gradeEntry, 'Grade entry created successfully', 201);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
@@ -93,13 +90,11 @@ class GradeEntryController extends Controller
      */
     public function show(GradeEntry $gradeEntry): JsonResponse
     {
-        $this->authorize('view', $gradeEntry);
-
         return response()->json([
             'status' => 'success',
-            'data' => new GradeEntryResource($gradeEntry->load([
+            'data' => $gradeEntry->load([
                 'student', 'class.subject', 'academicTerm', 'enteredBy', 'modifiedBy'
-            ]))
+            ])
         ]);
     }
 
@@ -108,15 +103,13 @@ class GradeEntryController extends Controller
      */
     public function update(UpdateGradeEntryRequest $request, GradeEntry $gradeEntry): JsonResponse
     {
-        $this->authorize('update', $gradeEntry);
-
         try {
             $updatedGradeEntry = $this->gradeEntryService->updateGradeEntry($gradeEntry, $request->validated());
 
             return response()->json([
                 'status' => 'success',
                 'message' => 'Grade entry updated successfully',
-                'data' => new GradeEntryResource($updatedGradeEntry)
+                'data' => $updatedGradeEntry
             ]);
         } catch (\Exception $e) {
             return response()->json([
@@ -132,8 +125,6 @@ class GradeEntryController extends Controller
      */
     public function destroy(GradeEntry $gradeEntry): JsonResponse
     {
-        $this->authorize('delete', $gradeEntry);
-
         try {
             $this->gradeEntryService->deleteGradeEntry($gradeEntry);
 
@@ -165,10 +156,7 @@ class GradeEntryController extends Controller
             $request->academic_term_id
         );
 
-        return response()->json([
-            'status' => 'success',
-            'data' => GradeEntryResource::collection($grades)
-        ]);
+        return $this->successPaginatedResponse($grades);
     }
 
     /**
@@ -186,10 +174,7 @@ class GradeEntryController extends Controller
             $request->assessment_name
         );
 
-        return response()->json([
-            'status' => 'success',
-            'data' => GradeEntryResource::collection($grades)
-        ]);
+        return $this->successPaginatedResponse($grades);
     }
 
     /**

@@ -6,6 +6,11 @@ use App\Models\V1\SIS\School\AcademicYear;
 
 class BulkGenerateReportCardsRequest extends BaseAcademicRequest
 {
+    public function authorize(): bool
+    {
+        return true;
+    }
+
     /**
      * Get the validation rules that apply to the request
      */

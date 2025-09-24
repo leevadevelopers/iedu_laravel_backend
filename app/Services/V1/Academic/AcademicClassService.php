@@ -4,17 +4,15 @@ namespace App\Services\V1\Academic;
 
 use App\Models\V1\Academic\AcademicClass;
 use App\Models\V1\SIS\Student\Student;
-use App\Repositories\V1\Academic\AcademicClassRepository;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Facades\Auth;
 
 class AcademicClassService extends BaseAcademicService
 {
-    protected AcademicClassRepository $classRepository;
-
-    public function __construct(AcademicClassRepository $classRepository)
+    public function __construct()
     {
-        $this->classRepository = $classRepository;
+        // No longer using repositories
     }
 
     /**
@@ -22,7 +20,46 @@ class AcademicClassService extends BaseAcademicService
      */
     public function getClasses(array $filters = []): LengthAwarePaginator
     {
-        return $this->classRepository->getWithFilters($filters);
+        $user = Auth::user();
+
+        $query = AcademicClass::where('tenant_id', $user->tenant_id)
+            ->where('school_id', $filters['school_id'] ?? $this->getCurrentSchoolId());
+
+        // Apply filters
+        if (isset($filters['search'])) {
+            $query->where(function ($q) use ($filters) {
+                $q->where('name', 'like', '%' . $filters['search'] . '%')
+                  ->orWhere('class_code', 'like', '%' . $filters['search'] . '%');
+            });
+        }
+
+        if (isset($filters['subject_id'])) {
+            $query->where('subject_id', $filters['subject_id']);
+        }
+
+        if (isset($filters['grade_level'])) {
+            $query->where('grade_level', $filters['grade_level']);
+        }
+
+        if (isset($filters['status'])) {
+            $query->where('status', $filters['status']);
+        }
+
+        if (isset($filters['primary_teacher_id'])) {
+            $query->where('primary_teacher_id', $filters['primary_teacher_id']);
+        }
+
+        if (isset($filters['academic_year_id'])) {
+            $query->where('academic_year_id', $filters['academic_year_id']);
+        }
+
+        if (isset($filters['academic_term_id'])) {
+            $query->where('academic_term_id', $filters['academic_term_id']);
+        }
+
+        return $query->with(['subject', 'primaryTeacher', 'academicYear', 'academicTerm', 'school'])
+            ->orderBy('name')
+            ->paginate($filters['per_page'] ?? 15);
     }
 
     /**
@@ -30,16 +67,19 @@ class AcademicClassService extends BaseAcademicService
      */
     public function createClass(array $data): AcademicClass
     {
-        $data['school_id'] = $this->getCurrentSchoolId();
+        $user = Auth::user();
+
+        // Add tenant_id from authenticated user
+        $data['tenant_id'] = $user->tenant_id;
 
         // Validate class code uniqueness if provided
         if (isset($data['class_code'])) {
-            $this->validateClassCode($data['class_code']);
+            $this->validateClassCode($data['class_code'], $data['school_id']);
         }
 
         // Validate teacher assignment
         if (isset($data['primary_teacher_id'])) {
-            $this->validateTeacherAssignment($data['primary_teacher_id']);
+            $this->validateTeacherAssignment($data['primary_teacher_id'], $data['school_id']);
         }
 
         // Validate schedule conflicts
@@ -47,7 +87,7 @@ class AcademicClassService extends BaseAcademicService
             $this->validateScheduleConflicts($data);
         }
 
-        return $this->classRepository->create($data);
+        return AcademicClass::create($data);
     }
 
     /**
@@ -55,19 +95,20 @@ class AcademicClassService extends BaseAcademicService
      */
     public function updateClass(AcademicClass $class, array $data): AcademicClass
     {
-        $this->validateSchoolOwnership($class);
+        $this->validateTenantAndSchoolOwnership($class);
 
         // Validate class code if changed
         if (isset($data['class_code']) && $data['class_code'] !== $class->class_code) {
-            $this->validateClassCode($data['class_code']);
+            $this->validateClassCode($data['class_code'], $data['school_id'] ?? $class->school_id);
         }
 
         // Validate teacher assignment if changed
         if (isset($data['primary_teacher_id']) && $data['primary_teacher_id'] !== $class->primary_teacher_id) {
-            $this->validateTeacherAssignment($data['primary_teacher_id']);
+            $this->validateTeacherAssignment($data['primary_teacher_id'], $data['school_id'] ?? $class->school_id);
         }
 
-        return $this->classRepository->update($class, $data);
+        $class->update($data);
+        return $class->fresh();
     }
 
     /**
@@ -75,7 +116,7 @@ class AcademicClassService extends BaseAcademicService
      */
     public function deleteClass(AcademicClass $class): bool
     {
-        $this->validateSchoolOwnership($class);
+        $this->validateTenantAndSchoolOwnership($class);
 
         // Check for enrolled students
         if ($class->students()->wherePivot('status', 'active')->exists()) {
@@ -87,7 +128,7 @@ class AcademicClassService extends BaseAcademicService
             throw new \Exception('Cannot delete class with grade entries');
         }
 
-        return $this->classRepository->delete($class);
+        return $class->delete();
     }
 
     /**
@@ -95,10 +136,18 @@ class AcademicClassService extends BaseAcademicService
      */
     public function enrollStudent(AcademicClass $class, int $studentId): array
     {
-        $this->validateSchoolOwnership($class);
+        $this->validateTenantAndSchoolOwnership($class);
 
         $student = Student::findOrFail($studentId);
-        $this->validateSchoolOwnership($student);
+
+        // Validate student belongs to same tenant and school
+        if ($student->tenant_id !== $class->tenant_id) {
+            throw new \Exception('Student does not belong to the same tenant');
+        }
+
+        if ($student->school_id !== $class->school_id) {
+            throw new \Exception('Student does not belong to the same school');
+        }
 
         // Check class capacity
         if (!$class->hasAvailableSeats()) {
@@ -170,7 +219,40 @@ class AcademicClassService extends BaseAcademicService
      */
     public function getTeacherClasses(int $teacherId, array $filters = []): Collection
     {
-        return $this->classRepository->getByTeacher($teacherId, $filters);
+        $user = Auth::user();
+
+        $query = AcademicClass::where('tenant_id', $user->tenant_id)
+            ->where('school_id', $filters['school_id'] ?? $this->getCurrentSchoolId())
+            ->where('primary_teacher_id', $teacherId);
+
+        // Apply additional filters
+        if (isset($filters['status'])) {
+            $query->where('status', $filters['status']);
+        }
+
+        if (isset($filters['academic_year_id'])) {
+            $query->where('academic_year_id', $filters['academic_year_id']);
+        }
+
+        if (isset($filters['academic_term_id'])) {
+            $query->where('academic_term_id', $filters['academic_term_id']);
+        }
+
+        return $query->with(['subject', 'academicYear', 'academicTerm', 'school'])
+            ->orderBy('name')
+            ->get();
+    }
+
+    /**
+     * Get class by ID
+     */
+    public function getClassById(int $id): ?AcademicClass
+    {
+        $user = Auth::user();
+
+        return AcademicClass::where('tenant_id', $user->tenant_id)
+            ->where('id', $id)
+            ->first();
     }
 
     /**
@@ -195,9 +277,14 @@ class AcademicClassService extends BaseAcademicService
     /**
      * Validate class code uniqueness
      */
-    private function validateClassCode(string $classCode): void
+    private function validateClassCode(string $classCode, int $schoolId): void
     {
-        if ($this->classRepository->codeExists($classCode)) {
+        $user = Auth::user();
+
+        if (AcademicClass::where('tenant_id', $user->tenant_id)
+            ->where('school_id', $schoolId)
+            ->where('class_code', $classCode)
+            ->exists()) {
             throw new \Exception('Class code already exists');
         }
     }
@@ -205,16 +292,37 @@ class AcademicClassService extends BaseAcademicService
     /**
      * Validate teacher assignment
      */
-    private function validateTeacherAssignment(int $teacherId): void
+    private function validateTeacherAssignment(int $teacherId, int $schoolId): void
     {
-        $teacher = \App\Models\User::find($teacherId);
+        $user = Auth::user();
+        $teacher = \App\Models\V1\Academic\Teacher::find($teacherId);
 
-        if (!$teacher || $teacher->school_id !== $this->getCurrentSchoolId()) {
-            throw new \Exception('Invalid teacher assignment');
+        if (!$teacher || $teacher->tenant_id !== $user->tenant_id) {
+            throw new \Exception('Invalid teacher assignment - tenant mismatch');
         }
 
-        if (!in_array($teacher->user_type, ['teacher', 'admin', 'principal'])) {
-            throw new \Exception('User is not authorized to teach classes');
+        if ($teacher->school_id !== $schoolId) {
+            throw new \Exception('Invalid teacher assignment - school mismatch');
+        }
+
+        if ($teacher->status !== 'active') {
+            throw new \Exception('Teacher is not active');
+        }
+    }
+
+    /**
+     * Validate tenant and school ownership
+     */
+    private function validateTenantAndSchoolOwnership($model): void
+    {
+        $user = Auth::user();
+
+        if ($model->tenant_id !== $user->tenant_id) {
+            throw new \Exception('Access denied: Resource does not belong to current tenant');
+        }
+
+        if ($model->school_id !== $this->getCurrentSchoolId()) {
+            throw new \Exception('Access denied: Resource does not belong to current school');
         }
     }
 

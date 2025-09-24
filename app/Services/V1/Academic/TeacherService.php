@@ -4,19 +4,17 @@ namespace App\Services\V1\Academic;
 
 use App\Models\V1\Academic\Teacher;
 use App\Models\User;
-use App\Repositories\V1\Academic\TeacherRepository;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
 
 class TeacherService extends BaseAcademicService
 {
-    protected TeacherRepository $teacherRepository;
-
-    public function __construct(TeacherRepository $teacherRepository)
+    public function __construct()
     {
-        $this->teacherRepository = $teacherRepository;
+        // No longer using repositories
     }
 
     /**
@@ -24,7 +22,45 @@ class TeacherService extends BaseAcademicService
      */
     public function getTeachers(array $filters = []): LengthAwarePaginator
     {
-        return $this->teacherRepository->getWithFilters($filters);
+        $user = Auth::user();
+
+        $query = Teacher::where('tenant_id', $user->tenant_id)
+            ->where('school_id', $filters['school_id'] ?? $this->getCurrentSchoolId());
+
+        // Apply filters
+        if (isset($filters['search'])) {
+            $query->where(function ($q) use ($filters) {
+                $q->where('first_name', 'like', '%' . $filters['search'] . '%')
+                  ->orWhere('last_name', 'like', '%' . $filters['search'] . '%')
+                  ->orWhere('email', 'like', '%' . $filters['search'] . '%')
+                  ->orWhere('employee_id', 'like', '%' . $filters['search'] . '%');
+            });
+        }
+
+        if (isset($filters['department'])) {
+            $query->where('department', $filters['department']);
+        }
+
+        if (isset($filters['employment_type'])) {
+            $query->where('employment_type', $filters['employment_type']);
+        }
+
+        if (isset($filters['status'])) {
+            $query->where('status', $filters['status']);
+        }
+
+        if (isset($filters['specialization'])) {
+            $query->whereJsonContains('specializations_json', $filters['specialization']);
+        }
+
+        if (isset($filters['grade_level'])) {
+            $query->whereJsonContains('specializations_json', $filters['grade_level']);
+        }
+
+        return $query->with(['user', 'school'])
+            ->orderBy('last_name')
+            ->orderBy('first_name')
+            ->paginate($filters['per_page'] ?? 15);
     }
 
     /**
@@ -33,9 +69,6 @@ class TeacherService extends BaseAcademicService
     public function createTeacher(array $data): Teacher
     {
         $data['school_id'] = $this->getCurrentSchoolId();
-
-        // Validate employee ID uniqueness
-        $this->validateEmployeeId($data['employee_id']);
 
         // Validate email uniqueness
         if (isset($data['email'])) {
@@ -46,15 +79,23 @@ class TeacherService extends BaseAcademicService
         $user = $this->createOrFindUser($data);
         $data['user_id'] = $user->id;
 
-        // Validate specializations
-        if (isset($data['specializations_json'])) {
-            $this->validateSpecializations($data['specializations_json']);
-        }
+        // Specializations are now free-form, no validation needed
 
         // Set default values
         $data = $this->setDefaultValues($data);
 
-        return $this->teacherRepository->create($data);
+        $user = Auth::user();
+        $data['tenant_id'] = $user->tenant_id;
+
+        return Teacher::create($data);
+    }
+
+    /**
+     * Get teacher by ID
+     */
+    public function getTeacherById(int $id): ?Teacher
+    {
+        return Teacher::find($id);
     }
 
     /**
@@ -64,22 +105,15 @@ class TeacherService extends BaseAcademicService
     {
         $this->validateSchoolOwnership($teacher);
 
-        // Validate employee ID uniqueness if changed
-        if (isset($data['employee_id']) && $data['employee_id'] !== $teacher->employee_id) {
-            $this->validateEmployeeId($data['employee_id']);
-        }
-
         // Validate email uniqueness if changed
         if (isset($data['email']) && $data['email'] !== $teacher->email) {
             $this->validateEmail($data['email']);
         }
 
-        // Validate specializations if changed
-        if (isset($data['specializations_json'])) {
-            $this->validateSpecializations($data['specializations_json']);
-        }
+        // Specializations are now free-form, no validation needed
 
-        return $this->teacherRepository->update($teacher, $data);
+        $teacher->update($data);
+        return $teacher->fresh();
     }
 
     /**
@@ -99,48 +133,88 @@ class TeacherService extends BaseAcademicService
             throw new \Exception('Cannot delete teacher with grade entries');
         }
 
-        $this->teacherRepository->update($teacher, ['status' => 'terminated']);
+        $teacher->update(['status' => 'terminated']);
         return true;
     }
 
     /**
      * Get teachers by department
      */
-    public function getTeachersByDepartment(string $department): Collection
+    public function getTeachersByDepartment(string $department, int $schoolId = null): LengthAwarePaginator
     {
-        return $this->teacherRepository->getByDepartment($department);
+        $user = Auth::user();
+
+        return Teacher::where('tenant_id', $user->tenant_id)
+            ->where('school_id', $schoolId ?? $this->getCurrentSchoolId())
+            ->where('department', $department)
+            ->with(['user', 'school'])
+            ->orderBy('last_name')
+            ->paginate(15);
     }
 
     /**
      * Get teachers by employment type
      */
-    public function getTeachersByEmploymentType(string $employmentType): Collection
+    public function getTeachersByEmploymentType(string $employmentType, int $schoolId = null): LengthAwarePaginator
     {
-        return $this->teacherRepository->getByEmploymentType($employmentType);
+        $user = Auth::user();
+
+        return Teacher::where('tenant_id', $user->tenant_id)
+            ->where('school_id', $schoolId ?? $this->getCurrentSchoolId())
+            ->where('employment_type', $employmentType)
+            ->with(['user', 'school'])
+            ->orderBy('last_name')
+            ->paginate(15);
     }
 
     /**
      * Get teachers by specialization
      */
-    public function getTeachersBySpecialization(string $specialization): Collection
+    public function getTeachersBySpecialization(string $specialization, int $schoolId = null): LengthAwarePaginator
     {
-        return $this->teacherRepository->getBySpecialization($specialization);
+        $user = Auth::user();
+
+        return Teacher::where('tenant_id', $user->tenant_id)
+            ->where('school_id', $schoolId ?? $this->getCurrentSchoolId())
+            ->whereJsonContains('specializations_json', $specialization)
+            ->with(['user', 'school'])
+            ->orderBy('last_name')
+            ->paginate(15);
     }
 
     /**
      * Get teachers by grade level
      */
-    public function getTeachersByGradeLevel(string $gradeLevel): Collection
+    public function getTeachersByGradeLevel(string $gradeLevel, int $schoolId = null): LengthAwarePaginator
     {
-        return $this->teacherRepository->getByGradeLevel($gradeLevel);
+        $user = Auth::user();
+
+        return Teacher::where('tenant_id', $user->tenant_id)
+            ->where('school_id', $schoolId ?? $this->getCurrentSchoolId())
+            ->whereJsonContains('specializations_json', $gradeLevel)
+            ->with(['user', 'school'])
+            ->orderBy('last_name')
+            ->paginate(15);
     }
 
     /**
      * Search teachers
      */
-    public function searchTeachers(string $search): Collection
+    public function searchTeachers(string $search, int $schoolId = null): LengthAwarePaginator
     {
-        return $this->teacherRepository->search($search);
+        $user = Auth::user();
+
+        return Teacher::where('tenant_id', $user->tenant_id)
+            ->where('school_id', $schoolId ?? $this->getCurrentSchoolId())
+            ->where(function ($q) use ($search) {
+                $q->where('first_name', 'like', '%' . $search . '%')
+                  ->orWhere('last_name', 'like', '%' . $search . '%')
+                  ->orWhere('email', 'like', '%' . $search . '%')
+                  ->orWhere('employee_id', 'like', '%' . $search . '%');
+            })
+            ->with(['user', 'school'])
+            ->orderBy('last_name')
+            ->paginate(15);
     }
 
     /**
@@ -207,7 +281,8 @@ class TeacherService extends BaseAcademicService
 
         $this->validateSchedule($schedule);
 
-        return $this->teacherRepository->update($teacher, ['schedule_json' => $schedule]);
+        $teacher->update(['schedule_json' => $schedule]);
+        return $teacher->fresh();
     }
 
     /**
@@ -223,9 +298,23 @@ class TeacherService extends BaseAcademicService
     /**
      * Get teachers available at specific time
      */
-    public function getAvailableTeachers(string $day, string $time): Collection
+    public function getAvailableTeachers(string $day, string $time): LengthAwarePaginator
     {
-        return $this->teacherRepository->getAvailableAt($day, $time);
+        $user = Auth::user();
+
+        return Teacher::where('tenant_id', $user->tenant_id)
+            ->where('school_id', $this->getCurrentSchoolId())
+            ->where('status', 'active')
+            ->where(function ($q) use ($day, $time) {
+                $q->whereNull('schedule_json')
+                  ->orWhereJsonDoesntContain('schedule_json', [
+                      'day' => $day,
+                      'start_time' => '<=',
+                      'end_time' => '>='
+                  ]);
+            })
+            ->with(['user', 'school'])
+            ->paginate(15);
     }
 
     /**
@@ -289,10 +378,8 @@ class TeacherService extends BaseAcademicService
             'identifier' => $data['email'] ?? $data['employee_id'],
             'type' => 'email',
             'phone' => $data['phone'] ?? null,
-            'company' => $this->getCurrentSchool()->name,
-            'job_title' => $data['position'] ?? 'Teacher',
-            'bio' => $data['bio'] ?? null,
-            'profile_photo_path' => $data['profile_photo_path'] ?? null
+            'profile_photo_path' => $data['profile_photo_path'] ?? null,
+            'user_type' => 'teacher'
         ];
 
         // Check if user already exists
@@ -303,48 +390,84 @@ class TeacherService extends BaseAcademicService
         }
 
         // Create new user
-        $userData['password'] = Hash::make('temp_password_' . $data['employee_id']);
+        $employeeId = $data['employee_id'] ?? 'TEMP_' . uniqid();
+        $userData['password'] = Hash::make('temp_password_' . $employeeId);
         $userData['must_change'] = true;
 
         return User::create($userData);
     }
 
-    /**
-     * Validate employee ID uniqueness
-     */
-    private function validateEmployeeId(string $employeeId): void
-    {
-        if ($this->teacherRepository->employeeIdExists($employeeId)) {
-            throw new \Exception('Employee ID already exists');
-        }
-    }
 
     /**
      * Validate email uniqueness
      */
     private function validateEmail(string $email): void
     {
-        if ($this->teacherRepository->emailExists($email)) {
+        $user = Auth::user();
+
+        if (Teacher::where('tenant_id', $user->tenant_id)
+            ->where('school_id', $this->getCurrentSchoolId())
+            ->where('email', $email)
+            ->exists()) {
             throw new \Exception('Email already exists');
         }
     }
 
     /**
-     * Validate specializations
+     * Get valid specializations
+     */
+    public function getValidSpecializations(): array
+    {
+        return [
+            'academic_subjects' => [
+                'mathematics', 'science', 'language_arts', 'social_studies',
+                'foreign_language', 'arts', 'physical_education', 'technology',
+                'vocational', 'history', 'geography', 'biology', 'chemistry', 'physics',
+                'literature', 'writing', 'reading', 'grammar', 'spelling'
+            ],
+            'administrative_support' => [
+                'office_management', 'administration', 'secretarial', 'clerical',
+                'student_services', 'counseling', 'nursing', 'librarian',
+                'technology_support', 'maintenance', 'security', 'transportation',
+                'cafeteria', 'finance', 'human_resources', 'communications'
+            ],
+            'grade_levels' => [
+                'K', 'Pre-K', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'
+            ],
+            'special_education' => [
+                'special_education', 'learning_support', 'gifted_education',
+                'speech_therapy', 'occupational_therapy', 'physical_therapy'
+            ],
+            'extracurricular' => [
+                'sports', 'music', 'drama', 'debate', 'journalism', 'yearbook',
+                'student_government', 'clubs', 'community_service'
+            ]
+        ];
+    }
+
+    /**
+     * Get flat list of all valid specializations
+     */
+    public function getAllValidSpecializations(): array
+    {
+        $specializations = $this->getValidSpecializations();
+        $flatList = [];
+
+        foreach ($specializations as $category => $items) {
+            $flatList = array_merge($flatList, $items);
+        }
+
+        return $flatList;
+    }
+
+    /**
+     * Validate specializations - DEPRECATED: Specializations are now free-form
+     * @deprecated This method is no longer used as specializations are now free-form
      */
     private function validateSpecializations(array $specializations): void
     {
-        $validSpecializations = [
-            'mathematics', 'science', 'language_arts', 'social_studies',
-            'foreign_language', 'arts', 'physical_education', 'technology',
-            'vocational', 'K', 'Pre-K', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'
-        ];
-
-        foreach ($specializations as $specialization) {
-            if (!in_array($specialization, $validSpecializations)) {
-                throw new \InvalidArgumentException("Invalid specialization: {$specialization}");
-            }
-        }
+        // Specializations are now free-form, no validation needed
+        // This method is kept for backward compatibility but does nothing
     }
 
     /**
@@ -372,17 +495,36 @@ class TeacherService extends BaseAcademicService
     private function validateSchedule(array $schedule): void
     {
         $validDays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-        $validTimes = ['08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00'];
 
-        foreach ($schedule as $day => $daySchedule) {
-            if (!in_array(strtolower($day), $validDays)) {
-                throw new \InvalidArgumentException("Invalid day: {$day}");
-            }
+        foreach ($schedule as $scheduleItem) {
+            // Check if this is the new format (array of objects with 'day' property)
+            if (isset($scheduleItem['day'])) {
+                $day = $scheduleItem['day'];
+                if (!in_array(strtolower($day), $validDays)) {
+                    throw new \InvalidArgumentException("Invalid day: {$day}");
+                }
 
-            if (isset($daySchedule['available_times'])) {
-                foreach ($daySchedule['available_times'] as $time) {
-                    if (!in_array($time, $validTimes)) {
-                        throw new \InvalidArgumentException("Invalid time: {$time}");
+                if (isset($scheduleItem['available_times'])) {
+                    foreach ($scheduleItem['available_times'] as $time) {
+                        // Validate time format (HH:MM or HH:MM-HH:MM)
+                        if (!preg_match('/^([01]?[0-9]|2[0-3]):[0-5][0-9](-[01]?[0-9]|2[0-3]:[0-5][0-9])?$/', $time)) {
+                            throw new \InvalidArgumentException("Invalid time format: {$time}");
+                        }
+                    }
+                }
+            } else {
+                // Legacy format (keyed by day name)
+                foreach ($schedule as $day => $daySchedule) {
+                    if (!in_array(strtolower($day), $validDays)) {
+                        throw new \InvalidArgumentException("Invalid day: {$day}");
+                    }
+
+                    if (isset($daySchedule['available_times'])) {
+                        foreach ($daySchedule['available_times'] as $time) {
+                            if (!preg_match('/^([01]?[0-9]|2[0-3]):[0-5][0-9](-[01]?[0-9]|2[0-3]:[0-5][0-9])?$/', $time)) {
+                                throw new \InvalidArgumentException("Invalid time format: {$time}");
+                            }
+                        }
                     }
                 }
             }

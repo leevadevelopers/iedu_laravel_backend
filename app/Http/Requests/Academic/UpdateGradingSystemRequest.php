@@ -4,12 +4,18 @@ namespace App\Http\Requests\Academic;
 
 class UpdateGradingSystemRequest extends BaseAcademicRequest
 {
+    public function authorize(): bool
+    {
+        return true;
+    }
+
     /**
      * Get the validation rules that apply to the request
      */
     public function rules(): array
     {
         return [
+            'school_id' => 'sometimes|required|integer|exists:schools,id',
             'name' => 'sometimes|required|string|max:255',
             'system_type' => 'sometimes|required|in:traditional_letter,percentage,points,standards_based,narrative',
             'applicable_grades' => 'nullable|array',
@@ -18,7 +24,27 @@ class UpdateGradingSystemRequest extends BaseAcademicRequest
             'applicable_subjects.*' => 'string|in:mathematics,science,language_arts,social_studies,foreign_language,arts,physical_education,technology,vocational,other',
             'is_primary' => 'nullable|boolean',
             'configuration_json' => 'nullable|array',
+            'configuration_json.passing_threshold' => 'nullable|numeric|min:0|max:100',
+            'configuration_json.gpa_scale' => 'nullable|numeric|min:1|max:10',
+            'configuration_json.decimal_places' => 'nullable|integer|min:0|max:3',
             'status' => 'sometimes|in:active,inactive'
         ];
+    }
+
+    /**
+     * Prepare the data for validation
+     */
+    protected function prepareForValidation(): void
+    {
+        // Set tenant_id automatically (school_id comes from payload or existing record)
+        $tenantId = $this->getCurrentTenantIdOrNull();
+
+        if (!$tenantId) {
+            throw new \Exception('User must have a tenant to update grading systems');
+        }
+
+        $this->merge([
+            'tenant_id' => $tenantId
+        ]);
     }
 }

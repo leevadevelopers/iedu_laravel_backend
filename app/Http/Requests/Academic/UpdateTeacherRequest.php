@@ -4,6 +4,11 @@ namespace App\Http\Requests\Academic;
 
 class UpdateTeacherRequest extends BaseAcademicRequest
 {
+    public function authorize(): bool
+    {
+        return true;
+    }
+
     /**
      * Get the validation rules that apply to the request
      */
@@ -28,7 +33,12 @@ class UpdateTeacherRequest extends BaseAcademicRequest
             'date_of_birth' => 'nullable|date|before:today',
             'gender' => 'nullable|in:male,female,other,prefer_not_to_say',
             'nationality' => 'nullable|string|max:50',
-            'phone' => 'nullable|string|max:20|regex:/^[\+]?[0-9\s\-\(\)]+$/',
+            'phone' => [
+                'nullable',
+                'string',
+                'max:20',
+                'regex:/^\+?[0-9\s\-\(\)]+$/'
+            ],
             'email' => 'nullable|email|max:255',
 
             // Address information
@@ -72,8 +82,10 @@ class UpdateTeacherRequest extends BaseAcademicRequest
             'schedule_json' => 'nullable|array',
             'schedule_json.*.day' => 'required_with:schedule_json|string|in:monday,tuesday,wednesday,thursday,friday,saturday,sunday',
             'schedule_json.*.available_times' => 'required_with:schedule_json|array',
-            'schedule_json.*.available_times.*' => 'string|regex:/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/',
-
+            'schedule_json.*.available_times.*' => [
+                'string',
+                'regex:/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/'
+            ],
             // Emergency contacts
             'emergency_contacts_json' => 'nullable|array',
             'emergency_contacts_json.*.name' => 'required_with:emergency_contacts_json|string|max:100',

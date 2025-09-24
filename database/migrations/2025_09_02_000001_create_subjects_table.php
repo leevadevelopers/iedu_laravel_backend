@@ -11,6 +11,7 @@ return new class extends Migration
         Schema::create('subjects', function (Blueprint $table) {
             $table->id();
             $table->foreignId('school_id')->constrained('schools')->onDelete('cascade');
+            $table->foreignId('tenant_id')->constrained('tenants')->onDelete('cascade');
 
             // Subject Identity
             $table->string('name', 255);
@@ -46,6 +47,8 @@ return new class extends Migration
             $table->index(['school_id']);
             $table->index(['subject_area']);
             $table->index(['status']);
+            $table->index(['tenant_id']);
+            $table->index(['school_id', 'tenant_id']);
         });
     }
 

@@ -4,12 +4,17 @@ namespace App\Http\Requests\Academic;
 
 class UpdateAcademicClassRequest extends BaseAcademicRequest
 {
+    public function authorize(): bool
+    {
+        return true;
+    }
+
     /**
      * Get the validation rules that apply to the request
      */
     public function rules(): array
     {
-        $classId = $this->route('class')->id;
+        $classId = $this->route('class');
 
         return [
             'subject_id' => [
@@ -42,7 +47,7 @@ class UpdateAcademicClassRequest extends BaseAcademicRequest
             'primary_teacher_id' => [
                 'nullable',
                 'integer',
-                'exists:users,id,school_id,' . $this->getCurrentSchoolId() . ',user_type,teacher'
+                'exists:teachers,id,school_id,' . $this->getCurrentSchoolId() . ',status,active'
             ],
             'additional_teachers_json' => 'nullable|array',
             'schedule_json' => 'nullable|array',
@@ -59,10 +64,13 @@ class UpdateAcademicClassRequest extends BaseAcademicRequest
         $validator->after(function ($validator) {
             // Cannot reduce max_students below current enrollment
             if ($this->filled('max_students')) {
-                $class = $this->route('class');
-                if ($class && $this->max_students < $class->current_enrollment) {
-                    $validator->errors()->add('max_students',
-                        'Cannot reduce maximum students below current enrollment (' . $class->current_enrollment . ').');
+                $classId = $this->route('class');
+                if ($classId) {
+                    $class = \App\Models\V1\Academic\AcademicClass::find($classId);
+                    if ($class && $this->max_students < $class->current_enrollment) {
+                        $validator->errors()->add('max_students',
+                            'Cannot reduce maximum students below current enrollment (' . $class->current_enrollment . ').');
+                    }
                 }
             }
         });

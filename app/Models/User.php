@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Models\Settings\Tenant;
 use App\Models\Traits\TenantPermission;
+use App\Models\V1\SIS\School\SchoolUser;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -11,6 +12,7 @@ use Illuminate\Notifications\Notifiable;
 use Spatie\Permission\Traits\HasRoles;
 use Tymon\JWTAuth\Contracts\JWTSubject;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 
 class User extends Authenticatable implements JWTSubject
 {
@@ -199,6 +201,7 @@ class User extends Authenticatable implements JWTSubject
     public function schools(): BelongsToMany
     {
         return $this->belongsToMany(\App\Models\V1\SIS\School\School::class, 'school_users')
+            ->using(\App\Models\V1\SIS\School\SchoolUser::class)
             ->withPivot(['role', 'status', 'start_date', 'end_date', 'permissions'])
             ->withTimestamps();
     }
@@ -206,22 +209,28 @@ class User extends Authenticatable implements JWTSubject
     /**
      * Get the active schools for this user.
      */
-    public function activeSchools(): BelongsToMany
+    public function activeSchools()
     {
-        return $this->schools()
-            ->wherePivot('status', 'active')
-            ->where(function ($query) {
-                $query->where(function ($subQuery) {
-                    // Check that start_date is not in the future
-                    $subQuery->whereNull('school_users.start_date')
-                             ->orWhere('school_users.start_date', '<=', now());
-                })
-                ->where(function ($subQuery) {
-                    // Check that end_date is not in the past
-                    $subQuery->whereNull('school_users.end_date')
-                             ->orWhere('school_users.end_date', '>=', now());
-                });
-            });
+        $user = auth()->user();
+        //check all school users and get the active ones
+        $schoolUsers = SchoolUser::where('user_id', $user->id)->where('status', 'active')->get();
+        Log::info('School users', ['schoolUsers' => $schoolUsers]);
+        return $schoolUsers;
+
+        // return $this->schools()
+        //     ->wherePivot('status', 'active')
+        //     ->where(function ($query) {
+        //         $query->where(function ($subQuery) {
+        //             // Check that start_date is not in the future
+        //             $subQuery->whereNull('school_users.start_date')
+        //                      ->orWhere('school_users.start_date', '<=', now());
+        //         })
+        //         ->where(function ($subQuery) {
+        //             // Check that end_date is not in the past
+        //             $subQuery->whereNull('school_users.end_date')
+        //                      ->orWhere('school_users.end_date', '>=', now());
+        //         });
+        //     });
     }
 
     /**

@@ -6,13 +6,14 @@ use App\Http\Controllers\Controller;
 use App\Models\V1\Academic\Teacher;
 use App\Http\Requests\Academic\StoreTeacherRequest;
 use App\Http\Requests\Academic\UpdateTeacherRequest;
-use App\Http\Resources\Academic\TeacherResource;
 use App\Services\V1\Academic\TeacherService;
+use App\Traits\ApiResponseTrait;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 
 class TeacherController extends Controller
 {
+    use ApiResponseTrait;
     protected TeacherService $teacherService;
 
     public function __construct(TeacherService $teacherService)
@@ -29,7 +30,7 @@ class TeacherController extends Controller
 
         return response()->json([
             'status' => 'success',
-            'data' => TeacherResource::collection($teachers),
+            'data' => $teachers->items(),
             'meta' => [
                 'total' => $teachers->total(),
                 'per_page' => $teachers->perPage(),
@@ -47,11 +48,7 @@ class TeacherController extends Controller
         try {
             $teacher = $this->teacherService->createTeacher($request->validated());
 
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Teacher created successfully',
-                'data' => new TeacherResource($teacher)
-            ], 201);
+            return $this->successResponse($teacher, 'Teacher created successfully', 201);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
@@ -64,30 +61,53 @@ class TeacherController extends Controller
     /**
      * Display the specified teacher
      */
-    public function show(Teacher $teacher): JsonResponse
+    public function show(Request $request, $id): JsonResponse
     {
-        $this->authorize('view', $teacher);
+        try {
+            // Find teacher explicitly to avoid model binding issues with TenantScope
+            $teacher = $this->teacherService->getTeacherById($id);
 
-        return response()->json([
-            'status' => 'success',
-            'data' => new TeacherResource($teacher->load(['user', 'classes.subject', 'classes.academicYear']))
-        ]);
+            if (!$teacher) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Teacher not found'
+                ], 404);
+            }
+
+            return response()->json([
+                'status' => 'success',
+                'data' => $teacher->load(['user', 'classes.subject', 'classes.academicYear'])
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to retrieve teacher',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
      * Update the specified teacher
      */
-    public function update(UpdateTeacherRequest $request, Teacher $teacher): JsonResponse
+    public function update(UpdateTeacherRequest $request, $id): JsonResponse
     {
-        $this->authorize('update', $teacher);
-
         try {
+            $teacher = $this->teacherService->getTeacherById($id);
+
+            if (!$teacher) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Teacher not found'
+                ], 404);
+            }
+
             $updatedTeacher = $this->teacherService->updateTeacher($teacher, $request->validated());
 
             return response()->json([
                 'status' => 'success',
                 'message' => 'Teacher updated successfully',
-                'data' => new TeacherResource($updatedTeacher)
+                'data' => $updatedTeacher
             ]);
         } catch (\Exception $e) {
             return response()->json([
@@ -101,11 +121,18 @@ class TeacherController extends Controller
     /**
      * Remove the specified teacher
      */
-    public function destroy(Teacher $teacher): JsonResponse
+    public function destroy($id): JsonResponse
     {
-        $this->authorize('delete', $teacher);
-
         try {
+            $teacher = $this->teacherService->getTeacherById($id);
+
+            if (!$teacher) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Teacher not found'
+                ], 404);
+            }
+
             $this->teacherService->deleteTeacher($teacher);
 
             return response()->json([
@@ -132,10 +159,7 @@ class TeacherController extends Controller
 
         $teachers = $this->teacherService->getTeachersByDepartment($request->department);
 
-        return response()->json([
-            'status' => 'success',
-            'data' => TeacherResource::collection($teachers)
-        ]);
+        return $this->successPaginatedResponse($teachers);
     }
 
     /**
@@ -149,10 +173,7 @@ class TeacherController extends Controller
 
         $teachers = $this->teacherService->getTeachersByEmploymentType($request->employment_type);
 
-        return response()->json([
-            'status' => 'success',
-            'data' => TeacherResource::collection($teachers)
-        ]);
+        return $this->successPaginatedResponse($teachers);
     }
 
     /**
@@ -166,10 +187,7 @@ class TeacherController extends Controller
 
         $teachers = $this->teacherService->getTeachersBySpecialization($request->specialization);
 
-        return response()->json([
-            'status' => 'success',
-            'data' => TeacherResource::collection($teachers)
-        ]);
+        return $this->successPaginatedResponse($teachers);
     }
 
     /**
@@ -183,10 +201,7 @@ class TeacherController extends Controller
 
         $teachers = $this->teacherService->getTeachersByGradeLevel($request->grade_level);
 
-        return response()->json([
-            'status' => 'success',
-            'data' => TeacherResource::collection($teachers)
-        ]);
+        return $this->successPaginatedResponse($teachers);
     }
 
     /**
@@ -200,78 +215,123 @@ class TeacherController extends Controller
 
         $teachers = $this->teacherService->searchTeachers($request->search);
 
-        return response()->json([
-            'status' => 'success',
-            'data' => TeacherResource::collection($teachers)
-        ]);
+        return $this->successPaginatedResponse($teachers);
     }
 
     /**
      * Get teacher workload
      */
-    public function workload(Teacher $teacher): JsonResponse
+    public function workload($id): JsonResponse
     {
-        $this->authorize('view', $teacher);
+        try {
+            $teacher = $this->teacherService->getTeacherById($id);
 
-        $workload = $this->teacherService->getTeacherWorkload($teacher);
+            if (!$teacher) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Teacher not found'
+                ], 404);
+            }
 
-        return response()->json([
-            'status' => 'success',
-            'data' => $workload
-        ]);
+            $workload = $this->teacherService->getTeacherWorkload($teacher);
+
+            return $this->successResponse($workload);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to get teacher workload',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
      * Get teacher's classes
      */
-    public function classes(Teacher $teacher, Request $request): JsonResponse
+    public function classes($id, Request $request): JsonResponse
     {
-        $this->authorize('view', $teacher);
+        try {
+            $teacher = $this->teacherService->getTeacherById($id);
 
-        $classes = $this->teacherService->getTeacherClasses($teacher, $request->all());
+            if (!$teacher) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Teacher not found'
+                ], 404);
+            }
 
-        return response()->json([
-            'status' => 'success',
-            'data' => $classes
-        ]);
+            $classes = $this->teacherService->getTeacherClasses($teacher, $request->all());
+
+            return $this->successResponse($classes);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to get teacher classes',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
      * Get teacher statistics
      */
-    public function statistics(Teacher $teacher): JsonResponse
+    public function statistics($id): JsonResponse
     {
-        $this->authorize('view', $teacher);
+        try {
+            $teacher = $this->teacherService->getTeacherById($id);
 
-        $statistics = $this->teacherService->getTeacherStatistics($teacher);
+            if (!$teacher) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Teacher not found'
+                ], 404);
+            }
 
-        return response()->json([
-            'status' => 'success',
-            'data' => $statistics
-        ]);
+            $statistics = $this->teacherService->getTeacherStatistics($teacher);
+
+            return $this->successResponse($statistics);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to get teacher statistics',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
      * Update teacher schedule
      */
-    public function updateSchedule(Teacher $teacher, Request $request): JsonResponse
+    public function updateSchedule($id, Request $request): JsonResponse
     {
-        $this->authorize('update', $teacher);
-
         $request->validate([
             'schedule' => 'required|array',
             'schedule.*' => 'array',
-            'schedule.*.available_times' => 'array',
-            'schedule.*.available_times.*' => 'string|regex:/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/'
+            'schedule.*.day' => 'required|string|in:monday,tuesday,wednesday,thursday,friday,saturday,sunday',
+            'schedule.*.available_times' => 'required|array',
+            'schedule.*.available_times.*' => [
+                'required',
+                'string',
+                'regex:/^([01]?[0-9]|2[0-3]):[0-5][0-9](-[01]?[0-9]|2[0-3]:[0-5][0-9])?$/'
+            ],
         ]);
 
         try {
+            $teacher = $this->teacherService->getTeacherById($id);
+
+            if (!$teacher) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Teacher not found'
+                ], 404);
+            }
+
             $updatedTeacher = $this->teacherService->updateTeacherSchedule($teacher, $request->schedule);
 
             return response()->json([
                 'status' => 'success',
                 'message' => 'Teacher schedule updated successfully',
-                'data' => new TeacherResource($updatedTeacher)
+                'data' => $updatedTeacher
             ]);
         } catch (\Exception $e) {
             return response()->json([
@@ -285,30 +345,45 @@ class TeacherController extends Controller
     /**
      * Check teacher availability
      */
-    public function checkAvailability(Teacher $teacher, Request $request): JsonResponse
+    public function checkAvailability($id, Request $request): JsonResponse
     {
-        $this->authorize('view', $teacher);
-
         $request->validate([
             'day' => 'required|string|in:monday,tuesday,wednesday,thursday,friday,saturday,sunday',
-            'time' => 'required|string|regex:/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/'
+            'time' => ['required', 'string', 'regex:/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/'],
         ]);
 
-        $isAvailable = $this->teacherService->checkTeacherAvailability(
-            $teacher,
-            $request->day,
-            $request->time
-        );
+        try {
+            $teacher = $this->teacherService->getTeacherById($id);
 
-        return response()->json([
-            'status' => 'success',
-            'data' => [
-                'teacher_id' => $teacher->id,
-                'day' => $request->day,
-                'time' => $request->time,
-                'available' => $isAvailable
-            ]
-        ]);
+            if (!$teacher) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Teacher not found'
+                ], 404);
+            }
+
+            $isAvailable = $this->teacherService->checkTeacherAvailability(
+                $teacher,
+                $request->day,
+                $request->time
+            );
+
+            return response()->json([
+                'status' => 'success',
+                'data' => [
+                    'teacher_id' => $teacher->id,
+                    'day' => $request->day,
+                    'time' => $request->time,
+                    'available' => $isAvailable
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to check teacher availability',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
@@ -323,24 +398,28 @@ class TeacherController extends Controller
 
         $teachers = $this->teacherService->getAvailableTeachers($request->day, $request->time);
 
-        return response()->json([
-            'status' => 'success',
-            'data' => TeacherResource::collection($teachers)
-        ]);
+        return $this->successPaginatedResponse($teachers);
     }
 
     /**
      * Assign teacher to class
      */
-    public function assignToClass(Teacher $teacher, Request $request): JsonResponse
+    public function assignToClass($id, Request $request): JsonResponse
     {
-        $this->authorize('update', $teacher);
-
         $request->validate([
             'class_id' => 'required|exists:classes,id'
         ]);
 
         try {
+            $teacher = $this->teacherService->getTeacherById($id);
+
+            if (!$teacher) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Teacher not found'
+                ], 404);
+            }
+
             $this->teacherService->assignTeacherToClass($teacher, $request->class_id);
 
             return response()->json([
@@ -359,45 +438,72 @@ class TeacherController extends Controller
     /**
      * Get teacher performance metrics
      */
-    public function performanceMetrics(Teacher $teacher, Request $request): JsonResponse
+    public function performanceMetrics($id, Request $request): JsonResponse
     {
-        $this->authorize('view', $teacher);
-
         $request->validate([
             'academic_term_id' => 'required|exists:academic_terms,id'
         ]);
 
-        $metrics = $this->teacherService->getTeacherPerformanceMetrics(
-            $teacher,
-            $request->academic_term_id
-        );
+        try {
+            $teacher = $this->teacherService->getTeacherById($id);
 
-        return response()->json([
-            'status' => 'success',
-            'data' => $metrics
-        ]);
+            if (!$teacher) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Teacher not found'
+                ], 404);
+            }
+
+            $metrics = $this->teacherService->getTeacherPerformanceMetrics(
+                $teacher,
+                $request->academic_term_id
+            );
+
+            return $this->successResponse($metrics);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to get teacher performance metrics',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
      * Get teacher dashboard data
      */
-    public function dashboard(Teacher $teacher): JsonResponse
+    public function dashboard($id): JsonResponse
     {
-        $this->authorize('view', $teacher);
+        try {
+            $teacher = $this->teacherService->getTeacherById($id);
 
-        $workload = $this->teacherService->getTeacherWorkload($teacher);
-        $classes = $this->teacherService->getTeacherClasses($teacher);
-        $statistics = $this->teacherService->getTeacherStatistics($teacher);
+            if (!$teacher) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Teacher not found'
+                ], 404);
+            }
 
-        return response()->json([
-            'status' => 'success',
-            'data' => [
-                'teacher' => new TeacherResource($teacher),
-                'workload' => $workload,
-                'classes' => $classes,
-                'statistics' => $statistics
-            ]
-        ]);
+            $workload = $this->teacherService->getTeacherWorkload($teacher);
+            $classes = $this->teacherService->getTeacherClasses($teacher);
+            $statistics = $this->teacherService->getTeacherStatistics($teacher);
+
+            return response()->json([
+                'status' => 'success',
+                'data' => [
+                    'teacher' => $teacher,
+                    'workload' => $workload,
+                    'classes' => $classes,
+                    'statistics' => $statistics
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to get teacher dashboard',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
@@ -410,13 +516,27 @@ class TeacherController extends Controller
             'grade_level' => 'required|string'
         ]);
 
-        $teachers = $this->teacherService->getTeachersBySpecialization($request->subject_id)
-            ->merge($this->teacherService->getTeachersByGradeLevel($request->grade_level))
+        // Get teachers by specialization and grade level separately
+        $specializationTeachers = $this->teacherService->getTeachersBySpecialization($request->subject_id);
+        $gradeLevelTeachers = $this->teacherService->getTeachersByGradeLevel($request->grade_level);
+
+        // Combine and deduplicate the results
+        $allTeachers = $specializationTeachers->getCollection()
+            ->merge($gradeLevelTeachers->getCollection())
             ->unique('id');
 
-        return response()->json([
-            'status' => 'success',
-            'data' => TeacherResource::collection($teachers)
-        ]);
+        // Create a new paginator with the combined results
+        $combinedPaginator = new \Illuminate\Pagination\LengthAwarePaginator(
+            $allTeachers,
+            $allTeachers->count(),
+            $specializationTeachers->perPage(),
+            $specializationTeachers->currentPage(),
+            [
+                'path' => $specializationTeachers->path(),
+                'pageName' => 'page',
+            ]
+        );
+
+        return $this->successPaginatedResponse($combinedPaginator);
     }
 }

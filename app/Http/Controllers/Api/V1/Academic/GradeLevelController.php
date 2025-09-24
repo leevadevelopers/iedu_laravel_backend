@@ -6,13 +6,14 @@ use App\Http\Controllers\Controller;
 use App\Models\V1\Academic\GradeLevel;
 use App\Http\Requests\Academic\StoreGradeLevelRequest;
 use App\Http\Requests\Academic\UpdateGradeLevelRequest;
-use App\Http\Resources\Academic\GradeLevelResource;
 use App\Services\V1\Academic\GradeLevelService;
+use App\Traits\ApiResponseTrait;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 
 class GradeLevelController extends Controller
 {
+    use ApiResponseTrait;
     protected GradeLevelService $gradeLevelService;
 
     public function __construct(GradeLevelService $gradeLevelService)
@@ -29,7 +30,7 @@ class GradeLevelController extends Controller
 
         return response()->json([
             'status' => 'success',
-            'data' => GradeLevelResource::collection($gradeLevels),
+            'data' => $gradeLevels->items(),
             'meta' => [
                 'total' => $gradeLevels->total(),
                 'per_page' => $gradeLevels->perPage(),
@@ -47,11 +48,7 @@ class GradeLevelController extends Controller
         try {
             $gradeLevel = $this->gradeLevelService->createGradeLevel($request->validated());
 
-            return response()->json([
-                'status' => 'success',
-                'message' => 'Grade level created successfully',
-                'data' => new GradeLevelResource($gradeLevel)
-            ], 201);
+            return $this->successResponse($gradeLevel, 'Grade level created successfully', 201);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
@@ -64,30 +61,37 @@ class GradeLevelController extends Controller
     /**
      * Display the specified grade level
      */
-    public function show(GradeLevel $gradeLevel): JsonResponse
+    public function show(int $gradeLevelId): JsonResponse
     {
-        $this->authorize('view', $gradeLevel);
+        try {
+            $gradeLevel = $this->gradeLevelService->getGradeLevelById($gradeLevelId);
 
-        return response()->json([
-            'status' => 'success',
-            'data' => new GradeLevelResource($gradeLevel->load(['gradeScale']))
-        ]);
+            return response()->json([
+                'status' => 'success',
+                'data' => $gradeLevel->load(['gradeScale'])
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Grade level not found',
+                'error' => $e->getMessage()
+            ], 404);
+        }
     }
 
     /**
      * Update the specified grade level
      */
-    public function update(\App\Http\Requests\Academic\UpdateGradeLevelRequest $request, GradeLevel $gradeLevel): JsonResponse
+    public function update(\App\Http\Requests\Academic\UpdateGradeLevelRequest $request, int $id): JsonResponse
     {
-        $this->authorize('update', $gradeLevel);
-
         try {
+            $gradeLevel = $this->gradeLevelService->getGradeLevelById($id);
             $updatedGradeLevel = $this->gradeLevelService->updateGradeLevel($gradeLevel, $request->validated());
 
             return response()->json([
                 'status' => 'success',
                 'message' => 'Grade level updated successfully',
-                'data' => new GradeLevelResource($updatedGradeLevel)
+                'data' => $updatedGradeLevel
             ]);
         } catch (\Exception $e) {
             return response()->json([
@@ -101,11 +105,10 @@ class GradeLevelController extends Controller
     /**
      * Remove the specified grade level
      */
-    public function destroy(GradeLevel $gradeLevel): JsonResponse
+    public function destroy(int $id): JsonResponse
     {
-        $this->authorize('delete', $gradeLevel);
-
         try {
+            $gradeLevel = $this->gradeLevelService->getGradeLevelById($id);
             $this->gradeLevelService->deleteGradeLevel($gradeLevel);
 
             return response()->json([
@@ -128,10 +131,7 @@ class GradeLevelController extends Controller
     {
         $gradeLevels = $this->gradeLevelService->getGradeLevelsByGradeScale($gradeScaleId);
 
-        return response()->json([
-            'status' => 'success',
-            'data' => GradeLevelResource::collection($gradeLevels)
-        ]);
+        return $this->successResponse($gradeLevels);
     }
 
     /**
@@ -141,10 +141,7 @@ class GradeLevelController extends Controller
     {
         $gradeLevels = $this->gradeLevelService->getPassingGradeLevels();
 
-        return response()->json([
-            'status' => 'success',
-            'data' => GradeLevelResource::collection($gradeLevels)
-        ]);
+        return $this->successResponse($gradeLevels);
     }
 
     /**
@@ -154,10 +151,7 @@ class GradeLevelController extends Controller
     {
         $gradeLevels = $this->gradeLevelService->getFailingGradeLevels();
 
-        return response()->json([
-            'status' => 'success',
-            'data' => GradeLevelResource::collection($gradeLevels)
-        ]);
+        return $this->successResponse($gradeLevels);
     }
 
     /**
@@ -202,9 +196,6 @@ class GradeLevelController extends Controller
             $request->percentage
         );
 
-        return response()->json([
-            'status' => 'success',
-            'data' => $gradeLevel ? new GradeLevelResource($gradeLevel) : null
-        ]);
+        return $this->successResponse($gradeLevel);
     }
 }

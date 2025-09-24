@@ -11,6 +11,7 @@ return new class extends Migration
         Schema::create('grading_systems', function (Blueprint $table) {
             $table->id();
             $table->foreignId('school_id')->constrained('schools')->onDelete('cascade');
+            $table->foreignId('tenant_id')->constrained('tenants')->onDelete('cascade');
 
             // System Identity
             $table->string('name', 255);
@@ -34,6 +35,8 @@ return new class extends Migration
             // Indexes
             $table->index(['school_id']);
             $table->index(['system_type']);
+            $table->index(['tenant_id']);
+            $table->index(['school_id', 'tenant_id']);
         });
     }
 

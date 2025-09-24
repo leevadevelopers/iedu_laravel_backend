@@ -80,7 +80,7 @@ class AcademicClass extends BaseModel
 
     public function students(): BelongsToMany
     {
-        return $this->belongsToMany(Student::class, 'student_class_enrollments')
+        return $this->belongsToMany(Student::class, 'student_class_enrollments', 'class_id', 'student_id')
                     ->withPivot('enrollment_date', 'status', 'final_grade')
                     ->withTimestamps();
     }

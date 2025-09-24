@@ -105,4 +105,5 @@ class Subject extends BaseModel
     {
         return !empty($this->prerequisites);
     }
+
 }

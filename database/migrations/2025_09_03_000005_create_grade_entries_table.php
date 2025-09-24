@@ -11,6 +11,7 @@ return new class extends Migration
     {
         Schema::create('grade_entries', function (Blueprint $table) {
             $table->id();
+            $table->foreignId('tenant_id')->constrained('tenants')->onDelete('cascade');
             $table->foreignId('school_id')->constrained('schools')->onDelete('cascade');
             $table->foreignId('student_id')->constrained('students')->onDelete('cascade');
             $table->foreignId('class_id')->constrained('classes')->onDelete('cascade');
@@ -51,6 +52,8 @@ return new class extends Migration
             $table->index(['class_id', 'assessment_date']);
             $table->index(['school_id', 'academic_term_id']);
             $table->index(['entered_by', 'entered_at']);
+            $table->index(['tenant_id']);
+            $table->index(['school_id', 'tenant_id']);
         });
     }
 

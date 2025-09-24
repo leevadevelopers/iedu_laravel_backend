@@ -12,6 +12,8 @@ return new class extends Migration
             $table->id();
             $table->foreignId('grade_scale_id')->constrained('grade_scales')->onDelete('cascade');
             $table->foreignId('school_id')->constrained('schools')->onDelete('cascade');
+            $table->foreignId('tenant_id')->constrained('tenants')->onDelete('cascade');
+
 
             // Grade Definition
             $table->string('grade_value', 10); // 'A', '95', '4.0', 'Exceeds'
@@ -35,6 +37,8 @@ return new class extends Migration
             $table->index(['grade_scale_id']);
             $table->index(['school_id']);
             $table->index(['sort_order']);
+            $table->index(['tenant_id']);
+            $table->index(['school_id', 'tenant_id']);
         });
     }
 

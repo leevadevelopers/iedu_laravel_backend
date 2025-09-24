@@ -12,6 +12,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('grading_system_id')->constrained('grading_systems')->onDelete('cascade');
             $table->foreignId('school_id')->constrained('schools')->onDelete('cascade');
+            $table->foreignId('tenant_id')->constrained('tenants')->onDelete('cascade');
 
             // Scale Identity
             $table->string('name', 255);
@@ -23,6 +24,8 @@ return new class extends Migration
             // Indexes
             $table->index(['grading_system_id']);
             $table->index(['school_id']);
+            $table->index(['tenant_id']);
+            $table->index(['school_id', 'tenant_id']);
         });
     }
 

@@ -3,6 +3,7 @@
 namespace App\Http\Requests\Academic;
 
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Support\Facades\Auth;
 
 abstract class BaseAcademicRequest extends FormRequest
 {
@@ -12,7 +13,7 @@ abstract class BaseAcademicRequest extends FormRequest
     public function authorize(): bool
     {
         // Default authorization - user must be authenticated and have school association
-        return auth()->check() && $this->hasValidSchoolAssociation();
+        return Auth::check() && $this->hasValidSchoolAssociation();
     }
 
     /**
@@ -21,7 +22,7 @@ abstract class BaseAcademicRequest extends FormRequest
     protected function hasValidSchoolAssociation(): bool
     {
         try {
-            $user = auth()->user();
+            $user = Auth::user();
             return $user && $user->activeSchools()->exists();
         } catch (\Exception $e) {
             return false;
@@ -33,19 +34,44 @@ abstract class BaseAcademicRequest extends FormRequest
      */
     protected function getCurrentSchoolId(): int
     {
-        $user = auth()->user();
+        $user = Auth::user();
 
         if (!$user) {
             throw new \Exception('User not authenticated');
         }
 
-        $school = $user->activeSchools()->first();
+        $schoolUser = $user->activeSchools()->first();
 
-        if (!$school) {
+        if (!$schoolUser) {
             throw new \Exception('User is not associated with any schools');
         }
 
-        return $school->id;
+        return $schoolUser->school_id;
+    }
+
+    /**
+     * Get the current school ID safely, returning null if not available
+     */
+    protected function getCurrentSchoolIdOrNull(): ?int
+    {
+        try {
+            return $this->getCurrentSchoolId();
+        } catch (\Exception $e) {
+            return null;
+        }
+    }
+
+    /**
+     * Get the current tenant ID safely, returning null if not available
+     */
+    protected function getCurrentTenantIdOrNull(): ?int
+    {
+        try {
+            $user = Auth::user();
+            return $user?->tenant_id;
+        } catch (\Exception $e) {
+            return null;
+        }
     }
 
     /**

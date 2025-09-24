@@ -83,13 +83,15 @@ class TenantMiddleware
 
     private function establishTenantContext($user, Request $request): void
     {
-        // Check if user is super admin (role_id=1) - allow access without tenant associations
+        // Check if user is super admin (role_id=1) - set default tenant context
         if ($user->role_id == 1) {
-            Log::info('Super admin user accessing without tenant context', [
-                'user_id' => $user->id,
-                'user_identifier' => $user->identifier,
-                'role_id' => $user->role_id,
-            ]);
+            // Set default tenant_id for super admin in session only
+            if (!$user->tenant_id) {
+                session(['tenant_id' => 1]); // Default tenant for super admin
+            } else {
+                session(['tenant_id' => $user->tenant_id]);
+            }
+
             return;
         }
 
@@ -111,10 +113,23 @@ class TenantMiddleware
             $this->setDefaultTenant($user);
         }
 
-        $tenantId = session('tenant_id');
 
+        $tenantId = $user->tenant_id ?? session('tenant_id');
+
+        // If no tenant context is available, try to get the first available tenant
         if (!$tenantId) {
-            throw new \Exception('No tenant context available');
+            $firstTenant = $user->tenants()->first();
+            if ($firstTenant) {
+                session(['tenant_id' => $firstTenant->id]);
+                $tenantId = $firstTenant->id;
+            } else {
+                // This should not happen since we already checked if user has tenants
+                Log::warning('No tenant context available despite user having tenant associations', [
+                    'user_id' => $user->id,
+                    'user_identifier' => $user->identifier,
+                ]);
+                return; // Return instead of throwing exception
+            }
         }
 
         if (!$user->belongsToTenant($tenantId)) {
