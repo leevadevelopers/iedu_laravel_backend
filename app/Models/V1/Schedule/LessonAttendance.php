@@ -4,7 +4,7 @@ namespace App\Models\V1\Schedule;
 
 use App\Models\BaseModel;
 use App\Models\School;
-use App\Models\Student;
+use App\Models\V1\SIS\Student\Student;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Builder;

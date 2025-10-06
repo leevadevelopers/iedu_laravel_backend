@@ -124,7 +124,7 @@ class LessonService extends BaseScheduleService
     {
         $this->validateSchoolOwnership($lesson);
 
-        $attendances = collect();
+        $attendances = new Collection();
 
         DB::beginTransaction();
         try {
@@ -165,7 +165,7 @@ class LessonService extends BaseScheduleService
         Cache::put("lesson_qr_{$lesson->id}", $token, now()->addMinutes(30));
 
         // Generate QR code URL
-        $qrUrl = route('api.v1.lessons.check-in-qr', ['lesson' => $lesson->id, 'token' => $token]);
+        $qrUrl = route('lessons.check-in-qr', ['lesson' => $lesson->id, 'token' => $token]);
 
         return [
             'qr_url' => $qrUrl,
@@ -279,6 +279,49 @@ class LessonService extends BaseScheduleService
         }
 
         return $query->orderBy('start_time')->get();
+    }
+
+    public function getWithFilters(array $filters)
+    {
+        $query = Lesson::where('school_id', $this->getCurrentSchoolId())
+            ->with(['subject', 'class', 'teacher', 'schedule']);
+
+        if (!empty($filters['teacher_id'])) {
+            $query->byTeacher($filters['teacher_id']);
+        }
+
+        if (!empty($filters['class_id'])) {
+            $query->byClass($filters['class_id']);
+        }
+
+        if (!empty($filters['subject_id'])) {
+            $query->where('subject_id', $filters['subject_id']);
+        }
+
+        if (!empty($filters['type'])) {
+            $query->where('type', $filters['type']);
+        }
+
+        if (!empty($filters['status'])) {
+            $query->where('status', $filters['status']);
+        }
+
+        if (isset($filters['is_online'])) {
+            $query->where('is_online', $filters['is_online']);
+        }
+
+        if (!empty($filters['date_from']) && !empty($filters['date_to'])) {
+            $query->byDateRange($filters['date_from'], $filters['date_to']);
+        } elseif (!empty($filters['date'])) {
+            $query->byDate($filters['date']);
+        }
+
+        $sortBy = $filters['sort_by'] ?? 'created_at';
+        $sortDirection = $filters['sort_direction'] ?? 'desc';
+        $query->orderBy($sortBy, $sortDirection);
+
+        $perPage = $filters['per_page'] ?? 15;
+        return $query->paginate($perPage);
     }
 
     public function getLessonStats(): array

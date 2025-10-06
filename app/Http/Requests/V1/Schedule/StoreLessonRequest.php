@@ -83,12 +83,19 @@ class StoreLessonRequest extends BaseScheduleRequest
         $validator->after(function ($validator) {
             // Validate minimum duration
             if ($this->filled('start_time') && $this->filled('end_time')) {
-                $start = \Carbon\Carbon::parse($this->start_time);
-                $end = \Carbon\Carbon::parse($this->end_time);
-                $duration = $end->diffInMinutes($start);
+                try {
+                    $start = \Carbon\Carbon::createFromFormat('H:i', $this->start_time)->seconds(0);
+                    $end = \Carbon\Carbon::createFromFormat('H:i', $this->end_time)->seconds(0);
+                } catch (\Exception $e) {
+                    return; // base rules will handle format errors
+                }
+                $duration = $start->diffInMinutes($end, false);
 
                 if ($duration < 15) {
                     $validator->errors()->add('end_time', 'A duração mínima da aula deve ser de 15 minutos.');
+                }
+                if ($duration > 480) {
+                    $validator->errors()->add('end_time', 'A duração máxima da aula deve ser de 8 horas.');
                 }
             }
 
