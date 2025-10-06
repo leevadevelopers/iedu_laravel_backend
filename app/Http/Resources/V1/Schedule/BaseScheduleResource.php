@@ -22,12 +22,7 @@ abstract class BaseScheduleResource extends JsonResource
         return $time ? $time->format('H:i') : null;
     }
 
-    protected function whenLoaded($relationship, $value = null, $default = null)
-    {
-        return $this->resource->relationLoaded($relationship) ?
-            ($value ?? $this->resource->{$relationship}) :
-            ($default ?? $this->missingValue());
-    }
+    // Use JsonResource::whenLoaded from the framework for proper MissingValue handling
 
     protected function addMetadata(array $data): array
     {

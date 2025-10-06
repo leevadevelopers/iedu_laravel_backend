@@ -8,6 +8,7 @@ use App\Models\V1\Schedule\Lesson;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Log;
 
 class ScheduleService extends BaseScheduleService
 {
@@ -229,7 +230,15 @@ class ScheduleService extends BaseScheduleService
     private function validateScheduleData(array $data): void
     {
         // Validate time format and logic
-        if (Carbon::parse($data['start_time'])->gte(Carbon::parse($data['end_time']))) {
+        $startTime = Carbon::createFromFormat('H:i', $data['start_time'])->seconds(0);
+        $endTime = Carbon::createFromFormat('H:i', $data['end_time'])->seconds(0);
+        Log::debug('ScheduleService validateScheduleData times', [
+            'start_time' => $data['start_time'] ?? null,
+            'end_time' => $data['end_time'] ?? null,
+            'parsed_start' => $startTime->toTimeString(),
+            'parsed_end' => $endTime->toTimeString(),
+        ]);
+        if ($startTime->gte($endTime)) {
             throw new \InvalidArgumentException('Start time must be before end time');
         }
 
@@ -239,7 +248,10 @@ class ScheduleService extends BaseScheduleService
         }
 
         // Validate minimum lesson duration (e.g., 30 minutes)
-        $duration = Carbon::parse($data['end_time'])->diffInMinutes(Carbon::parse($data['start_time']));
+        $duration = $startTime->diffInMinutes($endTime, false);
+        Log::debug('ScheduleService validateScheduleData duration', [
+            'duration_minutes' => $duration,
+        ]);
         if ($duration < 30) {
             throw new \InvalidArgumentException('Lesson duration must be at least 30 minutes');
         }
