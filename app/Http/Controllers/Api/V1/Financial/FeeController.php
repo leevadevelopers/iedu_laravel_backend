@@ -13,6 +13,7 @@ use App\Events\Financial\FeeApplied;
 use App\Http\Resources\Financial\FeeResource;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class FeeController extends BaseController
 {
@@ -105,5 +106,59 @@ class FeeController extends BaseController
             'Fee applied successfully',
             201
         );
+    }
+
+    public function bulkApply(Request $request): JsonResponse
+    {
+        // $this->authorize('apply', Fee::class);
+
+        $request->validate([
+            'fee_id' => 'required|exists:fees,id',
+            'user_ids' => 'required|array|min:1',
+            'user_ids.*' => 'exists:users,id',
+            'due_at' => 'required|date',
+        ]);
+
+        $fee = Fee::findOrFail($request->fee_id);
+        $users = User::whereIn('id', $request->user_ids)->get();
+
+        $created = [];
+
+        DB::beginTransaction();
+        try {
+            foreach ($users as $user) {
+                $invoice = Invoice::create([
+                    'billable_id' => $user->id,
+                    'billable_type' => User::class,
+                    'subtotal' => $fee->amount,
+                    'total' => $fee->amount,
+                    'status' => 'issued',
+                    'issued_at' => now(),
+                    'due_at' => $request->due_at,
+                ]);
+
+                $invoice->items()->create([
+                    'description' => $fee->name,
+                    'quantity' => 1,
+                    'unit_price' => $fee->amount,
+                    'total' => $fee->amount,
+                    'fee_id' => $fee->id,
+                ]);
+
+                event(new FeeApplied($fee, $user, $invoice));
+
+                $created[] = new InvoiceResource($invoice->load(['items', 'billable']));
+            }
+
+            DB::commit();
+        } catch (\Throwable $e) {
+            DB::rollBack();
+            return $this->errorResponse('Failed to bulk apply fee: ' . $e->getMessage(), 500);
+        }
+
+        return $this->successResponse([
+            'created_count' => count($created),
+            'invoices' => $created,
+        ], 'Fee bulk-applied successfully');
     }
 }

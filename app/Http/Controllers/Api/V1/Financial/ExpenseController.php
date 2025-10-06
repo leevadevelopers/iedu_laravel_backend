@@ -15,7 +15,7 @@ class ExpenseController extends BaseController
     public function __construct()
     {
         $this->middleware('auth:api');
-        $this->authorizeResource(Expense::class, 'expense');
+        // $this->authorizeResource(Expense::class, 'expense');
     }
 
     public function index(Request $request): JsonResponse

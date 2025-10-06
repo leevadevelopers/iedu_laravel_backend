@@ -114,4 +114,54 @@ class LoanController extends BaseController
             'Your loans retrieved successfully'
         );
     }
+
+    public function overdue(Request $request): JsonResponse
+    {
+        $loans = Loan::whereNull('returned_at')
+            ->where('due_at', '<', now())
+            ->with(['bookCopy.book', 'borrower'])
+            ->orderBy('due_at')
+            ->paginate($request->get('per_page', 15));
+
+        return $this->paginatedResponse(
+            LoanResource::collection($loans),
+            'Overdue loans retrieved successfully'
+        );
+    }
+
+    public function renew(Request $request, Loan $loan): JsonResponse
+    {
+        // $this->authorize('renew', $loan);
+
+        if ($loan->returned_at) {
+            return $this->errorResponse('Cannot renew a returned loan', 422);
+        }
+
+        $days = (int) ($request->get('days', 7));
+        if ($days < 1 || $days > 30) {
+            return $this->errorResponse('Renewal days must be between 1 and 30', 422);
+        }
+
+        $loan->update([
+            'due_at' => $loan->due_at->addDays($days),
+        ]);
+
+        return $this->successResponse(
+            new LoanResource($loan),
+            'Loan renewed successfully'
+        );
+    }
+
+    public function destroy(Loan $loan): JsonResponse
+    {
+        // $this->authorize('delete', $loan);
+
+        if ($loan->returned_at === null) {
+            return $this->errorResponse('Cannot delete an active loan. Return the book first.', 422);
+        }
+
+        $loan->delete();
+
+        return $this->successResponse(null, 'Loan deleted successfully');
+    }
 }

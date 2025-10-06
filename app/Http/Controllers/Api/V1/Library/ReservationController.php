@@ -55,6 +55,19 @@ class ReservationController extends BaseController
         );
     }
 
+    public function myReservations(Request $request): JsonResponse
+    {
+        $reservations = Reservation::where('user_id', auth()->id())
+            ->with(['book'])
+            ->latest()
+            ->paginate($request->get('per_page', 15));
+
+        return $this->paginatedResponse(
+            ReservationResource::collection($reservations),
+            'Your reservations retrieved successfully'
+        );
+    }
+
     public function cancel(Reservation $reservation): JsonResponse
     {
         $this->authorize('cancel', $reservation);
@@ -64,6 +77,53 @@ class ReservationController extends BaseController
         return $this->successResponse(
             new ReservationResource($reservation),
             'Reservation cancelled successfully'
+        );
+    }
+
+    public function show(Reservation $reservation): JsonResponse
+    {
+        // $this->authorize('view', $reservation);
+
+        return $this->successResponse(
+            new ReservationResource($reservation->load(['book', 'user'])),
+            'Reservation retrieved successfully'
+        );
+    }
+
+    public function markReady(Reservation $reservation): JsonResponse
+    {
+        // $this->authorize('update', $reservation);
+
+        if ($reservation->status === 'ready') {
+            return $this->errorResponse('Reservation already marked as ready', 422);
+        }
+
+        $reservation->update([
+            'status' => 'ready',
+            'notified_at' => now(),
+        ]);
+
+        return $this->successResponse(
+            new ReservationResource($reservation),
+            'Reservation marked as ready'
+        );
+    }
+
+    public function markCollected(Reservation $reservation): JsonResponse
+    {
+        // $this->authorize('update', $reservation);
+
+        if ($reservation->status === 'collected') {
+            return $this->errorResponse('Reservation already collected', 422);
+        }
+
+        $reservation->update([
+            'status' => 'collected',
+        ]);
+
+        return $this->successResponse(
+            new ReservationResource($reservation),
+            'Reservation marked as collected'
         );
     }
 }
