@@ -4,12 +4,14 @@ namespace App\Http\Controllers\API\V1\Academic;
 
 use App\Http\Controllers\Controller;
 use App\Models\V1\Academic\Teacher;
+use App\Models\V1\SIS\School\SchoolUser;
 use App\Http\Requests\Academic\StoreTeacherRequest;
 use App\Http\Requests\Academic\UpdateTeacherRequest;
 use App\Services\V1\Academic\TeacherService;
 use App\Traits\ApiResponseTrait;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\DB;
 
 class TeacherController extends Controller
 {
@@ -46,10 +48,27 @@ class TeacherController extends Controller
     public function store(StoreTeacherRequest $request): JsonResponse
     {
         try {
+            DB::beginTransaction();
+
             $teacher = $this->teacherService->createTeacher($request->validated());
+
+            // Create SchoolUser association
+            if ($teacher->user_id && $teacher->school_id) {
+                SchoolUser::create([
+                    'school_id' => $teacher->school_id,
+                    'user_id' => $teacher->user_id,
+                    'role' => 'teacher',
+                    'status' => 'active',
+                    'start_date' => now(),
+                    'permissions' => $this->getDefaultTeacherPermissions()
+                ]);
+            }
+
+            DB::commit();
 
             return $this->successResponse($teacher, 'Teacher created successfully', 201);
         } catch (\Exception $e) {
+            DB::rollBack();
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to create teacher',
@@ -538,5 +557,28 @@ class TeacherController extends Controller
         );
 
         return $this->successPaginatedResponse($combinedPaginator);
+    }
+
+    /**
+     * Get default permissions for teachers
+     */
+    private function getDefaultTeacherPermissions(): array
+    {
+        return [
+            'view_students',
+            'view_classes',
+            'view_grades',
+            'create_grades',
+            'update_grades',
+            'view_attendance',
+            'create_attendance',
+            'update_attendance',
+            'view_schedule',
+            'view_assignments',
+            'create_assignments',
+            'update_assignments',
+            'view_announcements',
+            'create_announcements'
+        ];
     }
 }

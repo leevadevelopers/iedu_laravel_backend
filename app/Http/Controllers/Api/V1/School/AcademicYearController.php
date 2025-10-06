@@ -34,7 +34,7 @@ class AcademicYearController extends Controller
     {
         try {
             $query = AcademicYear::with([
-                'school:id,official_name,school_code',
+                'school:id,display_name,school_code',
                 'terms:id,academic_year_id,name,start_date,end_date',
                 'createdBy:id,name'
             ]);
@@ -188,7 +188,7 @@ class AcademicYearController extends Controller
                 'success' => true,
                 'message' => 'Academic year created successfully',
                 'data' => [
-                    'academic_year' => $academicYear->load(['school:id,official_name,school_code']),
+                    'academic_year' => $academicYear->load(['school:id,display_name,school_code']),
                     'workflow_id' => $workflow->id
                 ]
             ], 201);
@@ -210,7 +210,7 @@ class AcademicYearController extends Controller
     {
         try {
             $academicYear->load([
-                'school:id,official_name,school_code,type',
+                'school:id,display_name,school_code,type',
                 'terms:id,academic_year_id,name,start_date,end_date,status',
                 'createdBy:id,name',
                 'students:id,first_name,last_name,grade_level,status'
@@ -301,7 +301,7 @@ class AcademicYearController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Academic year updated successfully',
-                'data' => $academicYear->fresh()->load(['school:id,official_name,school_code'])
+                'data' => $academicYear->fresh()->load(['school:id,display_name,school_code'])
             ]);
 
         } catch (\Exception $e) {
@@ -702,7 +702,7 @@ class AcademicYearController extends Controller
             }
 
             // Load relationships based on request
-            $with = ['school:id,official_name,school_code', 'createdBy:id,name'];
+            $with = ['school:id,display_name,school_code', 'createdBy:id,name'];
 
             if ($request->boolean('include_terms', false)) {
                 $with[] = 'terms:id,academic_year_id,name,start_date,end_date,status';

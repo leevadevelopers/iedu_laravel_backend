@@ -4,7 +4,6 @@ namespace App\Services\V1\Schedule;
 
 use App\Models\V1\Schedule\Lesson;
 use App\Models\V1\Schedule\LessonAttendance;
-use App\Repositories\V1\Schedule\LessonRepository;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -14,16 +13,9 @@ use Illuminate\Support\Str;
 
 class LessonService extends BaseScheduleService
 {
-    protected LessonRepository $lessonRepository;
-
-    public function __construct(LessonRepository $lessonRepository)
+    public function __construct()
     {
-        $this->lessonRepository = $lessonRepository;
-    }
-
-    public function getLessonRepository(): LessonRepository
-    {
-        return $this->lessonRepository;
+        // No repository dependency needed
     }
 
     public function createLesson(array $data)
@@ -38,7 +30,7 @@ class LessonService extends BaseScheduleService
             $data['duration_minutes'] = $end->diffInMinutes($start);
         }
 
-        return $this->lessonRepository->create($data);
+        return Lesson::create($data);
     }
 
     public function updateLesson(Lesson $lesson, array $data)
@@ -54,7 +46,8 @@ class LessonService extends BaseScheduleService
             $data['duration_minutes'] = $end->diffInMinutes($start);
         }
 
-        return $this->lessonRepository->update($lesson, $data);
+        $lesson->update($data);
+        return $lesson->fresh();
     }
 
     public function deleteLesson(Lesson $lesson): bool
@@ -66,7 +59,7 @@ class LessonService extends BaseScheduleService
             throw new \Exception('Cannot delete lesson that is in progress or completed');
         }
 
-        return $this->lessonRepository->delete($lesson);
+        return $lesson->delete();
     }
 
     public function startLesson(Lesson $lesson): bool
@@ -214,37 +207,117 @@ class LessonService extends BaseScheduleService
 
     public function getTeacherLessons(int $teacherId, array $filters = []): Collection
     {
-        return $this->lessonRepository->getByTeacher($teacherId, $filters);
+        $query = Lesson::where('school_id', $this->getCurrentSchoolId())
+            ->byTeacher($teacherId)
+            ->with(['subject', 'class', 'teacher']);
+
+        if (!empty($filters['status'])) {
+            $query->where('status', $filters['status']);
+        }
+
+        if (!empty($filters['date'])) {
+            $query->byDate($filters['date']);
+        }
+
+        if (!empty($filters['date_range'])) {
+            $query->byDateRange($filters['date_range'][0], $filters['date_range'][1]);
+        }
+
+        return $query->orderBy('lesson_date')->orderBy('start_time')->get();
     }
 
     public function getClassLessons(int $classId, array $filters = []): Collection
     {
-        return $this->lessonRepository->getByClass($classId, $filters);
+        $query = Lesson::where('school_id', $this->getCurrentSchoolId())
+            ->byClass($classId)
+            ->with(['subject', 'class', 'teacher']);
+
+        if (!empty($filters['status'])) {
+            $query->where('status', $filters['status']);
+        }
+
+        if (!empty($filters['date'])) {
+            $query->byDate($filters['date']);
+        }
+
+        if (!empty($filters['date_range'])) {
+            $query->byDateRange($filters['date_range'][0], $filters['date_range'][1]);
+        }
+
+        return $query->orderBy('lesson_date')->orderBy('start_time')->get();
     }
 
     public function getUpcomingLessons(int $limit = 10, array $filters = []): Collection
     {
-        return $this->lessonRepository->getUpcoming($limit, $filters);
+        $query = Lesson::where('school_id', $this->getCurrentSchoolId())
+            ->upcoming()
+            ->with(['subject', 'class', 'teacher']);
+
+        if (!empty($filters['teacher_id'])) {
+            $query->byTeacher($filters['teacher_id']);
+        }
+
+        if (!empty($filters['class_id'])) {
+            $query->byClass($filters['class_id']);
+        }
+
+        return $query->limit($limit)->get();
     }
 
     public function getTodayLessons(array $filters = []): Collection
     {
-        return $this->lessonRepository->getToday($filters);
+        $query = Lesson::where('school_id', $this->getCurrentSchoolId())
+            ->today()
+            ->with(['subject', 'class', 'teacher']);
+
+        if (!empty($filters['teacher_id'])) {
+            $query->byTeacher($filters['teacher_id']);
+        }
+
+        if (!empty($filters['class_id'])) {
+            $query->byClass($filters['class_id']);
+        }
+
+        return $query->orderBy('start_time')->get();
     }
 
     public function getLessonStats(): array
     {
-        return $this->lessonRepository->getDashboardStats();
+        $schoolId = $this->getCurrentSchoolId();
+
+        return [
+            'total_lessons' => Lesson::where('school_id', $schoolId)->count(),
+            'scheduled_lessons' => Lesson::where('school_id', $schoolId)->scheduled()->count(),
+            'completed_lessons' => Lesson::where('school_id', $schoolId)->completed()->count(),
+            'cancelled_lessons' => Lesson::where('school_id', $schoolId)->cancelled()->count(),
+            'today_lessons' => Lesson::where('school_id', $schoolId)->today()->count(),
+            'this_week_lessons' => Lesson::where('school_id', $schoolId)->thisWeek()->count(),
+            'online_lessons' => Lesson::where('school_id', $schoolId)->where('is_online', true)->count(),
+            'average_attendance_rate' => Lesson::where('school_id', $schoolId)
+                ->whereNotNull('attendance_rate')
+                ->avg('attendance_rate') ?? 0
+        ];
     }
 
     public function getAttendanceStats(): array
     {
-        return $this->lessonRepository->getAttendanceStats();
+        $schoolId = $this->getCurrentSchoolId();
+
+        return [
+            'total_attendance_records' => LessonAttendance::where('school_id', $schoolId)->count(),
+            'present_count' => LessonAttendance::where('school_id', $schoolId)->where('status', 'present')->count(),
+            'absent_count' => LessonAttendance::where('school_id', $schoolId)->where('status', 'absent')->count(),
+            'late_count' => LessonAttendance::where('school_id', $schoolId)->where('status', 'late')->count(),
+            'excused_count' => LessonAttendance::where('school_id', $schoolId)->where('status', 'excused')->count(),
+            'average_attendance_rate' => Lesson::where('school_id', $schoolId)
+                ->whereNotNull('attendance_rate')
+                ->avg('attendance_rate') ?? 0
+        ];
     }
 
     public function exportLessonReport(int $lessonId): array
     {
-        $lesson = $this->lessonRepository->find($lessonId);
+        $lesson = Lesson::findOrFail($lessonId);
         $this->validateSchoolOwnership($lesson);
 
         $lesson->load([

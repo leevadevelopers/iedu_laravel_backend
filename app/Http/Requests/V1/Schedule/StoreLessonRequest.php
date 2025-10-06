@@ -4,11 +4,16 @@ namespace App\Http\Requests\V1\Schedule;
 
 class StoreLessonRequest extends BaseScheduleRequest
 {
+    public function authorize(): bool
+    {
+        return true;
+    }
+
     public function rules(): array
     {
         return [
             'schedule_id' => [
-                'nullable',
+                'required',
                 'integer',
                 'exists:schedules,id,school_id,' . $this->getCurrentSchoolId()
             ],
@@ -45,6 +50,7 @@ class StoreLessonRequest extends BaseScheduleRequest
             'lesson_date' => 'required|date',
             'start_time' => 'required|date_format:H:i',
             'end_time' => 'required|date_format:H:i|after:start_time',
+            'duration_minutes' => 'nullable|integer|min:15|max:480', // 15 min to 8 hours
 
             // Location and format
             'classroom' => 'nullable|string|max:50',

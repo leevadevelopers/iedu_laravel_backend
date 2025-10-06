@@ -4,6 +4,11 @@ namespace App\Http\Requests\V1\Schedule;
 
 class UpdateScheduleRequest extends BaseScheduleRequest
 {
+    public function authorize(): bool
+    {
+        return true;
+    }
+
     public function rules(): array
     {
         return [
