@@ -21,7 +21,7 @@ use App\Http\Controllers\API\V1\Auth\PasswordController;
 //     });
 // });
 
-// Legacy auth routes without v1 prefix for backward compatibility with all
+// Auth routes with v1 prefix to be consistent with other modules
 Route::prefix('auth')->group(function () {
     Route::post('sign-in', [AuthController::class, 'login']);
     Route::post('sign-up', [AuthController::class, 'register']);
@@ -31,7 +31,7 @@ Route::prefix('auth')->group(function () {
 
     Route::middleware('auth:api')->group(function () {
         Route::post('sign-out', [AuthController::class, 'logout']);
-        // Route::post('logout', [AuthController::class, 'logout']); // Add both sign-out and logout for compatibility
+        Route::post('logout', [AuthController::class, 'logout']); // Add both sign-out and logout for compatibility
         Route::post('refresh', [AuthController::class, 'refresh']);
         Route::get('me', [AuthController::class, 'me']); // Only requires auth, not tenant
         Route::post('change-password', [PasswordController::class, 'change']);

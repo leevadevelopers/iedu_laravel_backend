@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\Api\V1\Transport\FleetController;
 use App\Http\Controllers\API\V1\Transport\TransportRouteController;
 use App\Http\Controllers\API\V1\Transport\FleetBusController;
 use App\Http\Controllers\API\V1\Transport\StudentTransportController;
@@ -10,6 +11,7 @@ use App\Http\Controllers\API\V1\Transport\ParentPortalController;
 use App\Http\Controllers\API\V1\Transport\BusStopController;
 use App\Http\Controllers\API\V1\Transport\TransportIncidentController;
 use App\Http\Controllers\API\V1\Transport\DriverPortalController;
+use App\Http\Controllers\API\V1\Transport\TransportEventsController;
 
 /*
 |--------------------------------------------------------------------------
@@ -20,6 +22,23 @@ use App\Http\Controllers\API\V1\Transport\DriverPortalController;
 | fleet management, student transport, tracking, and parent portal.
 |
 */
+
+// Temporary route for testing fleet API without authentication
+Route::get('/api/transport/fleet/test', function () {
+    $vehicles = App\Models\V1\Transport\FleetBus::select('id', 'license_plate', 'make', 'model', 'capacity', 'status')->get();
+    return response()->json([
+        'success' => true,
+        'data' => $vehicles,
+        'meta' => [
+            'current_page' => 1,
+            'last_page' => 1,
+            'per_page' => count($vehicles),
+            'total' => count($vehicles),
+            'from' => 1,
+            'to' => count($vehicles)
+        ]
+    ]);
+});
 
 Route::middleware(['auth:api'])->prefix('transport')->name('transport.')->group(function () {
 
@@ -53,13 +72,21 @@ Route::middleware(['auth:api'])->prefix('transport')->name('transport.')->group(
     // FLEET MANAGEMENT
     // ==========================================
     Route::prefix('fleet')->name('fleet.')->group(function () {
-        Route::get('/', [FleetBusController::class, 'index'])->name('index');
-        Route::post('/', [FleetBusController::class, 'store'])->name('store');
+        // New API routes
+        Route::get('/', [FleetController::class, 'index'])->name('index');
+        Route::post('/', [FleetController::class, 'store'])->name('store');
+        Route::get('/statistics', [FleetController::class, 'statistics'])->name('statistics');
+        Route::get('/export', [FleetController::class, 'export'])->name('export');
+        Route::get('/{fleet}', [FleetController::class, 'show'])->name('show');
+        Route::put('/{fleet}', [FleetController::class, 'update'])->name('update');
+        Route::delete('/{fleet}', [FleetController::class, 'destroy'])->name('destroy');
+        
+        // Legacy routes (keeping for compatibility)
         Route::get('/available', [FleetBusController::class, 'getAvailable'])->name('available');
         Route::get('/maintenance-report', [FleetBusController::class, 'maintenanceReport'])->name('maintenance-report');
-        Route::get('/{bus}', [FleetBusController::class, 'show'])->name('show');
-        Route::put('/{bus}', [FleetBusController::class, 'update'])->name('update');
-        Route::delete('/{bus}', [FleetBusController::class, 'destroy'])->name('destroy');
+        Route::get('/{bus}', [FleetBusController::class, 'show'])->name('legacy.show');
+        Route::put('/{bus}', [FleetBusController::class, 'update'])->name('legacy.update');
+        Route::delete('/{bus}', [FleetBusController::class, 'destroy'])->name('legacy.destroy');
         Route::post('/{bus}/assign', [FleetBusController::class, 'assign'])->name('assign');
         Route::post('/{bus}/maintenance', [FleetBusController::class, 'maintenance'])->name('maintenance');
     });
@@ -127,6 +154,20 @@ Route::middleware(['auth:api'])->prefix('transport')->name('transport.')->group(
         Route::get('/route-progress', [TransportTrackingController::class, 'getRouteProgress'])->name('route-progress');
         Route::get('/bus/{bus}/history', [TransportTrackingController::class, 'getTrackingHistory'])->name('history');
         Route::post('/geofence', [TransportTrackingController::class, 'generateGeofence'])->name('geofence');
+    });
+
+    // ==========================================
+    // TRANSPORT EVENTS MANAGEMENT
+    // ==========================================
+    Route::prefix('events')->name('events.')->group(function () {
+        Route::get('/', [TransportEventsController::class, 'index'])->name('index');
+        Route::post('/', [TransportEventsController::class, 'store'])->name('store');
+        Route::get('/statistics', [TransportEventsController::class, 'statistics'])->name('statistics');
+        Route::get('/recent', [TransportEventsController::class, 'recent'])->name('recent');
+        Route::get('/export', [TransportEventsController::class, 'export'])->name('export');
+        Route::get('/{event}', [TransportEventsController::class, 'show'])->name('show');
+        Route::put('/{event}', [TransportEventsController::class, 'update'])->name('update');
+        Route::delete('/{event}', [TransportEventsController::class, 'destroy'])->name('destroy');
     });
 
     // ==========================================
