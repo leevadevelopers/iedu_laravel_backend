@@ -53,7 +53,7 @@ class LessonController extends Controller
             }
         }
 
-        $lessons = $this->lessonService->getLessonRepository()->getWithFilters($filters);
+        $lessons = $this->lessonService->getWithFilters($filters);
 
         return response()->json([
             'data' => LessonResource::collection($lessons),
@@ -346,7 +346,7 @@ class LessonController extends Controller
             'search', 'sort_by', 'sort_direction', 'per_page'
         ]), ['teacher_id' => $teacherId]);
 
-        $lessons = $this->lessonService->getLessonRepository()->getWithFilters($filters);
+        $lessons = $this->lessonService->getWithFilters($filters);
 
         return response()->json([
             'data' => LessonResource::collection($lessons),

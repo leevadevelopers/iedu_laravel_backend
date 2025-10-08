@@ -36,7 +36,7 @@ class ScheduleController extends Controller
             ]);
         }
 
-        $schedules = $this->scheduleService->getScheduleRepository()->getWithFilters($filters);
+        $schedules = $this->scheduleService->getWithFilters($filters);
 
         return response()->json([
             'data' => ScheduleResource::collection($schedules),

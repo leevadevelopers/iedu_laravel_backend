@@ -4,18 +4,17 @@ namespace App\Services\V1\Schedule;
 
 use App\Models\V1\Schedule\Schedule;
 use App\Models\V1\Schedule\ScheduleConflict;
-use App\Repositories\V1\Schedule\ScheduleRepository;
+use App\Models\V1\Schedule\Lesson;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Log;
 
 class ScheduleService extends BaseScheduleService
 {
-    protected ScheduleRepository $scheduleRepository;
-
-    public function __construct(ScheduleRepository $scheduleRepository)
+    public function __construct()
     {
-        $this->scheduleRepository = $scheduleRepository;
+        // No repository dependency needed
     }
 
     public function createSchedule(array $data)
@@ -31,11 +30,11 @@ class ScheduleService extends BaseScheduleService
 
         // Create schedule
         $data['school_id'] = $this->getCurrentSchoolId();
-        $data['created_by'] = auth()->id();
+        $data['created_by'] = auth('api')->id();
 
         DB::beginTransaction();
         try {
-            $schedule = $this->scheduleRepository->create($data);
+            $schedule = Schedule::create($data);
 
             // Generate lessons if requested
             if ($data['auto_generate_lessons'] ?? false) {
@@ -63,8 +62,9 @@ class ScheduleService extends BaseScheduleService
             }
         }
 
-        $data['updated_by'] = auth()->id();
-        return $this->scheduleRepository->update($schedule, $data);
+        $data['updated_by'] = auth('api')->id();
+        $schedule->update($data);
+        return $schedule->fresh();
     }
 
     public function deleteSchedule(Schedule $schedule): bool
@@ -81,22 +81,61 @@ class ScheduleService extends BaseScheduleService
             throw new \Exception('Cannot delete schedule with future scheduled lessons');
         }
 
-        return $this->scheduleRepository->delete($schedule);
+        return $schedule->delete();
     }
 
     public function getTeacherSchedule(int $teacherId): Collection
     {
-        return $this->scheduleRepository->getByTeacher($teacherId);
+        return Schedule::where('school_id', $this->getCurrentSchoolId())
+            ->byTeacher($teacherId)
+            ->active()
+            ->with(['subject', 'class', 'teacher'])
+            ->orderBy('day_of_week')
+            ->orderBy('start_time')
+            ->get();
     }
 
     public function getClassSchedule(int $classId): Collection
     {
-        return $this->scheduleRepository->getByClass($classId);
+        return Schedule::where('school_id', $this->getCurrentSchoolId())
+            ->byClass($classId)
+            ->active()
+            ->with(['subject', 'class', 'teacher'])
+            ->orderBy('day_of_week')
+            ->orderBy('start_time')
+            ->get();
     }
 
     public function getWeeklySchedule(array $filters = []): Collection
     {
-        return $this->scheduleRepository->getWeeklySchedule($filters);
+        $query = Schedule::where('school_id', $this->getCurrentSchoolId())
+            ->active()
+            ->with(['subject', 'class', 'teacher']);
+
+        // Apply filters
+        if (!empty($filters['teacher_id'])) {
+            $query->byTeacher($filters['teacher_id']);
+        }
+
+        if (!empty($filters['class_id'])) {
+            $query->byClass($filters['class_id']);
+        }
+
+        if (!empty($filters['subject_id'])) {
+            $query->where('subject_id', $filters['subject_id']);
+        }
+
+        if (!empty($filters['day_of_week'])) {
+            $query->byDay($filters['day_of_week']);
+        }
+
+        if (!empty($filters['period'])) {
+            $query->byPeriod($filters['period']);
+        }
+
+        return $query->orderBy('day_of_week')
+            ->orderBy('start_time')
+            ->get();
     }
 
     public function checkConflicts(array $scheduleData, ?int $excludeId = null): array
@@ -109,9 +148,14 @@ class ScheduleService extends BaseScheduleService
         $endTime = $scheduleData['end_time'];
 
         // Check teacher conflicts
-        $teacherConflicts = $this->scheduleRepository->findConflicts(
-            $teacherId, $dayOfWeek, $startTime, $endTime, $excludeId
-        );
+        $teacherConflicts = Schedule::where('school_id', $this->getCurrentSchoolId())
+            ->conflictsWith($teacherId, $dayOfWeek, $startTime, $endTime)
+            ->with(['subject'])
+            ->get();
+
+        if ($excludeId) {
+            $teacherConflicts = $teacherConflicts->where('id', '!=', $excludeId);
+        }
 
         if ($teacherConflicts->isNotEmpty()) {
             foreach ($teacherConflicts as $conflict) {
@@ -148,20 +192,23 @@ class ScheduleService extends BaseScheduleService
 
     public function detectAllConflicts(): Collection
     {
-        $schedules = $this->scheduleRepository->schoolScoped()
+        $schedules = Schedule::where('school_id', $this->getCurrentSchoolId())
             ->where('status', 'active')
+            ->with(['teacher'])
             ->get();
 
         $conflicts = collect();
 
         foreach ($schedules as $schedule) {
-            $teacherConflicts = $this->scheduleRepository->findConflicts(
-                $schedule->teacher_id,
-                $schedule->day_of_week,
-                $schedule->start_time,
-                $schedule->end_time,
-                $schedule->id
-            );
+            $teacherConflicts = Schedule::where('school_id', $this->getCurrentSchoolId())
+                ->conflictsWith(
+                    $schedule->teacher_id,
+                    $schedule->day_of_week,
+                    $schedule->start_time,
+                    $schedule->end_time
+                )
+                ->where('id', '!=', $schedule->id)
+                ->get();
 
             if ($teacherConflicts->isNotEmpty()) {
                 $conflict = $this->createConflictRecord(
@@ -183,7 +230,15 @@ class ScheduleService extends BaseScheduleService
     private function validateScheduleData(array $data): void
     {
         // Validate time format and logic
-        if (Carbon::parse($data['start_time'])->gte(Carbon::parse($data['end_time']))) {
+        $startTime = Carbon::createFromFormat('H:i', $data['start_time'])->seconds(0);
+        $endTime = Carbon::createFromFormat('H:i', $data['end_time'])->seconds(0);
+        Log::debug('ScheduleService validateScheduleData times', [
+            'start_time' => $data['start_time'] ?? null,
+            'end_time' => $data['end_time'] ?? null,
+            'parsed_start' => $startTime->toTimeString(),
+            'parsed_end' => $endTime->toTimeString(),
+        ]);
+        if ($startTime->gte($endTime)) {
             throw new \InvalidArgumentException('Start time must be before end time');
         }
 
@@ -193,7 +248,10 @@ class ScheduleService extends BaseScheduleService
         }
 
         // Validate minimum lesson duration (e.g., 30 minutes)
-        $duration = Carbon::parse($data['end_time'])->diffInMinutes(Carbon::parse($data['start_time']));
+        $duration = $startTime->diffInMinutes($endTime, false);
+        Log::debug('ScheduleService validateScheduleData duration', [
+            'duration_minutes' => $duration,
+        ]);
         if ($duration < 30) {
             throw new \InvalidArgumentException('Lesson duration must be at least 30 minutes');
         }
@@ -201,7 +259,7 @@ class ScheduleService extends BaseScheduleService
 
     private function checkClassroomConflicts(string $classroom, string $dayOfWeek, string $startTime, string $endTime, ?int $excludeId = null): Collection
     {
-        $query = $this->scheduleRepository->schoolScoped()
+        $query = Schedule::where('school_id', $this->getCurrentSchoolId())
             ->where('classroom', $classroom)
             ->where('day_of_week', $dayOfWeek)
             ->where('status', 'active')
@@ -240,11 +298,86 @@ class ScheduleService extends BaseScheduleService
 
     public function getScheduleStats(): array
     {
-        return $this->scheduleRepository->getDashboardStats();
+        $schoolId = $this->getCurrentSchoolId();
+
+        return [
+            'total_schedules' => Schedule::where('school_id', $schoolId)->count(),
+            'active_schedules' => Schedule::where('school_id', $schoolId)->active()->count(),
+            'total_lessons' => Lesson::where('school_id', $schoolId)->count(),
+            'completed_lessons' => Lesson::where('school_id', $schoolId)->completed()->count(),
+            'scheduled_lessons' => Lesson::where('school_id', $schoolId)->scheduled()->count(),
+            'today_lessons' => Lesson::where('school_id', $schoolId)->today()->count(),
+            'this_week_lessons' => Lesson::where('school_id', $schoolId)->thisWeek()->count(),
+            'online_schedules' => Schedule::where('school_id', $schoolId)->where('is_online', true)->count(),
+            'conflicts_detected' => ScheduleConflict::where('school_id', $schoolId)
+                ->where('status', 'detected')
+                ->count()
+        ];
     }
 
-    public function getScheduleRepository(): ScheduleRepository
+    public function getWithFilters(array $filters)
     {
-        return $this->scheduleRepository;
+        $query = Schedule::where('school_id', $this->getCurrentSchoolId())
+            ->with(['subject', 'class', 'teacher', 'academicYear']);
+
+        // Apply filters
+        if (!empty($filters['teacher_id'])) {
+            $query->byTeacher($filters['teacher_id']);
+        }
+
+        if (!empty($filters['class_id'])) {
+            $query->byClass($filters['class_id']);
+        }
+
+        if (!empty($filters['subject_id'])) {
+            $query->where('subject_id', $filters['subject_id']);
+        }
+
+        if (!empty($filters['day_of_week'])) {
+            $query->byDay($filters['day_of_week']);
+        }
+
+        if (!empty($filters['period'])) {
+            $query->byPeriod($filters['period']);
+        }
+
+        if (!empty($filters['academic_year_id'])) {
+            $query->where('academic_year_id', $filters['academic_year_id']);
+        }
+
+        if (isset($filters['is_online'])) {
+            $query->where('is_online', $filters['is_online']);
+        }
+
+        if (!empty($filters['status'])) {
+            $query->where('status', $filters['status']);
+        }
+
+        if (!empty($filters['search'])) {
+            $search = $filters['search'];
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                  ->orWhere('description', 'like', "%{$search}%")
+                  ->orWhereHas('subject', function ($subjectQuery) use ($search) {
+                      $subjectQuery->where('name', 'like', "%{$search}%");
+                  })
+                  ->orWhereHas('class', function ($classQuery) use ($search) {
+                      $classQuery->where('name', 'like', "%{$search}%");
+                  })
+                  ->orWhereHas('teacher', function ($teacherQuery) use ($search) {
+                      $teacherQuery->where('first_name', 'like', "%{$search}%")
+                                  ->orWhere('last_name', 'like', "%{$search}%");
+                  });
+            });
+        }
+
+        // Apply sorting
+        $sortBy = $filters['sort_by'] ?? 'created_at';
+        $sortDirection = $filters['sort_direction'] ?? 'desc';
+        $query->orderBy($sortBy, $sortDirection);
+
+        // Apply pagination
+        $perPage = $filters['per_page'] ?? 15;
+        return $query->paginate($perPage);
     }
 }

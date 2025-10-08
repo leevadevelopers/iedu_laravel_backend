@@ -4,11 +4,16 @@ namespace App\Http\Requests\V1\Schedule;
 
 class StoreLessonRequest extends BaseScheduleRequest
 {
+    public function authorize(): bool
+    {
+        return true;
+    }
+
     public function rules(): array
     {
         return [
             'schedule_id' => [
-                'nullable',
+                'required',
                 'integer',
                 'exists:schedules,id,school_id,' . $this->getCurrentSchoolId()
             ],
@@ -45,6 +50,7 @@ class StoreLessonRequest extends BaseScheduleRequest
             'lesson_date' => 'required|date',
             'start_time' => 'required|date_format:H:i',
             'end_time' => 'required|date_format:H:i|after:start_time',
+            'duration_minutes' => 'nullable|integer|min:15|max:480', // 15 min to 8 hours
 
             // Location and format
             'classroom' => 'nullable|string|max:50',
@@ -77,12 +83,19 @@ class StoreLessonRequest extends BaseScheduleRequest
         $validator->after(function ($validator) {
             // Validate minimum duration
             if ($this->filled('start_time') && $this->filled('end_time')) {
-                $start = \Carbon\Carbon::parse($this->start_time);
-                $end = \Carbon\Carbon::parse($this->end_time);
-                $duration = $end->diffInMinutes($start);
+                try {
+                    $start = \Carbon\Carbon::createFromFormat('H:i', $this->start_time)->seconds(0);
+                    $end = \Carbon\Carbon::createFromFormat('H:i', $this->end_time)->seconds(0);
+                } catch (\Exception $e) {
+                    return; // base rules will handle format errors
+                }
+                $duration = $start->diffInMinutes($end, false);
 
                 if ($duration < 15) {
                     $validator->errors()->add('end_time', 'A duração mínima da aula deve ser de 15 minutos.');
+                }
+                if ($duration > 480) {
+                    $validator->errors()->add('end_time', 'A duração máxima da aula deve ser de 8 horas.');
                 }
             }
 

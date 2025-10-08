@@ -13,6 +13,8 @@ use App\Models\Forms\FormTemplate;
 use App\Models\Forms\FormInstance;
 use App\Observers\Forms\FormTemplateObserver;
 use App\Observers\Forms\FormInstanceObserver;
+use Illuminate\Database\Eloquent\Relations\Relation;
+use App\Models\V1\SIS\Student\Student;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -50,5 +52,11 @@ class AppServiceProvider extends ServiceProvider
 
         FormTemplate::observe(FormTemplateObserver::class);
         FormInstance::observe(FormInstanceObserver::class);
+
+        // Polymorphic morph map aliases
+        Relation::morphMap([
+            'Student' => Student::class,
+            'student' => Student::class,
+        ]);
     }
 }

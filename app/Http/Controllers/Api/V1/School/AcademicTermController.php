@@ -35,7 +35,8 @@ class AcademicTermController extends Controller
         try {
             $query = AcademicTerm::with([
                 'academicYear:id,name,year,school_id',
-                'academicYear.school:id,name,code',
+                // schools table uses display_name and school_code
+                'academicYear.school:id,display_name,school_code',
                 'createdBy:id,name'
             ]);
 
@@ -250,7 +251,7 @@ class AcademicTermController extends Controller
         try {
             $academicTerm->load([
                 'academicYear:id,name,year,school_id',
-                'academicYear.school:id,name,code',
+                'academicYear.school:id,display_name,school_code',
                 'createdBy:id,name',
                 'students:id,first_name,last_name,grade_level,status'
             ]);

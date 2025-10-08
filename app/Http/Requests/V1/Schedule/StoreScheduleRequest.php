@@ -2,8 +2,15 @@
 
 namespace App\Http\Requests\V1\Schedule;
 
+use Illuminate\Support\Facades\Log;
+
 class StoreScheduleRequest extends BaseScheduleRequest
 {
+    public function authorize(): bool
+    {
+        return true;
+    }
+
     public function rules(): array
     {
         return [
@@ -65,9 +72,22 @@ class StoreScheduleRequest extends BaseScheduleRequest
         $validator->after(function ($validator) {
             // Validate minimum duration
             if ($this->filled('start_time') && $this->filled('end_time')) {
-                $start = \Carbon\Carbon::parse($this->start_time);
-                $end = \Carbon\Carbon::parse($this->end_time);
-                $duration = $end->diffInMinutes($start);
+                // Use strict time parsing to avoid date/timezone side-effects
+                try {
+                    $start = \Carbon\Carbon::createFromFormat('H:i', $this->start_time)->seconds(0);
+                    $end = \Carbon\Carbon::createFromFormat('H:i', $this->end_time)->seconds(0);
+                } catch (\Exception $e) {
+                    // If parsing fails, the base rules will already flag format errors
+                    return;
+                }
+                $duration = $start->diffInMinutes($end, false);
+                Log::debug('Schedule duration validation', [
+                    'start_time' => $this->start_time,
+                    'end_time' => $this->end_time,
+                    'parsed_start' => $start->toTimeString(),
+                    'parsed_end' => $end->toTimeString(),
+                    'duration_minutes' => $duration,
+                ]);
 
                 if ($duration < 30) {
                     $validator->errors()->add('end_time', 'A duração mínima da aula deve ser de 30 minutos.');

@@ -16,6 +16,8 @@ Route::prefix('v1')->group(function () {
     require __DIR__ . '/modules/roles_permission/roles.php';
     require __DIR__ . '/modules/academic/academic.php';
     require __DIR__ . '/modules/schedule/schedule.php';
+    require __DIR__ . '/modules/library.php';
+    require __DIR__ . '/modules/financial.php';
 });
 
 // Transport Module Routes

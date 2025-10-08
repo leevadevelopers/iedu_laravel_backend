@@ -8,6 +8,7 @@ use App\Models\V1\SIS\Student\StudentEnrollmentHistory;
 use App\Models\V1\SIS\Student\StudentDocument;
 use App\Models\V1\SIS\Student\FamilyRelationship;
 use App\Models\V1\SIS\School\School;
+use App\Models\V1\SIS\School\SchoolUser;
 use App\Models\V1\SIS\School\AcademicYear;
 use App\Models\V1\SIS\School\AcademicTerm;
 use App\Models\Forms\FormTemplate;
@@ -155,6 +156,18 @@ class StudentController extends Controller
             $studentData['behavioral_points'] = $studentData['behavioral_points'] ?? 0;
 
             $student = Student::create($studentData);
+
+            // Create SchoolUser association
+            if ($student->user_id && $student->school_id) {
+                SchoolUser::create([
+                    'school_id' => $student->school_id,
+                    'user_id' => $student->user_id,
+                    'role' => 'student',
+                    'status' => 'active',
+                    'start_date' => now(),
+                    'permissions' => $this->getDefaultStudentPermissions()
+                ]);
+            }
 
             // Process form data through Form Engine if provided
             if ($request->has('form_data')) {
@@ -515,7 +528,7 @@ class StudentController extends Controller
                     ->groupBy('current_grade_level')
                     ->get(),
                 'by_school' => Student::selectRaw('school_id, COUNT(*) as count')
-                    ->with('school:id,name')
+                    ->with('school:id,display_name')
                     ->groupBy('school_id')
                     ->get(),
                 'recent_enrollments' => Student::where('created_at', '>=', now()->subDays(30))
@@ -606,5 +619,22 @@ class StudentController extends Controller
         $existingDocuments = $student->documents()->pluck('document_type')->toArray();
 
         return array_diff($requiredDocuments, $existingDocuments);
+    }
+
+    /**
+     * Get default permissions for students
+     */
+    private function getDefaultStudentPermissions(): array
+    {
+        return [
+            'view_grades',
+            'view_assignments',
+            'view_schedule',
+            'view_announcements',
+            'view_attendance',
+            'submit_assignments',
+            'view_profile',
+            'update_profile'
+        ];
     }
 }
