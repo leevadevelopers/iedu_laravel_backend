@@ -3,6 +3,7 @@
 namespace App\Models\Assessment;
 
 use App\Models\BaseModel;
+use App\Models\V1\SIS\School\AcademicTerm;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -33,7 +34,7 @@ class AssessmentSettings extends BaseModel
      */
     public function academicTerm(): BelongsTo
     {
-        return $this->belongsTo(\App\Models\V1\AcademicTerm::class, 'academic_term_id');
+        return $this->belongsTo(AcademicTerm::class, 'academic_term_id');
     }
 }
 

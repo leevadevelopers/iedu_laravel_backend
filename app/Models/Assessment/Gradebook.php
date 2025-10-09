@@ -4,6 +4,8 @@ namespace App\Models\Assessment;
 
 use App\Models\BaseModel;
 use App\Models\User;
+use App\Models\V1\Academic\AcademicClass;
+use App\Models\V1\Academic\Subject;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -38,7 +40,7 @@ class Gradebook extends BaseModel
      */
     public function subject(): BelongsTo
     {
-        return $this->belongsTo(\App\Models\V1\Subject::class, 'subject_id');
+        return $this->belongsTo(Subject::class, 'subject_id');
     }
 
     /**
@@ -46,7 +48,7 @@ class Gradebook extends BaseModel
      */
     public function class(): BelongsTo
     {
-        return $this->belongsTo(\App\Models\V1\Classes::class, 'class_id');
+        return $this->belongsTo(AcademicClass::class, 'class_id');
     }
 
     /**

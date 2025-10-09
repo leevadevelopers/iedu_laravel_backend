@@ -4,6 +4,7 @@ namespace App\Models\Assessment;
 
 use App\Models\BaseModel;
 use App\Models\User;
+use App\Models\V1\Academic\GradeEntry;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;

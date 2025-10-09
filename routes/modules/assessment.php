@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\API\V1\Assessment\AssessmentController;
 use App\Http\Controllers\API\V1\Assessment\AssessmentTermController;
+use App\Http\Controllers\API\V1\Assessment\AssessmentTypeController;
 use App\Http\Controllers\API\V1\Assessment\GradeEntryController;
 use App\Http\Controllers\API\V1\Assessment\GradeReviewController;
 use App\Http\Controllers\API\V1\Assessment\GradebookController;
@@ -20,6 +21,36 @@ use Illuminate\Support\Facades\Route;
 */
 
 Route::prefix('v1/assessments')->group(function () {
+    
+    // Assessment Term Routes
+    Route::prefix('terms')->group(function () {
+        Route::get('/', [AssessmentTermController::class, 'index']);
+        Route::post('/', [AssessmentTermController::class, 'store']);
+        Route::get('current', [AssessmentTermController::class, 'getCurrent']);
+        Route::get('{assessmentTerm}', [AssessmentTermController::class, 'show']);
+        Route::put('{assessmentTerm}', [AssessmentTermController::class, 'update']);
+        Route::delete('{assessmentTerm}', [AssessmentTermController::class, 'destroy']);
+        
+        // Actions
+        Route::post('{assessmentTerm}/publish', [AssessmentTermController::class, 'publish']);
+        Route::post('{assessmentTerm}/unpublish', [AssessmentTermController::class, 'unpublish']);
+        Route::post('{assessmentTerm}/activate', [AssessmentTermController::class, 'activate']);
+        Route::post('{assessmentTerm}/deactivate', [AssessmentTermController::class, 'deactivate']);
+        Route::post('{assessmentTerm}/clone', [AssessmentTermController::class, 'clone']);
+        Route::get('{assessmentTerm}/statistics', [AssessmentTermController::class, 'statistics']);
+    });
+    
+    // Assessment Type Routes
+    Route::prefix('types')->group(function () {
+        Route::get('/', [AssessmentTypeController::class, 'index']);
+        Route::post('/', [AssessmentTypeController::class, 'store']);
+        Route::get('active', [AssessmentTypeController::class, 'getActive']);
+        Route::get('{assessmentType}', [AssessmentTypeController::class, 'show']);
+        Route::put('{assessmentType}', [AssessmentTypeController::class, 'update']);
+        Route::delete('{assessmentType}', [AssessmentTypeController::class, 'destroy']);
+        Route::post('{assessmentType}/activate', [AssessmentTypeController::class, 'activate']);
+        Route::post('{assessmentType}/deactivate', [AssessmentTypeController::class, 'deactivate']);
+    });
     
     // Assessment Routes
     Route::apiResource('', AssessmentController::class)->parameters(['' => 'assessment']);
