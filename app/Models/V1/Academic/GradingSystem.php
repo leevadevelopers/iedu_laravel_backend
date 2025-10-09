@@ -3,7 +3,6 @@
 namespace App\Models\V1\Academic;
 
 use App\Models\BaseModel;
-use App\Models\Settings\Tenant;
 use App\Models\Traits\Tenantable;
 use App\Models\V1\SIS\School\School;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -13,51 +12,27 @@ use Illuminate\Database\Eloquent\Builder;
 class GradingSystem extends BaseModel
 {
     use Tenantable;
+
     protected $fillable = [
-        'tenant_id',
         'school_id',
+        'tenant_id',
         'name',
         'system_type',
         'applicable_grades',
         'applicable_subjects',
         'is_primary',
         'configuration_json',
-        'status'
+        'status',
     ];
 
     protected $casts = [
         'applicable_grades' => 'array',
         'applicable_subjects' => 'array',
+        'is_primary' => 'boolean',
         'configuration_json' => 'array',
-        'is_primary' => 'boolean'
     ];
 
-    protected static function booted()
-    {
-        static::creating(function ($gradingSystem) {
-            if ($gradingSystem->is_primary) {
-                static::where('school_id', $gradingSystem->school_id)
-                    ->where('is_primary', true)
-                    ->update(['is_primary' => false]);
-            }
-        });
-
-        static::updating(function ($gradingSystem) {
-            if ($gradingSystem->is_primary && $gradingSystem->isDirty('is_primary')) {
-                static::where('school_id', $gradingSystem->school_id)
-                    ->where('id', '!=', $gradingSystem->id)
-                    ->where('is_primary', true)
-                    ->update(['is_primary' => false]);
-            }
-        });
-    }
-
     // Relationships
-    public function tenant(): BelongsTo
-    {
-        return $this->belongsTo(Tenant::class);
-    }
-
     public function school(): BelongsTo
     {
         return $this->belongsTo(School::class);
@@ -85,23 +60,36 @@ class GradingSystem extends BaseModel
     }
 
     // Methods
-    public function isActive(): bool
+    
+    /**
+     * Get the default scale for this system
+     */
+    public function getDefaultScale(): ?GradeScale
     {
-        return $this->status === 'active';
+        return $this->gradeScales()->where('is_default', true)->first();
     }
 
-    public function isPrimary(): bool
+    /**
+     * Check if this system is applicable to a specific grade level
+     */
+    public function isApplicableToGrade(string $gradeLevel): bool
     {
-        return $this->is_primary;
+        if (empty($this->applicable_grades)) {
+            return true; // Applicable to all if not specified
+        }
+
+        return in_array($gradeLevel, $this->applicable_grades);
     }
 
-    public function supportsGrade(string $grade): bool
+    /**
+     * Check if this system is applicable to a specific subject
+     */
+    public function isApplicableToSubject(int $subjectId): bool
     {
-        return in_array($grade, $this->applicable_grades ?? []);
-    }
+        if (empty($this->applicable_subjects)) {
+            return true; // Applicable to all if not specified
+        }
 
-    public function supportsSubject(string $subject): bool
-    {
-        return in_array($subject, $this->applicable_subjects ?? []);
+        return in_array($subjectId, $this->applicable_subjects);
     }
 }
