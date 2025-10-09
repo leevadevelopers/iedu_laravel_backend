@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\API\V1\Assessment\AssessmentController;
+use App\Http\Controllers\API\V1\Assessment\AssessmentTermController;
 use App\Http\Controllers\API\V1\Assessment\GradeEntryController;
 use App\Http\Controllers\API\V1\Assessment\GradeReviewController;
 use App\Http\Controllers\API\V1\Assessment\GradebookController;
