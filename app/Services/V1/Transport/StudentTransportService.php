@@ -341,4 +341,219 @@ class StudentTransportService
 
         return array_reverse($stats);
     }
+
+    /**
+     * Get transport events with filters and pagination
+     */
+    public function getTransportEvents(array $filters = []): LengthAwarePaginator
+    {
+        $query = StudentTransportEvent::with([
+            'student:id,name,student_id',
+            'fleetBus:id,license_plate,internal_code,make,model',
+            'busStop:id,name,code,address',
+            'transportRoute:id,name,code',
+            'recordedBy:id,name,email'
+        ]);
+
+        // Apply filters
+        if (isset($filters['search'])) {
+            $query->where(function($q) use ($filters) {
+                $q->whereHas('student', function($subQ) use ($filters) {
+                    $subQ->where('name', 'like', '%' . $filters['search'] . '%')
+                         ->orWhere('student_id', 'like', '%' . $filters['search'] . '%');
+                })
+                ->orWhereHas('fleetBus', function($subQ) use ($filters) {
+                    $subQ->where('license_plate', 'like', '%' . $filters['search'] . '%')
+                         ->orWhere('internal_code', 'like', '%' . $filters['search'] . '%');
+                })
+                ->orWhere('notes', 'like', '%' . $filters['search'] . '%');
+            });
+        }
+
+        if (isset($filters['event_type'])) {
+            $query->where('event_type', $filters['event_type']);
+        }
+
+        if (isset($filters['validation_method'])) {
+            $query->where('validation_method', $filters['validation_method']);
+        }
+
+        if (isset($filters['student_id'])) {
+            $query->where('student_id', $filters['student_id']);
+        }
+
+        if (isset($filters['fleet_bus_id'])) {
+            $query->where('fleet_bus_id', $filters['fleet_bus_id']);
+        }
+
+        if (isset($filters['transport_route_id'])) {
+            $query->where('transport_route_id', $filters['transport_route_id']);
+        }
+
+        if (isset($filters['date_from'])) {
+            $query->whereDate('event_timestamp', '>=', $filters['date_from']);
+        }
+
+        if (isset($filters['date_to'])) {
+            $query->whereDate('event_timestamp', '<=', $filters['date_to']);
+        }
+
+        if (isset($filters['is_automated'])) {
+            $query->where('is_automated', $filters['is_automated']);
+        }
+
+        // Sorting
+        $sortBy = $filters['sort_by'] ?? 'event_timestamp';
+        $sortOrder = $filters['sort_order'] ?? 'desc';
+        $query->orderBy($sortBy, $sortOrder);
+
+        // Pagination
+        $perPage = $filters['per_page'] ?? 15;
+        return $query->paginate($perPage);
+    }
+
+    /**
+     * Get transport events statistics
+     */
+    public function getTransportEventStatistics(array $filters = []): array
+    {
+        $query = StudentTransportEvent::query();
+
+        if (isset($filters['date_from'])) {
+            $query->whereDate('event_timestamp', '>=', $filters['date_from']);
+        }
+
+        if (isset($filters['date_to'])) {
+            $query->whereDate('event_timestamp', '<=', $filters['date_to']);
+        }
+
+        if (isset($filters['school_id'])) {
+            $query->where('school_id', $filters['school_id']);
+        }
+
+        $totalEvents = $query->count();
+        $checkIns = (clone $query)->where('event_type', 'check_in')->count();
+        $checkOuts = (clone $query)->where('event_type', 'check_out')->count();
+        $noShows = (clone $query)->where('event_type', 'no_show')->count();
+        $earlyExits = (clone $query)->where('event_type', 'early_exit')->count();
+
+        $automatedEvents = (clone $query)->where('is_automated', true)->count();
+        $manualEvents = (clone $query)->where('is_automated', false)->count();
+
+        $validationMethods = (clone $query)
+            ->selectRaw('validation_method, COUNT(*) as count')
+            ->groupBy('validation_method')
+            ->pluck('count', 'validation_method')
+            ->toArray();
+
+        $eventsByType = (clone $query)
+            ->selectRaw('event_type, COUNT(*) as count')
+            ->groupBy('event_type')
+            ->pluck('count', 'event_type')
+            ->toArray();
+
+        return [
+            'total_events' => $totalEvents,
+            'events_by_type' => [
+                'check_in' => $checkIns,
+                'check_out' => $checkOuts,
+                'no_show' => $noShows,
+                'early_exit' => $earlyExits
+            ],
+            'automation_stats' => [
+                'automated' => $automatedEvents,
+                'manual' => $manualEvents,
+                'automation_rate' => $totalEvents > 0 ? round(($automatedEvents / $totalEvents) * 100, 2) : 0
+            ],
+            'validation_methods' => $validationMethods,
+            'events_by_type' => $eventsByType,
+            'attendance_rate' => $totalEvents > 0 ? round((($checkIns + $checkOuts) / $totalEvents) * 100, 2) : 0
+        ];
+    }
+
+    /**
+     * Get recent transport events
+     */
+    public function getRecentEvents(int $limit = 10): Collection
+    {
+        return StudentTransportEvent::with([
+            'student:id,name,student_id',
+            'fleetBus:id,license_plate,internal_code',
+            'busStop:id,name,code',
+            'transportRoute:id,name,code'
+        ])
+        ->orderBy('event_timestamp', 'desc')
+        ->limit($limit)
+        ->get();
+    }
+
+    /**
+     * Export transport events
+     */
+    public function exportTransportEvents(array $filters = []): array
+    {
+        $query = StudentTransportEvent::with([
+            'student:id,name,student_id',
+            'fleetBus:id,license_plate,internal_code,make,model',
+            'busStop:id,name,code,address',
+            'transportRoute:id,name,code',
+            'recordedBy:id,name,email'
+        ]);
+
+        // Apply same filters as getTransportEvents
+        if (isset($filters['search'])) {
+            $query->where(function($q) use ($filters) {
+                $q->whereHas('student', function($subQ) use ($filters) {
+                    $subQ->where('name', 'like', '%' . $filters['search'] . '%')
+                         ->orWhere('student_id', 'like', '%' . $filters['search'] . '%');
+                })
+                ->orWhereHas('fleetBus', function($subQ) use ($filters) {
+                    $subQ->where('license_plate', 'like', '%' . $filters['search'] . '%')
+                         ->orWhere('internal_code', 'like', '%' . $filters['search'] . '%');
+                })
+                ->orWhere('notes', 'like', '%' . $filters['search'] . '%');
+            });
+        }
+
+        if (isset($filters['event_type'])) {
+            $query->where('event_type', $filters['event_type']);
+        }
+
+        if (isset($filters['validation_method'])) {
+            $query->where('validation_method', $filters['validation_method']);
+        }
+
+        if (isset($filters['student_id'])) {
+            $query->where('student_id', $filters['student_id']);
+        }
+
+        if (isset($filters['fleet_bus_id'])) {
+            $query->where('fleet_bus_id', $filters['fleet_bus_id']);
+        }
+
+        if (isset($filters['transport_route_id'])) {
+            $query->where('transport_route_id', $filters['transport_route_id']);
+        }
+
+        if (isset($filters['date_from'])) {
+            $query->whereDate('event_timestamp', '>=', $filters['date_from']);
+        }
+
+        if (isset($filters['date_to'])) {
+            $query->whereDate('event_timestamp', '<=', $filters['date_to']);
+        }
+
+        if (isset($filters['is_automated'])) {
+            $query->where('is_automated', $filters['is_automated']);
+        }
+
+        $events = $query->orderBy('event_timestamp', 'desc')->get();
+
+        return [
+            'events' => $events,
+            'total_count' => $events->count(),
+            'export_date' => now()->toISOString(),
+            'filters_applied' => $filters
+        ];
+    }
 }
