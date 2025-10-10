@@ -20,7 +20,7 @@ jobs:
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./
-          server-dir: ./iedu.nakasha.store/
+          server-dir: ./home/nakashas/iedu.nakasha.store/
           dangerous-clean-slate: false
           exclude: |
             **/.git/**
