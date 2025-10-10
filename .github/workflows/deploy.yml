@@ -19,8 +19,10 @@ jobs:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ftps
+          port: 21
           local-dir: ./
-          server-dir: ./
+          server-dir: ./iedu.nakasha.store/
           dangerous-clean-slate: false
           exclude: |
             **/.git/**
