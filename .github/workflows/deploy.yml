@@ -13,14 +13,34 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Deploy Laravel to A2 Hosting via SFTP
-        uses: wlixcc/SFTP-Deploy-Action@v1.2.4
+      - name: Deploy Laravel to A2 Hosting via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          port: 22
-          local_path: './*'
-          remote_path: '/home/${{ secrets.FTP_USERNAME }}/iedu.nakasha.store'
-          sftp_only: true
-          args: '-o ConnectTimeout=10'
+          protocol: ftp
+          port: 21
+          local-dir: ./
+          server-dir: /iedu.nakasha.store/
+          dangerous-clean-slate: false
+          exclude: |
+            **/.git/**
+            **/.github/**
+            **/.vscode/**
+            **/node_modules/**
+            **/vendor/**
+            **/tests/**
+            **/.env
+            **/.env.*
+            **/.gitignore
+            **/.gitattributes
+            **/.editorconfig
+            **/phpunit.xml
+            **/*.md
+            **/database/database.sqlite
+            **/storage/logs/**
+            **/storage/framework/cache/**
+            **/storage/framework/sessions/**
+            **/storage/framework/views/**
+            **/sh files/**
