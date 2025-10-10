@@ -22,7 +22,7 @@ jobs:
           protocol: ftp
           port: 21
           local-dir: ./
-          server-dir: /iedu.nakasha.store/
+          server-dir: iedu.nakasha.store/
           dangerous-clean-slate: false
           exclude: |
             **/.git/**
