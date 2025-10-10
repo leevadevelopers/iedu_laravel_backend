@@ -24,21 +24,11 @@ jobs:
           dangerous-clean-slate: false
           exclude: |
             **/.git/**
+            **/node_modules/**
             **/.github/**
             **/.vscode/**
-            **/node_modules/**
-            **/vendor/**
+            **/README.md
+            **/.env.example
             **/tests/**
-            **/.env
-            **/.env.*
-            **/.gitignore
-            **/.gitattributes
-            **/.editorconfig
-            **/phpunit.xml
-            **/*.md
-            **/database/database.sqlite
             **/storage/logs/**
-            **/storage/framework/cache/**
-            **/storage/framework/sessions/**
-            **/storage/framework/views/**
-            **/sh files/**
+
