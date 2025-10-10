@@ -13,14 +13,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Deploy to A2 Hosting via FTP
+      - name: Deploy Laravel Core Files
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./
-          server-dir: /
+          server-dir: /laravel/
           dangerous-clean-slate: false
           exclude: |
             **/.git/**
@@ -31,4 +31,15 @@ jobs:
             **/.env.example
             **/tests/**
             **/storage/logs/**
+            **/public/**
+
+      - name: Deploy Public Files
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./public/
+          server-dir: /
+          dangerous-clean-slate: false
 
