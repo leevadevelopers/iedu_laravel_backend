@@ -13,14 +13,24 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Deploy to A2 Hosting via SFTP
-        uses: pressidium/lftp-mirror-action@v1
+      - name: Deploy to A2 Hosting via FTP
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
-          host: ${{ secrets.SFTP_SERVER }}
-          port: 22
-          user: ${{ secrets.SFTP_USERNAME }}
-          pass: ${{ secrets.SFTP_PASSWORD }}
-          localDir: './'
-          remoteDir: './iedu.nakasha.store/'
-          options: '--verbose --delete --only-newer --parallel=5 --exclude-glob .git/ --exclude-glob node_modules/ --exclude-glob .github/ --exclude-glob tests/ --exclude-glob storage/logs/'
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ftps
+          port: 21
+          local-dir: ./
+          server-dir: ./iedu.nakasha.store/
+          dangerous-clean-slate: false
+          exclude: |
+            **/.git/**
+            **/node_modules/**
+            **/.github/**
+            **/.vscode/**
+            **/README.md
+            **/.env.example
+            **/tests/**
+            **/storage/logs/**
 
