@@ -64,7 +64,6 @@ jobs:
         server: ${{ secrets.FTP_SERVER }}
         username: ${{ secrets.FTP_USERNAME }}
         password: ${{ secrets.FTP_PASSWORD }}
-        local-dir: ./
         server-dir: ./iedu.nakasha.store/
         dangerous-clean-slate: false # Evita deletar arquivos existentes
         exclude: |
