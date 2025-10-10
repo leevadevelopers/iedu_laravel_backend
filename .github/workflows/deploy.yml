@@ -13,38 +13,21 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Deploy Laravel to A2 Hosting via FTPS
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+      - name: Deploy Laravel to A2 Hosting via SFTP
+        uses: easingthemes/ssh-deploy@v4.1.10
         with:
-          server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          protocol: ftps
-          port: 21
-          local-dir: ./
-          server-dir: ./iedu.nakasha.store/
-          dangerous-clean-slate: false
-          exclude: |
-            **/.git/**
-            **/.github/**
-            **/.vscode/**
-            **/node_modules/**
-            **/vendor/**
-            **/tests/**
-            **/.env
-            **/.env.*
-            **/.gitignore
-            **/.gitattributes
-            **/.editorconfig
-            **/phpunit.xml
-            **/package.json
-            **/package-lock.json
-            **/vite.config.js
-            **/webpack.mix.js
-            **/*.md
-            **/database/database.sqlite
-            **/storage/logs/**
-            **/storage/framework/cache/**
-            **/storage/framework/sessions/**
-            **/storage/framework/views/**
-            **/sh files/**
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          REMOTE_HOST: ${{ secrets.FTP_SERVER }}
+          REMOTE_USER: ${{ secrets.FTP_USERNAME }}
+          REMOTE_PORT: 22
+          SOURCE: "./"
+          TARGET: "${{ secrets.REMOTE_PATH }}"
+          ARGS: "-rltgoDzvO --delete"
+          SCRIPT_BEFORE: |
+            whoami
+            ls -al
+          EXCLUDE: "/node_modules/, /vendor/, /.git/, /.github/, /tests/, /storage/logs/, /.env, /.env.*, /sh files/"
+          SCRIPT_AFTER: |
+            cd ${{ secrets.REMOTE_PATH }}
+            find . -type f -name ".env*" -delete
+            echo "Deploy concluído!"
