@@ -26,11 +26,30 @@ jobs:
           dangerous-clean-slate: false
           exclude: |
             **/.git/**
-            **/node_modules/**
             **/.github/**
             **/.vscode/**
-            **/README.md
-            **/.env.example
+            **/node_modules/**
+            **/vendor/**
             **/tests/**
+            **/.env
+            **/.env.*
+            **/.gitignore
+            **/.gitattributes
+            **/.editorconfig
+            **/phpunit.xml
+            **/package.json
+            **/package-lock.json
+            **/vite.config.js
+            **/webpack.mix.js
+            **/*.md
+            **/database/database.sqlite
             **/storage/logs/**
+            **/storage/framework/cache/**
+            **/storage/framework/sessions/**
+            **/storage/framework/views/**
+            **/sh files/**
+            **/TWILIO_SETUP.md
+            **/FORM_ENGINE_COMPLIANCE_REPORT.md
+            **/DOCUMENTACAO_ESTRUTURA_SISTEMA.md
+            **/documentacao_api_v1.md
 
