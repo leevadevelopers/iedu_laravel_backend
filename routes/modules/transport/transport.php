@@ -1,7 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\Api\V1\Transport\FleetController;
+use App\Http\Controllers\API\V1\Transport\FleetController;
 use App\Http\Controllers\API\V1\Transport\TransportRouteController;
 use App\Http\Controllers\API\V1\Transport\FleetBusController;
 use App\Http\Controllers\API\V1\Transport\StudentTransportController;
@@ -80,7 +80,7 @@ Route::middleware(['auth:api'])->prefix('transport')->name('transport.')->group(
         Route::get('/{fleet}', [FleetController::class, 'show'])->name('show');
         Route::put('/{fleet}', [FleetController::class, 'update'])->name('update');
         Route::delete('/{fleet}', [FleetController::class, 'destroy'])->name('destroy');
-        
+
         // Legacy routes (keeping for compatibility)
         Route::get('/available', [FleetBusController::class, 'getAvailable'])->name('available');
         Route::get('/maintenance-report', [FleetBusController::class, 'maintenanceReport'])->name('maintenance-report');
