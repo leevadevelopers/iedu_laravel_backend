@@ -38,16 +38,4 @@ jobs:
             **/DOCUMENTACAO_ESTRUTURA_SISTEMA.md
             **/documentacao_api_v1.md
 
-      - name: Deploy public directory to webroot via FTP
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
-        with:
-          server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: ./public/
-          server-dir: ${{ secrets.FTP_PUBLIC_DIR }}
-          dangerous-clean-slate: false
-          exclude: |
-            .htaccess.sample
-
 
