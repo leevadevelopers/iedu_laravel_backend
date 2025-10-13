@@ -13,17 +13,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Deploy Laravel app (excluding public) via FTP
+      - name: Deploy Laravel to A2 Hosting
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./
-          server-dir: ${{ secrets.FTP_APP_DIR }}
+          server-dir: ./
           dangerous-clean-slate: false
           exclude: |
-            public/**
             **/.git/**
             **/node_modules/**
             **/.github/**
