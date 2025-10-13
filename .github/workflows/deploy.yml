@@ -20,7 +20,7 @@ jobs:
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./
-          server-dir: /home/nakashas/iedu.nakasha.store/
+          server-dir: /iedu.nakasha.store/
           dangerous-clean-slate: false
           exclude: |
             **/.git/**
@@ -30,8 +30,6 @@ jobs:
             **/README.md
             **/.env.example
             **/tests/**
-            **/storage/logs/**
-            **/public/**
             **/sh files/**
             **/*.md
             **/TWILIO_SETUP.md
