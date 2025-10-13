@@ -37,5 +37,20 @@ jobs:
             **/DOCUMENTACAO_ESTRUTURA_SISTEMA.md
             **/documentacao_api_v1.md
 
+      - name: Set Permissions via SSH
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          script: |
+            cd ${{ secrets.DEPLOY_PATH }}
+            chmod -R 755 storage
+            chmod -R 755 bootstrap/cache
+            find storage -type f -exec chmod 644 {} \;
+            find storage -type d -exec chmod 755 {} \;
+            find bootstrap/cache -type f -exec chmod 644 {} \;
+            find bootstrap/cache -type d -exec chmod 755 {} \;
+
 
 
