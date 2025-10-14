@@ -3,7 +3,7 @@
 namespace App\Http\Controllers\API\V1\Transport;
 
 use App\Http\Controllers\Controller;
-use App\Models\Transport\FleetBus;
+use App\Models\V1\Transport\FleetBus;
 use App\Services\V1\Transport\FleetService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
