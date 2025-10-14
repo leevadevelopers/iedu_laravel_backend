@@ -26,7 +26,7 @@ return new class extends Migration
             'technology_management', 'security_management', 'maintenance_requests',
             'financial_aid', 'tuition_management', 'donation_management',
             'alumni_relations', 'community_outreach', 'partnership_management',
-            'document_upload', 'academic_year_setup'
+            'document_upload', 'academic_year_setup', 'academic_term_setup'
         )");
     }
 
@@ -36,6 +36,7 @@ return new class extends Migration
     public function down(): void
     {
         // Remove the added categories
+        // Keep enum as superset to avoid data truncation on rollback
         DB::statement("ALTER TABLE form_templates MODIFY COLUMN category ENUM(
             'school_registration', 'school_enrollment', 'school_setup',
             'student_enrollment', 'student_registration', 'student_transfer',
@@ -48,7 +49,8 @@ return new class extends Migration
             'transportation', 'cafeteria_management', 'library_management',
             'technology_management', 'security_management', 'maintenance_requests',
             'financial_aid', 'tuition_management', 'donation_management',
-            'alumni_relations', 'community_outreach', 'partnership_management'
+            'alumni_relations', 'community_outreach', 'partnership_management',
+            'document_upload', 'academic_year_setup', 'academic_term_setup'
         )");
     }
 };
