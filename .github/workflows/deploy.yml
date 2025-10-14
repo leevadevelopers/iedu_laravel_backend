@@ -1,0 +1,65 @@
+name: Deploy Laravel to A2 Hosting
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Deploy Laravel to A2 Hosting
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./
+          server-dir: ./
+          dangerous-clean-slate: false
+          exclude: |
+            **/.git/**
+            **/node_modules/**
+            **/.github/**
+            **/.vscode/**
+            **/README.md
+            **/.env.example
+            **/tests/**
+            **/sh files/**
+            **/*.md
+            **/TWILIO_SETUP.md
+            **/FORM_ENGINE_COMPLIANCE_REPORT.md
+            **/DOCUMENTACAO_ESTRUTURA_SISTEMA.md
+            **/documentacao_api_v1.md
+            **/.htaccess.sample
+            **/.htaccess
+            **/.env.example
+            **/.env.production
+            **/.env.development
+            **/.env.staging
+            **/.env.testing
+            **/.env.local
+            **/.env.testing
+            **/.env.local
+            **/.env.production
+            **/.env.development
+            **/.env.staging
+            **/.env.testing
+            **/.env.local
+            **/.env.production
+            **/.env.development
+            **/.env.staging
+            **/.env.testing
+            **/.env.local
+            **/.env.production
+            **/.env.development
+            **/.env.staging
+            **/.env.testing
+            **/.env.local
+
+

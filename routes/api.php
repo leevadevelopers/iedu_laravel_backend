@@ -18,6 +18,7 @@ Route::prefix('v1')->group(function () {
     require __DIR__ . '/modules/schedule/schedule.php';
     require __DIR__ . '/modules/library.php';
     require __DIR__ . '/modules/financial.php';
+    require __DIR__ . '/modules/assessment.php';
 });
 
 // Transport Module Routes

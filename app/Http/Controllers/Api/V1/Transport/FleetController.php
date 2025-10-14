@@ -1,9 +1,9 @@
 <?php
 
-namespace App\Http\Controllers\Api\V1\Transport;
+namespace App\Http\Controllers\API\V1\Transport;
 
 use App\Http\Controllers\Controller;
-use App\Models\Transport\FleetBus;
+use App\Models\V1\Transport\FleetBus;
 use App\Services\V1\Transport\FleetService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -220,7 +220,7 @@ class FleetController extends Controller
     {
         try {
             $filters = $request->only(['search', 'status', 'fuel_type']);
-            
+
             // This would typically return a file download
             $exportData = $this->fleetService->exportFleetData($filters);
 

@@ -2,7 +2,7 @@
 
 namespace App\Services\V1\Transport;
 
-use App\Models\Transport\FleetBus;
+use App\Models\V1\Transport\FleetBus;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 

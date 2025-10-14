@@ -20,6 +20,10 @@ class AcademicPermissionsSeeder extends Seeder
             'academic.subjects.create',
             'academic.subjects.edit',
             'academic.subjects.delete',
+            'academic.subjects.view_all',
+            'academic.subjects.create_all',
+            'academic.subjects.edit_all',
+            'academic.subjects.delete_all',
 
             // Classes
             'academic.classes.view',

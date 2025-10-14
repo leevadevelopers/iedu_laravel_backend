@@ -10,6 +10,7 @@ use App\Models\V1\SIS\Student\Student;
 use App\Models\User;
 use App\Models\V1\SIS\School\AcademicTerm;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Builder;
 
 class GradeEntry extends BaseModel
@@ -97,6 +98,22 @@ class GradeEntry extends BaseModel
         return $this->belongsTo(Teacher::class, 'modified_by');
     }
 
+    /**
+     * Get the grade reviews for this entry.
+     */
+    public function reviews(): HasMany
+    {
+        return $this->hasMany(\App\Models\Assessment\GradeReview::class, 'grade_entry_id');
+    }
+
+    /**
+     * Get the audit logs for this entry.
+     */
+    public function auditLogs(): HasMany
+    {
+        return $this->hasMany(\App\Models\Assessment\GradesAuditLog::class, 'grade_entry_id');
+    }
+
     // Scopes
     public function scopeByStudent(Builder $query, int $studentId): Builder
     {
@@ -121,6 +138,14 @@ class GradeEntry extends BaseModel
     public function scopeByCategory(Builder $query, string $category): Builder
     {
         return $query->where('grade_category', $category);
+    }
+
+    /**
+     * Scope to get grades for a specific student.
+     */
+    public function scopeForStudent(Builder $query, int $studentId): Builder
+    {
+        return $query->where('student_id', $studentId);
     }
 
     // Methods

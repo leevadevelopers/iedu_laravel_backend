@@ -18,6 +18,7 @@ class AllPermissionsSeeder extends Seeder
         // Run specific permission seeders
         $this->call([
             Permissions\AcademicPermissionsSeeder::class,
+            Permissions\AssessmentPermissionsSeeder::class,
             Permissions\TransportPermissionsSeeder::class,
         ]);
 
@@ -118,7 +119,8 @@ class AllPermissionsSeeder extends Seeder
             'guard_name' => 'api'
         ]);
 
-        $superAdmin->syncPermissions(Permission::all());
+        // Sync only permissions with the 'api' guard
+        $superAdmin->syncPermissions(Permission::where('guard_name', 'api')->get());
 
         // System Administrator - Core system permissions
         $systemAdmin = Role::firstOrCreate([
