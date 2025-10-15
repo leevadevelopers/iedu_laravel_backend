@@ -86,7 +86,13 @@ class StudentDocumentController extends Controller
 
             return response()->json([
                 'success' => true,
-                'data' => $documents
+                'data' => $documents->items(),
+                'pagination' => [
+                    'current_page' => $documents->currentPage(),
+                    'per_page' => $documents->perPage(),
+                    'total' => $documents->total(),
+                    'last_page' => $documents->lastPage()
+                ]
             ]);
 
         } catch (\Exception $e) {

@@ -79,7 +79,13 @@ class StudentEnrollmentController extends Controller
 
             return response()->json([
                 'success' => true,
-                'data' => $enrollments
+                'data' => $enrollments->items(),
+                'pagination' => [
+                    'current_page' => $enrollments->currentPage(),
+                    'per_page' => $enrollments->perPage(),
+                    'total' => $enrollments->total(),
+                    'last_page' => $enrollments->lastPage()
+                ]
             ]);
 
         } catch (\Exception $e) {

@@ -79,7 +79,13 @@ class AcademicYearController extends Controller
 
             return response()->json([
                 'success' => true,
-                'data' => $academicYears
+                'data' => $academicYears->items(),
+                'pagination' => [
+                    'current_page' => $academicYears->currentPage(),
+                    'per_page' => $academicYears->perPage(),
+                    'total' => $academicYears->total(),
+                    'last_page' => $academicYears->lastPage()
+                ]
             ]);
 
         } catch (\Exception $e) {
@@ -730,7 +736,13 @@ class AcademicYearController extends Controller
 
             return response()->json([
                 'success' => true,
-                'data' => $academicYears,
+                'data' => $academicYears->items(),
+                'pagination' => [
+                    'current_page' => $academicYears->currentPage(),
+                    'per_page' => $academicYears->perPage(),
+                    'total' => $academicYears->total(),
+                    'last_page' => $academicYears->lastPage()
+                ],
                 'search_metadata' => $searchMetadata
             ]);
 

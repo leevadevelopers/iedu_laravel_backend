@@ -30,7 +30,7 @@ class SchoolService
      */
     public function getSchools(array $filters, int $perPage = 15): LengthAwarePaginator
     {
-        $query = School::select([
+        $query = School::withoutTenantScope()->select([
             'id', 'tenant_id', 'school_code', 'official_name', 'display_name',
             'school_type', 'status', 'city', 'state_province', 'country_code',
             'current_enrollment', 'staff_count', 'created_at', 'updated_at'

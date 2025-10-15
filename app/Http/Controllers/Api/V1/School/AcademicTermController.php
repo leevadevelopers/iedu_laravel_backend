@@ -80,7 +80,13 @@ class AcademicTermController extends Controller
 
             return response()->json([
                 'success' => true,
-                'data' => $academicTerms
+                'data' => $academicTerms->items(),
+                'pagination' => [
+                    'current_page' => $academicTerms->currentPage(),
+                    'per_page' => $academicTerms->perPage(),
+                    'total' => $academicTerms->total(),
+                    'last_page' => $academicTerms->lastPage()
+                ]
             ]);
 
         } catch (\Exception $e) {

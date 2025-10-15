@@ -78,7 +78,13 @@ class StudentController extends Controller
 
             return response()->json([
                 'success' => true,
-                'data' => $students
+                'data' => $students->items(),
+                'pagination' => [
+                    'current_page' => $students->currentPage(),
+                    'per_page' => $students->perPage(),
+                    'total' => $students->total(),
+                    'last_page' => $students->lastPage()
+                ]
             ]);
 
         } catch (\Exception $e) {

@@ -73,8 +73,33 @@ class TransportPermissionsSeeder extends Seeder
             ]);
         }
 
+        // Legacy alias permissions used by controllers' middleware
+        $legacyAliasPermissions = [
+            // Generic transport CRUD aliases
+            'view-transport',
+            'create-transport',
+            'edit-transport',
+            'delete-transport',
+
+            // Subscription-specific aliases used in TransportSubscriptionController
+            'view-transport-subscriptions',
+            'create-transport-subscriptions',
+            'edit-transport-subscriptions',
+            'delete-transport-subscriptions',
+        ];
+
+        foreach ($legacyAliasPermissions as $permission) {
+            Permission::firstOrCreate([
+                'name' => $permission,
+                'guard_name' => 'api',
+            ]);
+        }
+
         // Create roles and assign permissions
         $this->createRoles();
+
+        // Ensure legacy alias permissions are granted to roles that need them
+        $this->assignLegacyAliasesToRoles();
     }
 
     private function createRoles(): void
@@ -203,5 +228,48 @@ class TransportPermissionsSeeder extends Seeder
             'transport.students.view',
             'transport.notifications.view',
         ]);
+    }
+
+    private function assignLegacyAliasesToRoles(): void
+    {
+        // Map legacy aliases to roles by responsibility level
+        $adminAliases = [
+            'view-transport', 'create-transport', 'edit-transport', 'delete-transport',
+            'view-transport-subscriptions', 'create-transport-subscriptions', 'edit-transport-subscriptions', 'delete-transport-subscriptions',
+        ];
+
+        $managerAliases = [
+            'view-transport', 'create-transport', 'edit-transport',
+            'view-transport-subscriptions', 'create-transport-subscriptions', 'edit-transport-subscriptions',
+        ];
+
+        $coordinatorAliases = [
+            'view-transport', 'create-transport', 'edit-transport',
+            'view-transport-subscriptions', 'create-transport-subscriptions', 'edit-transport-subscriptions',
+        ];
+
+        $driverAliases = [
+            'view-transport',
+        ];
+
+        $parentAliases = [
+            'view-transport',
+            'view-transport-subscriptions',
+        ];
+
+        $roles = [
+            'Transport Administrator' => $adminAliases,
+            'Transport Manager' => $managerAliases,
+            'Transport Coordinator' => $coordinatorAliases,
+            'Transport Driver' => $driverAliases,
+            'Parent' => $parentAliases,
+        ];
+
+        foreach ($roles as $roleName => $aliases) {
+            $role = Role::where('name', $roleName)->where('guard_name', 'api')->first();
+            if ($role) {
+                $role->givePermissionTo($aliases);
+            }
+        }
     }
 }
