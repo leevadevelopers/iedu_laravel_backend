@@ -22,6 +22,7 @@ Route::prefix('tenants')->middleware('auth:api')->group(function () {
         Route::put('branding', [TenantController::class, 'updateBranding']);
         
         // Invitations routes
+        //uuxee
         Route::get('invitations', [TenantController::class, 'invitations']);
         Route::post('invitations', [TenantController::class, 'sendInvitation']);
         Route::delete('invitations/{invitation}', [TenantController::class, 'cancelInvitation']);
