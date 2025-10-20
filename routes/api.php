@@ -57,6 +57,7 @@ Route::bind('subscription', function ($value) {
     return \App\Models\V1\Transport\StudentTransportSubscription::findOrFail($value);
 });
 
+//
 Route::bind('incident', function ($value) {
     return \App\Models\V1\Transport\TransportIncident::findOrFail($value);
 });
