@@ -21,7 +21,7 @@ return new class extends Migration
             $table->decimal('total_distance_km', 8, 2);
             $table->enum('status', ['active', 'inactive', 'maintenance'])->default('active');
             $table->enum('shift', ['morning', 'afternoon', 'both'])->default('morning');
-            $table->json('operating_days')->default('["monday","tuesday","wednesday","thursday","friday"]');
+            $table->json('operating_days');
             $table->timestamps();
             $table->softDeletes();
 
