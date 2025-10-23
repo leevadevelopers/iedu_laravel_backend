@@ -57,15 +57,18 @@ Route::bind('subscription', function ($value) {
     return \App\Models\V1\Transport\StudentTransportSubscription::findOrFail($value);
 });
 
+//
 Route::bind('incident', function ($value) {
     return \App\Models\V1\Transport\TransportIncident::findOrFail($value);
 });
 
+
+// 
 Route::bind('event', function ($value) {
     return \App\Models\V1\Transport\StudentTransportEvent::findOrFail($value);
 });
 
-// Permission route model binding
+// Permission route model binding 
 Route::bind('permission', function ($value) {
     return \Spatie\Permission\Models\Permission::findOrFail($value);
 });

@@ -71,9 +71,9 @@ class CreateSchoolsTable extends Migration
             $table->enum('subscription_plan', [
                 'basic', 'standard', 'premium', 'enterprise', 'custom'
             ])->default('basic');
-            $table->json('feature_flags')->default('{}');
-            $table->json('integration_settings')->default('{}');
-            $table->json('branding_configuration')->default('{}');
+            $table->json('feature_flags');
+            $table->json('integration_settings');
+            $table->json('branding_configuration');
 
             // Status & Lifecycle
             $table->enum('status', [
