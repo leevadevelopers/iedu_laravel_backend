@@ -216,19 +216,19 @@ class AcademicYearController extends Controller
     {
         try {
             $academicYear->load([
-                'school:id,display_name,school_code,type',
+                'school:id,display_name,school_code,school_type',
                 'terms:id,academic_year_id,name,start_date,end_date,status',
                 'createdBy:id,name',
-                'students:id,first_name,last_name,grade_level,status'
+                'students:id,first_name,last_name,current_grade_level,enrollment_status'
             ]);
 
             // Get academic year statistics
             $stats = [
                 'total_students' => $academicYear->students()->count(),
-                'active_students' => $academicYear->students()->where('status', 'active')->count(),
+                'active_students' => $academicYear->students()->where('enrollment_status', 'enrolled')->count(),
                 'by_grade_level' => $academicYear->students()
-                    ->selectRaw('grade_level, COUNT(*) as count')
-                    ->groupBy('grade_level')
+                    ->selectRaw('current_grade_level, COUNT(*) as count')
+                    ->groupBy('current_grade_level')
                     ->get(),
                 'terms_count' => $academicYear->terms()->count(),
                 'active_terms' => $academicYear->terms()->where('status', 'active')->count()

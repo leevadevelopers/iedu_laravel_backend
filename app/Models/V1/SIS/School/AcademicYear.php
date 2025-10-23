@@ -106,7 +106,7 @@ class AcademicYear extends Model
      */
     public function students(): HasMany
     {
-        return $this->hasMany(\App\Models\V1\SIS\Student\Student::class, 'academic_year_id');
+        return $this->hasMany(\App\Models\V1\SIS\Student\Student::class, 'current_academic_year_id');
     }
 
     /**
