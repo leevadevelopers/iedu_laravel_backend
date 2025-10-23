@@ -33,7 +33,8 @@ class SchoolService
         $query = School::withoutTenantScope()->select([
             'id', 'tenant_id', 'school_code', 'official_name', 'display_name',
             'school_type', 'status', 'city', 'state_province', 'country_code',
-            'current_enrollment', 'staff_count', 'created_at', 'updated_at'
+            'email', 'phone', 'website', 'current_enrollment', 'staff_count', 
+            'created_at', 'updated_at'
         ])->with([
             'academicYears:id,school_id,name,start_date,end_date',
             'currentAcademicYear:id,school_id,name',
@@ -193,7 +194,7 @@ class SchoolService
             DB::beginTransaction();
 
             // Check if school has active students
-            $activeStudents = $school->students()->where('status', 'active')->count();
+            $activeStudents = $school->students()->where('enrollment_status', 'enrolled')->count();
             if ($activeStudents > 0) {
                 throw new \Exception("Cannot delete school with {$activeStudents} active students");
             }

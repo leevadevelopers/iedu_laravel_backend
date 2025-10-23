@@ -20,7 +20,7 @@ class UpdateSchoolRequest extends FormRequest
      */
     public function rules(): array
     {
-        $schoolId = $this->route('school');
+        $schoolId = $this->route('id');
 
         return [
             'official_name' => 'sometimes|required|string|max:255',

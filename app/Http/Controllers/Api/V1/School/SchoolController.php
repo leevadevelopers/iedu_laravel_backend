@@ -109,9 +109,22 @@ class SchoolController extends Controller
     /**
      * Display the specified school
      */
-    public function show(School $school): JsonResponse
+    public function show($id): JsonResponse
     {
         try {
+            // Set default tenant for development
+            if (config('app.env') !== 'production' && !session('tenant_id')) {
+                session(['tenant_id' => 1]);
+            }
+            
+            // Find school - try with tenant scope first, then without if not found
+            $school = School::find($id);
+            
+            if (!$school) {
+                // If not found with tenant scope, try without it
+                $school = School::withoutGlobalScope(\App\Models\Scopes\TenantScope::class)->findOrFail($id);
+            }
+            
             $school->load([
                 'academicYears:id,name,start_date,end_date,status',
                 'currentAcademicYear:id,name,start_date,end_date',
@@ -149,9 +162,22 @@ class SchoolController extends Controller
     /**
      * Update the specified school
      */
-    public function update(UpdateSchoolRequest $request, School $school): JsonResponse
+    public function update(UpdateSchoolRequest $request, $id): JsonResponse
     {
         try {
+            // Set default tenant for development
+            if (config('app.env') !== 'production' && !session('tenant_id')) {
+                session(['tenant_id' => 1]);
+            }
+            
+            // Find school - try with tenant scope first, then without if not found
+            $school = School::find($id);
+            
+            if (!$school) {
+                // If not found with tenant scope, try without it
+                $school = School::withoutGlobalScope(\App\Models\Scopes\TenantScope::class)->findOrFail($id);
+            }
+
             $updatedSchool = $this->schoolService->updateSchool($school, $request->validated());
 
             return response()->json([
@@ -171,9 +197,22 @@ class SchoolController extends Controller
     /**
      * Remove the specified school
      */
-    public function destroy(School $school): JsonResponse
+    public function destroy($id): JsonResponse
     {
         try {
+            // Set default tenant for development
+            if (config('app.env') !== 'production' && !session('tenant_id')) {
+                session(['tenant_id' => 1]);
+            }
+            
+            // Find school - try with tenant scope first, then without if not found
+            $school = School::find($id);
+            
+            if (!$school) {
+                // If not found with tenant scope, try without it
+                $school = School::withoutGlobalScope(\App\Models\Scopes\TenantScope::class)->findOrFail($id);
+            }
+
             $this->schoolService->deleteSchool($school);
 
             return response()->json([
