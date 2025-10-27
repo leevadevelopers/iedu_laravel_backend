@@ -17,10 +17,6 @@ class FleetBusController extends Controller
     {
         $this->fleetService = $fleetService;
         $this->middleware('auth:api');
-        $this->middleware('permission:view-transport')->only(['index', 'show']);
-        $this->middleware('permission:create-transport')->only(['store']);
-        $this->middleware('permission:edit-transport')->only(['update']);
-        $this->middleware('permission:delete-transport')->only(['destroy']);
     }
 
     public function index(Request $request): JsonResponse

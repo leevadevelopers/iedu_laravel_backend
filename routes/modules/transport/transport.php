@@ -226,7 +226,7 @@ Route::middleware(['auth:api'])->prefix('parent/transport')->name('parent.transp
 // ==========================================
 // DRIVER/ASSISTANT PORTAL ROUTES
 // ==========================================
-Route::middleware(['auth:api', 'multi-tenant'])->prefix('driver/transport')->name('driver.transport.')->group(function () {
+Route::middleware(['auth:api'])->prefix('driver/transport')->name('driver.transport.')->group(function () {
     Route::get('/dashboard', [DriverPortalController::class, 'dashboard'])->name('dashboard');
     Route::get('/today-routes', [DriverPortalController::class, 'getTodayRoutes'])->name('today-routes');
     Route::get('/assigned-students', [DriverPortalController::class, 'getAssignedStudents'])->name('assigned-students');

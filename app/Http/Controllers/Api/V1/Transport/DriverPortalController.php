@@ -17,13 +17,12 @@ class DriverPortalController extends Controller
     {
         $this->driverService = $driverService;
         $this->middleware('auth:api');
-        $this->middleware('role:driver|assistant');
     }
 
     public function dashboard(): JsonResponse
     {
         try {
-            $dashboard = $this->driverService->getDashboard(auth()->user());
+            $dashboard = $this->driverService->getDashboard(auth('api')->user());
 
             return response()->json([
                 'success' => true,
@@ -41,7 +40,7 @@ class DriverPortalController extends Controller
     public function getTodayRoutes(): JsonResponse
     {
         try {
-            $routes = $this->driverService->getTodayRoutes(auth()->user());
+            $routes = $this->driverService->getTodayRoutes(auth('api')->user());
 
             return response()->json([
                 'success' => true,
@@ -59,7 +58,7 @@ class DriverPortalController extends Controller
     public function getAssignedStudents(): JsonResponse
     {
         try {
-            $students = $this->driverService->getAssignedStudents(auth()->user());
+            $students = $this->driverService->getAssignedStudents(auth('api')->user());
 
             return response()->json([
                 'success' => true,
@@ -93,7 +92,7 @@ class DriverPortalController extends Controller
         }
 
         try {
-            $routeLog = $this->driverService->startRoute(auth()->user(), $validator->validated());
+            $routeLog = $this->driverService->startRoute(auth('api')->user(), $validator->validated());
 
             return response()->json([
                 'success' => true,
@@ -129,7 +128,7 @@ class DriverPortalController extends Controller
         }
 
         try {
-            $routeLog = $this->driverService->endRoute(auth()->user(), $validator->validated());
+            $routeLog = $this->driverService->endRoute(auth('api')->user(), $validator->validated());
 
             return response()->json([
                 'success' => true,
@@ -162,7 +161,7 @@ class DriverPortalController extends Controller
         }
 
         try {
-            $this->driverService->submitDailyChecklist(auth()->user(), $validator->validated());
+            $this->driverService->submitDailyChecklist(auth('api')->user(), $validator->validated());
 
             return response()->json([
                 'success' => true,
@@ -199,7 +198,7 @@ class DriverPortalController extends Controller
         }
 
         try {
-            $incident = $this->driverService->reportIncident(auth()->user(), $validator->validated());
+            $incident = $this->driverService->reportIncident(auth('api')->user(), $validator->validated());
 
             return response()->json([
                 'success' => true,
@@ -217,7 +216,7 @@ class DriverPortalController extends Controller
     public function getRouteProgress(TransportRoute $route): JsonResponse
     {
         try {
-            $progress = $this->driverService->getRouteProgress(auth()->user(), $route);
+            $progress = $this->driverService->getRouteProgress(auth('api')->user(), $route);
 
             return response()->json([
                 'success' => true,

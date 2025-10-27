@@ -18,7 +18,6 @@ class ParentPortalController extends Controller
     {
         $this->parentPortalService = $parentPortalService;
         $this->middleware('auth:api');
-        $this->middleware('permission:view-own-students');
     }
 
     public function dashboard()

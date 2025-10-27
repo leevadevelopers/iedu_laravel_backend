@@ -17,10 +17,6 @@ class TransportRouteController extends Controller
     {
         $this->transportRouteService = $transportRouteService;
         $this->middleware('auth:api');
-        $this->middleware('permission:view-transport')->only(['index', 'show']);
-        $this->middleware('permission:create-transport')->only(['store']);
-        $this->middleware('permission:edit-transport')->only(['update']);
-        $this->middleware('permission:delete-transport')->only(['destroy']);
     }
 
     public function index(Request $request): JsonResponse
@@ -193,6 +189,30 @@ class TransportRouteController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Error optimizing route: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    public function getPublicRouteInfo(): JsonResponse
+    {
+        try {
+            $routes = TransportRoute::where('status', 'active')
+                ->select(['id', 'name', 'code', 'shift', 'departure_time', 'arrival_time'])
+                ->with(['busStops' => function($query) {
+                    $query->select('id', 'transport_route_id', 'name', 'code', 'latitude', 'longitude', 'stop_order')
+                        ->orderBy('stop_order');
+                }])
+                ->get();
+
+            return response()->json([
+                'success' => true,
+                'data' => $routes,
+                'message' => 'Public route information retrieved successfully'
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error retrieving public route info: ' . $e->getMessage()
             ], 500);
         }
     }

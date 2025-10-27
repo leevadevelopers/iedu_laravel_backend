@@ -18,9 +18,6 @@ class StudentTransportController extends Controller
     {
         $this->studentTransportService = $studentTransportService;
         $this->middleware('auth:api');
-        $this->middleware('permission:view-students')->only(['index', 'show']);
-        $this->middleware('permission:create-transport')->only(['subscribe', 'checkin', 'checkout']);
-        $this->middleware('permission:edit-transport')->only(['update']);
     }
 
     public function index(Request $request): JsonResponse

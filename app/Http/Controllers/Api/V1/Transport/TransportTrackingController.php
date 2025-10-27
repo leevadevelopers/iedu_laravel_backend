@@ -221,4 +221,21 @@ class TransportTrackingController extends Controller
             ], 500);
         }
     }
+
+    public function webhookGpsUpdate(Request $request): JsonResponse
+    {
+        try {
+            // This would typically process GPS device webhook data
+            // For now, just acknowledge receipt
+            return response()->json([
+                'success' => true,
+                'message' => 'GPS update received'
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error processing GPS update: ' . $e->getMessage()
+            ], 500);
+        }
+    }
 }

@@ -17,10 +17,6 @@ class TransportEventsController extends Controller
     {
         $this->studentTransportService = $studentTransportService;
         $this->middleware('auth:api');
-        $this->middleware('permission:view-transport')->only(['index', 'show']);
-        $this->middleware('permission:create-transport')->only(['store']);
-        $this->middleware('permission:edit-transport')->only(['update']);
-        $this->middleware('permission:delete-transport')->only(['destroy']);
     }
 
     /**
@@ -30,7 +26,7 @@ class TransportEventsController extends Controller
     {
         try {
             $filters = $request->only([
-                'search', 'event_type', 'validation_method', 'student_id', 
+                'search', 'event_type', 'validation_method', 'student_id',
                 'fleet_bus_id', 'transport_route_id', 'date_from', 'date_to',
                 'is_automated', 'page', 'per_page', 'sort_by', 'sort_order'
             ]);
@@ -256,7 +252,7 @@ class TransportEventsController extends Controller
     {
         try {
             $filters = $request->only([
-                'search', 'event_type', 'validation_method', 'student_id', 
+                'search', 'event_type', 'validation_method', 'student_id',
                 'fleet_bus_id', 'transport_route_id', 'date_from', 'date_to',
                 'is_automated'
             ]);
