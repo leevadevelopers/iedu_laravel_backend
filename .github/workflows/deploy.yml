@@ -32,8 +32,6 @@ jobs:
           log-level: verbose
           exclude: |
             **/.git/**
-            **/node_modules/**
-            **/.github/**
             **/.vscode/**
             **/README.md
             **/.env.example
