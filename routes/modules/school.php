@@ -12,13 +12,9 @@ use Illuminate\Support\Facades\Route;
     */
 
     Route::middleware(['auth:api'])->prefix('schools')->group(function () {
-        // Health check
-        Route::get('/health', [SchoolController::class, 'health']);
-
         // Basic CRUD operations
         Route::get('/', [SchoolController::class, 'index']);
         Route::post('/', [SchoolController::class, 'store']);
-        // Route::post('/test', action: [SchoolController::class, 'testStore']); // Test route for simplified creation
         Route::get('/{school}', [SchoolController::class, 'show']);
         Route::put('/{id}', [SchoolController::class, 'update']);
         Route::delete('/{id}', [SchoolController::class, 'destroy']);
@@ -45,22 +41,6 @@ use Illuminate\Support\Facades\Route;
         Route::get('/{school}/forms/{instanceId}', [SchoolController::class, 'getFormInstance']);
         Route::put('/{school}/forms/{instanceId}/status', [SchoolController::class, 'updateFormInstanceStatus']);
         Route::get('/{school}/forms/analytics', [SchoolController::class, 'getFormAnalytics']);
-    });
-
-    Route::prefix('schools')->group(function () {
-        // School-specific operations
-        Route::get('{school}/dashboard', [\App\Http\Controllers\API\V1\School\SchoolController::class, 'getDashboard'])
-            ->name('schools.dashboard');
-        Route::get('{school}/statistics', [\App\Http\Controllers\API\V1\School\SchoolController::class, 'getStatistics'])
-            ->name('schools.statistics');
-        Route::get('{school}/students', [\App\Http\Controllers\API\V1\School\SchoolController::class, 'getStudents'])
-            ->name('schools.students');
-        Route::get('{school}/academic-years', [\App\Http\Controllers\API\V1\School\SchoolController::class, 'getAcademicYears'])
-            ->name('schools.academic-years');
-        Route::post('{school}/set-current-academic-year', [\App\Http\Controllers\API\V1\School\SchoolController::class, 'setCurrentAcademicYear'])
-            ->name('schools.set-current-academic-year');
-        Route::get('{school}/performance-metrics', [\App\Http\Controllers\API\V1\School\SchoolController::class, 'getPerformanceMetrics'])
-            ->name('schools.performance-metrics');
     });
 
     /*

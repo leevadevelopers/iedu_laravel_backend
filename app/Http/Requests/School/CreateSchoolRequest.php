@@ -11,7 +11,7 @@ class CreateSchoolRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        return true; // Add your authorization logic here
+        return true;
     }
 
     /**
@@ -19,17 +19,40 @@ class CreateSchoolRequest extends FormRequest
      */
     public function rules(): array
     {
+        $tenantId = $this->input('tenant_id');
+
         return [
             'tenant_id' => 'required|integer|exists:tenants,id',
-            'official_name' => 'required|string|max:255',
+            'official_name' => [
+                'required',
+                'string',
+                'max:255',
+                \Illuminate\Validation\Rule::unique('schools')->where(function ($query) use ($tenantId) {
+                    return $query->where('tenant_id', $tenantId);
+                })
+            ],
             'display_name' => 'required|string|max:255',
             'short_name' => 'required|string|max:50',
-            'school_code' => 'required|string|max:50|unique:schools,school_code',
+            'school_code' => [
+                'required',
+                'string',
+                'max:50',
+                \Illuminate\Validation\Rule::unique('schools')->where(function ($query) use ($tenantId) {
+                    return $query->where('tenant_id', $tenantId);
+                })
+            ],
             'school_type' => 'required|in:public,private,charter,magnet,international,vocational,special_needs,alternative',
             'educational_levels' => 'required|array',
             'grade_range_min' => 'required|string|max:10',
             'grade_range_max' => 'required|string|max:10',
-            'email' => 'required|email|max:255',
+            'email' => [
+                'required',
+                'email',
+                'max:255',
+                \Illuminate\Validation\Rule::unique('schools')->where(function ($query) use ($tenantId) {
+                    return $query->where('tenant_id', $tenantId);
+                })
+            ],
             'phone' => 'required|string|max:50',
             'website' => 'nullable|url|max:255',
             'address_json' => 'required|array',
@@ -65,10 +88,11 @@ class CreateSchoolRequest extends FormRequest
             'tenant_id.required' => 'Tenant ID is required.',
             'tenant_id.exists' => 'The selected tenant does not exist.',
             'official_name.required' => 'Official name is required.',
+            'official_name.unique' => 'A school with this official name already exists in this tenant.',
             'display_name.required' => 'Display name is required.',
             'short_name.required' => 'Short name is required.',
             'school_code.required' => 'School code is required.',
-            'school_code.unique' => 'School code must be unique.',
+            'school_code.unique' => 'A school with this code already exists in this tenant.',
             'school_type.required' => 'School type is required.',
             'school_type.in' => 'Invalid school type selected.',
             'educational_levels.required' => 'Educational levels are required.',
@@ -76,6 +100,7 @@ class CreateSchoolRequest extends FormRequest
             'grade_range_max.required' => 'Maximum grade range is required.',
             'email.required' => 'Email is required.',
             'email.email' => 'Please provide a valid email address.',
+            'email.unique' => 'A school with this email already exists in this tenant.',
             'country_code.required' => 'Country code is required.',
             'country_code.size' => 'Country code must be exactly 2 characters.',
             'city.required' => 'City is required.',

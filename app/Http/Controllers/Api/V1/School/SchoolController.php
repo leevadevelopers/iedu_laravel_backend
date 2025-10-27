@@ -20,6 +20,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 
 class SchoolController extends Controller
 {
@@ -31,15 +33,83 @@ class SchoolController extends Controller
     }
 
     /**
-     * Health check endpoint
+     * Get current authenticated user
      */
-    public function health(): JsonResponse
+    protected function getUser()
     {
-        return response()->json([
-            'success' => true,
-            'message' => 'School API is healthy',
-            'timestamp' => now()->toISOString()
-        ]);
+        $user = Auth::user();
+
+        if (!$user) {
+            throw new \Exception('User not authenticated', 401);
+        }
+
+        return $user;
+    }
+
+    /**
+     * Standard success response
+     */
+    protected function successResponse($data = null, $message = null, $status = 200): JsonResponse
+    {
+        $response = ['success' => true];
+
+        if ($data !== null) {
+            $response['data'] = $data;
+        }
+
+        if ($message !== null) {
+            $response['message'] = $message;
+        }
+
+        return response()->json($response, $status);
+    }
+
+    /**
+     * Standard error response
+     */
+    protected function errorResponse($message, $code = null, $status = 500, $errors = null, $traceId = null): JsonResponse
+    {
+        $response = [
+            'success' => false,
+            'message' => $message
+        ];
+
+        if ($code !== null) {
+            $response['code'] = $code;
+        }
+
+        if ($errors !== null) {
+            $response['errors'] = $errors;
+        }
+
+        if ($traceId !== null || config('app.debug')) {
+            $response['trace_id'] = $traceId ?? uniqid('ERR_', true);
+        }
+
+        return response()->json($response, $status);
+    }
+
+    /**
+     * Find school by ID with proper error handling
+     */
+    protected function findSchool($id): School
+    {
+        try {
+            $school = School::find($id);
+
+            if (!$school) {
+                // Try without tenant scope if needed
+                $school = School::withoutGlobalScope(\App\Models\Scopes\TenantScope::class)->find($id);
+            }
+
+            if (!$school) {
+                throw new ModelNotFoundException("School with ID {$id} not found");
+            }
+
+            return $school;
+        } catch (ModelNotFoundException $e) {
+            throw $e;
+        }
     }
 
     /**
@@ -48,35 +118,45 @@ class SchoolController extends Controller
     public function index(Request $request): JsonResponse
     {
         try {
+            $this->getUser();
+
             $filters = $request->only(['status', 'school_type', 'state_province', 'country_code', 'search']);
             $perPage = $request->get('per_page', 15);
 
-            // Create cache key based on filters and user
-            $user = Auth::user();
-            $cacheKey = 'schools_' . md5(serialize($filters) . $perPage . ($user ? $user->id : 'guest'));
+            // Get schools
+            $schools = $this->schoolService->getSchools($filters, $perPage);
 
-            // Track cache keys for invalidation
-            $cacheKeys = Cache::get('schools_cache_keys', []);
-            if (!in_array($cacheKey, $cacheKeys)) {
-                $cacheKeys[] = $cacheKey;
-                Cache::put('schools_cache_keys', $cacheKeys, 3600); // Store for 1 hour
-            }
-
-            // Try to get from cache first
-            $schools = Cache::remember($cacheKey, 300, function () use ($filters, $perPage) {
-                return $this->schoolService->getSchools($filters, $perPage);
-            });
-
+            // Format response with pagination metadata
             return response()->json([
                 'success' => true,
-                'data' => $schools
+                'data' => $schools->items(),
+                'meta' => [
+                    'current_page' => $schools->currentPage(),
+                    'from' => $schools->firstItem(),
+                    'last_page' => $schools->lastPage(),
+                    'path' => $request->url(),
+                    'per_page' => $schools->perPage(),
+                    'to' => $schools->lastItem(),
+                    'total' => $schools->total()
+                ],
+                'links' => [
+                    'first' => $schools->url(1),
+                    'last' => $schools->url($schools->lastPage()),
+                    'prev' => $schools->previousPageUrl(),
+                    'next' => $schools->nextPageUrl()
+                ]
             ]);
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to retrieve schools',
-                'error' => $e->getMessage()
-            ], 500);
+            Log::error('Failed to retrieve schools', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return $this->errorResponse(
+                'Failed to retrieve schools',
+                'SCHOOLS_RETRIEVAL_ERROR',
+                500
+            );
         }
     }
 
@@ -86,22 +166,40 @@ class SchoolController extends Controller
     public function store(CreateSchoolRequest $request): JsonResponse
     {
         try {
+            $this->getUser(); // Ensure user is authenticated
+
             $result = $this->schoolService->createSchool($request->validated());
 
-            return response()->json([
-                'success' => true,
-                'message' => 'School created successfully',
-                'data' => [
-                    'school' => $result['school']->only(['id', 'official_name', 'school_code', 'school_type', 'status', 'created_at']),
-                    'workflow_id' => $result['workflow']?->id
-                ]
-            ], 201);
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to create school',
+            return $this->successResponse([
+                'id' => $result['school']->id,
+                'official_name' => $result['school']->official_name,
+                'school_code' => $result['school']->school_code,
+                'school_type' => $result['school']->school_type,
+                'status' => $result['school']->status,
+                'created_at' => $result['school']->created_at,
+                'workflow_id' => $result['workflow']?->id
+            ], 'School created successfully', 201);
+        } catch (\Illuminate\Database\QueryException $e) {
+            Log::error('Failed to create school - Database error', [
                 'error' => $e->getMessage()
-            ], 500);
+            ]);
+
+            return $this->errorResponse(
+                'Failed to create school due to database error',
+                'SCHOOL_CREATION_DB_ERROR',
+                500
+            );
+        } catch (\Exception $e) {
+            Log::error('Failed to create school', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return $this->errorResponse(
+                'Failed to create school',
+                'SCHOOL_CREATION_ERROR',
+                500
+            );
         }
     }
 
@@ -112,19 +210,10 @@ class SchoolController extends Controller
     public function show($id): JsonResponse
     {
         try {
-            // Set default tenant for development
-            if (config('app.env') !== 'production' && !session('tenant_id')) {
-                session(['tenant_id' => 1]);
-            }
-            
-            // Find school - try with tenant scope first, then without if not found
-            $school = School::find($id);
-            
-            if (!$school) {
-                // If not found with tenant scope, try without it
-                $school = School::withoutGlobalScope(\App\Models\Scopes\TenantScope::class)->findOrFail($id);
-            }
-            
+            $this->getUser(); // Ensure user is authenticated
+
+            $school = $this->findSchool($id);
+
             $school->load([
                 'academicYears:id,name,start_date,end_date,status',
                 'currentAcademicYear:id,name,start_date,end_date',
@@ -143,19 +232,28 @@ class SchoolController extends Controller
                 'academic_years' => $school->academicYears()->count()
             ];
 
-            return response()->json([
-                'success' => true,
-                'data' => [
-                    'school' => $school,
-                    'statistics' => $stats
-                ]
+            return $this->successResponse([
+                'school' => $school,
+                'statistics' => $stats
             ]);
+        } catch (ModelNotFoundException $e) {
+            return $this->errorResponse(
+                'School not found',
+                'SCHOOL_NOT_FOUND',
+                404
+            );
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to retrieve school',
-                'error' => $e->getMessage()
-            ], 500);
+            Log::error('Failed to retrieve school', [
+                'school_id' => $id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return $this->errorResponse(
+                'Failed to retrieve school',
+                'SCHOOL_RETRIEVAL_ERROR',
+                500
+            );
         }
     }
 
@@ -165,32 +263,52 @@ class SchoolController extends Controller
     public function update(UpdateSchoolRequest $request, $id): JsonResponse
     {
         try {
-            // Set default tenant for development
-            if (config('app.env') !== 'production' && !session('tenant_id')) {
-                session(['tenant_id' => 1]);
-            }
-            
-            // Find school - try with tenant scope first, then without if not found
-            $school = School::find($id);
-            
-            if (!$school) {
-                // If not found with tenant scope, try without it
-                $school = School::withoutGlobalScope(\App\Models\Scopes\TenantScope::class)->findOrFail($id);
-            }
+            $this->getUser(); // Ensure user is authenticated
+
+            $school = $this->findSchool($id);
 
             $updatedSchool = $this->schoolService->updateSchool($school, $request->validated());
 
-            return response()->json([
-                'success' => true,
-                'message' => 'School updated successfully',
-                'data' => $updatedSchool->load(['users:id,name,identifier'])
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to update school',
+            return $this->successResponse(
+                $updatedSchool->load(['users:id,name,identifier']),
+                'School updated successfully'
+            );
+        } catch (ModelNotFoundException $e) {
+            return $this->errorResponse(
+                'School not found',
+                'SCHOOL_NOT_FOUND',
+                404
+            );
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return $this->errorResponse(
+                'Validation failed',
+                'SCHOOL_UPDATE_VALIDATION_ERROR',
+                422,
+                $e->errors()
+            );
+        } catch (\Illuminate\Database\QueryException $e) {
+            Log::error('Failed to update school - Database error', [
+                'school_id' => $id,
                 'error' => $e->getMessage()
-            ], 500);
+            ]);
+
+            return $this->errorResponse(
+                'Failed to update school due to database error',
+                'SCHOOL_UPDATE_DB_ERROR',
+                500
+            );
+        } catch (\Exception $e) {
+            Log::error('Failed to update school', [
+                'school_id' => $id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return $this->errorResponse(
+                'Failed to update school',
+                'SCHOOL_UPDATE_ERROR',
+                500
+            );
         }
     }
 
@@ -200,31 +318,35 @@ class SchoolController extends Controller
     public function destroy($id): JsonResponse
     {
         try {
-            // Set default tenant for development
-            if (config('app.env') !== 'production' && !session('tenant_id')) {
-                session(['tenant_id' => 1]);
-            }
-            
-            // Find school - try with tenant scope first, then without if not found
-            $school = School::find($id);
-            
-            if (!$school) {
-                // If not found with tenant scope, try without it
-                $school = School::withoutGlobalScope(\App\Models\Scopes\TenantScope::class)->findOrFail($id);
-            }
+            $this->getUser(); // Ensure user is authenticated
+
+            $school = $this->findSchool($id);
 
             $this->schoolService->deleteSchool($school);
 
-            return response()->json([
-                'success' => true,
-                'message' => 'School deleted successfully'
-            ]);
+            return $this->successResponse(
+                null,
+                'School deleted successfully',
+                200
+            );
+        } catch (ModelNotFoundException $e) {
+            return $this->errorResponse(
+                'School not found',
+                'SCHOOL_NOT_FOUND',
+                404
+            );
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to delete school',
-                'error' => $e->getMessage()
-            ], 500);
+            Log::error('Failed to delete school', [
+                'school_id' => $id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return $this->errorResponse(
+                'Failed to delete school: ' . $e->getMessage(),
+                'SCHOOL_DELETE_ERROR',
+                500
+            );
         }
     }
 
