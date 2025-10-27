@@ -232,6 +232,186 @@ class StudentDocumentController extends Controller
     }
 
     /**
+     * Upload file and create document in a single transaction
+     */
+    public function uploadAndCreate(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'file' => 'required|file|max:10240', // 10MB max
+            'tenant_id' => 'required|exists:tenants,id',
+            'school_id' => 'required|exists:schools,id',
+            'student_id' => 'required|exists:students,id',
+            'document_type' => 'required|in:' . implode(',', DocumentType::values()),
+            'document_name' => 'required|string|max:255',
+            'document_category' => 'nullable|string|max:100',
+            'expiration_date' => 'nullable|date|after:today',
+            'status' => 'nullable|in:pending,approved,rejected,expired',
+            'required' => 'nullable|boolean',
+            'verified' => 'nullable|boolean',
+            'verification_notes' => 'nullable|string|max:1000',
+            'access_permissions_json' => 'nullable|array',
+            'ferpa_protected' => 'nullable|boolean',
+            'form_data' => 'nullable|array',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            DB::beginTransaction();
+
+            // Get file and student
+            $file = $request->file('file');
+            $student = Student::findOrFail($request->student_id);
+
+            // Generate file path and upload
+            $fileName = time() . '_' . $file->getClientOriginalName();
+            $directory = "students/{$student->id}/documents";
+            $storedPath = $file->storeAs($directory, $fileName, 'private');
+
+            Log::info('File uploaded successfully', [
+                'stored_path' => $storedPath,
+                'student_id' => $student->id,
+                'file_size' => $file->getSize()
+            ]);
+
+            // Verify file was stored
+            if (!Storage::disk('private')->exists($storedPath)) {
+                throw new \Exception('File was not stored successfully');
+            }
+
+            // Prepare document data
+            $documentData = [
+                'tenant_id' => $request->tenant_id,
+                'school_id' => $request->school_id,
+                'student_id' => $request->student_id,
+                'document_type' => $request->document_type,
+                'document_name' => $request->document_name,
+                'document_category' => $request->document_category,
+                'file_name' => $file->getClientOriginalName(),
+                'file_path' => $storedPath, // Automatically set from upload
+                'file_type' => $file->getClientOriginalExtension(),
+                'file_size' => $file->getSize(),
+                'mime_type' => $file->getMimeType(),
+                'expiration_date' => $request->expiration_date,
+                'status' => $request->status ?? 'pending',
+                'required' => $request->required ?? false,
+                'verified' => $request->verified ?? false,
+                'verification_notes' => $request->verification_notes,
+                'access_permissions_json' => $request->access_permissions_json,
+                'ferpa_protected' => $request->ferpa_protected ?? false,
+                'uploaded_by' => Auth::id(),
+            ];
+
+            // Create document
+            $document = StudentDocument::create($documentData);
+
+            Log::info('Document created successfully', [
+                'document_id' => $document->id,
+                'file_path' => $document->file_path
+            ]);
+
+            // Process form data through Form Engine if provided
+            if ($request->has('form_data') && !empty($request->form_data)) {
+                try {
+                    $processedData = $this->formEngineService->processFormData('document_upload', $request->form_data);
+                    $this->formEngineService->createFormInstance('document_upload', $processedData, 'StudentDocument', $document->id, $request->tenant_id);
+                } catch (\Exception $e) {
+                    Log::warning('Form Engine processing failed', [
+                        'document_id' => $document->id,
+                        'error' => $e->getMessage()
+                    ]);
+                }
+            }
+
+            // Start document verification workflow
+            try {
+                $workflow = $this->workflowService->createWorkflow([
+                    'workflow_type' => 'document_verification',
+                    'steps' => [
+                        [
+                            'step_number' => 1,
+                            'step_name' => 'Initial Review',
+                            'step_type' => 'review',
+                            'required_role' => 'teacher',
+                            'instructions' => 'Review document for completeness and basic requirements'
+                        ],
+                        [
+                            'step_number' => 2,
+                            'step_name' => 'Content Verification',
+                            'step_type' => 'verification',
+                            'required_role' => 'academic_coordinator',
+                            'instructions' => 'Verify document content and authenticity'
+                        ],
+                        [
+                            'step_number' => 3,
+                            'step_name' => 'Approval',
+                            'step_type' => 'approval',
+                            'required_role' => 'principal',
+                            'instructions' => 'Final approval of the document'
+                        ],
+                        [
+                            'step_number' => 4,
+                            'step_name' => 'Final Validation',
+                            'step_type' => 'validation',
+                            'required_role' => 'school_admin',
+                            'instructions' => 'Final validation and archival'
+                        ]
+                    ]
+                ]);
+            } catch (\Exception $e) {
+                Log::warning('Workflow creation failed', [
+                    'document_id' => $document->id,
+                    'error' => $e->getMessage()
+                ]);
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Document uploaded and created successfully',
+                'data' => [
+                    'document' => $document->load(['student:id,first_name,last_name,student_number']),
+                    'file_info' => [
+                        'file_path' => $storedPath,
+                        'file_size' => $file->getSize(),
+                        'mime_type' => $file->getMimeType()
+                    ],
+                    'workflow_id' => $workflow->id ?? null
+                ]
+            ], 201);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            // Clean up uploaded file if it exists
+            if (isset($storedPath) && Storage::disk('private')->exists($storedPath)) {
+                Storage::disk('private')->delete($storedPath);
+                Log::info('Cleaned up uploaded file after error', [
+                    'file_path' => $storedPath
+                ]);
+            }
+
+            Log::error('Failed to upload and create document', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to upload and create document',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
      * Display the specified document
      */
     public function show(Request $request, $id): JsonResponse
@@ -387,8 +567,8 @@ class StudentDocumentController extends Controller
             DB::beginTransaction();
 
             // Delete physical file if exists
-            if ($document->file_path && Storage::exists($document->file_path)) {
-                Storage::delete($document->file_path);
+            if ($document->file_path && Storage::disk('private')->exists($document->file_path)) {
+                Storage::disk('private')->delete($document->file_path);
             }
 
             // Soft delete document
@@ -438,16 +618,28 @@ class StudentDocumentController extends Controller
             $fileName = time() . '_' . $file->getClientOriginalName();
             $filePath = "students/{$student->id}/documents/{$fileName}";
 
-            // Store file
-            $file->storeAs("students/{$student->id}/documents", $fileName, 'private');
+            // Store file using the private disk
+            $storedPath = $file->storeAs("students/{$student->id}/documents", $fileName, 'private');
+
+            Log::info('File uploaded successfully', [
+                'file_path' => $storedPath,
+                'student_id' => $student->id,
+                'file_size' => $file->getSize()
+            ]);
+
+            // Check if file was actually stored
+            if (!Storage::disk('private')->exists($storedPath)) {
+                throw new \Exception('File was not stored successfully');
+            }
 
             return response()->json([
                 'success' => true,
                 'message' => 'File uploaded successfully',
                 'data' => [
-                    'file_path' => $filePath,
+                    'file_path' => $storedPath,
                     'file_size' => $file->getSize(),
                     'file_type' => $file->getMimeType(),
+                    'mime_type' => $file->getMimeType(),
                     'original_name' => $file->getClientOriginalName()
                 ]
             ]);
@@ -467,25 +659,54 @@ class StudentDocumentController extends Controller
     public function download(StudentDocument $document): JsonResponse
     {
         try {
-            if (!Storage::exists($document->file_path)) {
+            Log::info('Attempting to download document', [
+                'document_id' => $document->id,
+                'file_path' => $document->file_path
+            ]);
+
+            // Check if file exists using private disk
+            if (!Storage::disk('private')->exists($document->file_path)) {
+                Log::error('File not found on storage', [
+                    'file_path' => $document->file_path,
+                    'disk' => 'private'
+                ]);
+
                 return response()->json([
                     'success' => false,
-                    'message' => 'File not found'
+                    'message' => 'File not found',
+                    'debug' => [
+                        'file_path' => $document->file_path,
+                        'exists' => false
+                    ]
                 ], 404);
             }
 
-            $fileUrl = Storage::url($document->file_path);
+            // For private files, return the full path to download
+            $filePath = storage_path('app/private/' . $document->file_path);
 
+            Log::info('File found, returning download path', [
+                'document_id' => $document->id,
+                'file_path' => $filePath
+            ]);
+
+            // Return the download response instead of URL for private files
             return response()->json([
                 'success' => true,
                 'data' => [
-                    'download_url' => $fileUrl,
+                    'download_path' => $filePath,
                     'file_name' => $document->document_name,
-                    'file_size' => $document->file_size
+                    'file_size' => $document->file_size,
+                    'message' => 'Use download_path to retrieve the file'
                 ]
             ]);
 
         } catch (\Exception $e) {
+            Log::error('Failed to generate download link', [
+                'document_id' => $document->id ?? 'unknown',
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to generate download link',

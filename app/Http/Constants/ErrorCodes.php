@@ -21,6 +21,12 @@ class ErrorCodes
     public const OPERATION_FAILED = 'OPERATION_FAILED';
     public const DATABASE_ERROR = 'DATABASE_ERROR';
 
+    // Profile errors
+    public const PROFILE_UPDATE_FAILED = 'PROFILE_UPDATE_FAILED';
+    public const IDENTIFIER_ALREADY_EXISTS = 'IDENTIFIER_ALREADY_EXISTS';
+    public const REAUTHENTICATION_REQUIRED = 'REAUTHENTICATION_REQUIRED';
+    public const INVALID_PASSWORD = 'INVALID_PASSWORD';
+
     // General errors
     public const UNAUTHENTICATED = 'UNAUTHENTICATED';
     public const FORBIDDEN = 'FORBIDDEN';
@@ -41,6 +47,10 @@ class ErrorCodes
             self::ACTIVE_DEPENDENCIES,
             self::OPERATION_FAILED,
             self::DATABASE_ERROR,
+            self::PROFILE_UPDATE_FAILED,
+            self::IDENTIFIER_ALREADY_EXISTS,
+            self::REAUTHENTICATION_REQUIRED,
+            self::INVALID_PASSWORD,
             self::UNAUTHENTICATED,
             self::FORBIDDEN,
             self::SERVER_ERROR,

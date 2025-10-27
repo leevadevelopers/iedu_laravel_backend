@@ -16,6 +16,7 @@ use App\Services\NotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Spatie\Permission\Models\Role;
@@ -33,7 +34,7 @@ class TenantController extends Controller
     public function index(Request $request): AnonymousResourceCollection
     {
         $user = $request->user();
-        
+
         $tenants = $user->activeTenants()
             ->withPivot(['role_id', 'current_tenant', 'status', 'joined_at'])
             ->when($request->get('search'), function ($query, $search) {
@@ -79,7 +80,7 @@ class TenantController extends Controller
     {
         $user = $request->user();
         $tenant = $user->getCurrentTenant();
-        
+
         if (!$tenant) {
             return response()->json(['error' => 'No current tenant set'], 404);
         }
@@ -106,7 +107,7 @@ class TenantController extends Controller
 
         try {
             $success = $this->tenantService->switchUserTenant($user, $tenantId);
-            
+
             if (!$success) {
                 return response()->json(['error' => 'Unable to switch to the requested tenant'], 403);
             }
@@ -129,9 +130,10 @@ class TenantController extends Controller
 
     public function invitations(Request $request): JsonResponse
     {
+        $userLogged = Auth::user();
         $user = $request->user();
-        $tenant = $user->getCurrentTenant();
-        
+        $tenant = $userLogged->tenant_id;
+
         if (!$tenant) {
             return response()->json(['error' => 'No current tenant set'], 404);
         }
@@ -155,7 +157,7 @@ class TenantController extends Controller
     {
         $user = $request->user();
         $tenant = $user->getCurrentTenant();
-        
+
         if (!$tenant) {
             return response()->json(['error' => 'No current tenant set'], 404);
         }
@@ -267,7 +269,7 @@ class TenantController extends Controller
     {
         $user = $request->user();
         $tenant = $user->getCurrentTenant();
-        
+
         if (!$tenant) {
             return response()->json(['error' => 'No current tenant set'], 404);
         }
@@ -324,7 +326,7 @@ class TenantController extends Controller
     {
         $user = $request->user();
         $tenant = $user->getCurrentTenant();
-        
+
         if (!$tenant) {
             return response()->json(['error' => 'No current tenant set'], 404);
         }
@@ -385,13 +387,13 @@ class TenantController extends Controller
     {
         // Email regex pattern
         $emailPattern = '/^[^\s@]+@[^\s@]+\.[^\s@]+$/';
-        
+
         // Phone regex pattern (supports international format and common formats)
         $phonePattern = '/^[\+]?[1-9][\d\s\-\(\)]{7,15}$/';
-        
+
         // Clean the identifier (remove spaces, dashes, parentheses) for validation
         $cleanIdentifier = preg_replace('/[\s\-\(\)]/', '', $identifier);
-        
+
         if (preg_match($emailPattern, $identifier)) {
             return 'email';
         } elseif (preg_match($phonePattern, $identifier) && strlen($cleanIdentifier) >= 8 && strlen($cleanIdentifier) <= 15) {
@@ -419,7 +421,7 @@ class TenantController extends Controller
         }
 
         $settings = $tenant->settings ?? [];
-        
+
         return response()->json([
             'data' => [
                 'tenant_id' => $tenant->id,
@@ -478,14 +480,14 @@ class TenantController extends Controller
         }
 
         $settings = $tenant->settings ?? [];
-        
+
         // Ensure settings is an array
         if (!is_array($settings)) {
             $settings = [];
         }
-        
+
         $branding = $settings['branding'] ?? [];
-        
+
         // Ensure branding is an array
         if (!is_array($branding)) {
             $branding = [];
@@ -534,25 +536,25 @@ class TenantController extends Controller
 
         try {
             $currentSettings = $tenant->settings ?? [];
-            
+
             // Ensure currentSettings is an array
             if (!is_array($currentSettings)) {
                 $currentSettings = [];
             }
-            
+
             // Ensure branding is an array before merging
             $currentBranding = $currentSettings['branding'] ?? [];
             if (!is_array($currentBranding)) {
                 $currentBranding = [];
             }
-            
+
             $newBranding = $request->get('branding');
             if (!is_array($newBranding)) {
                 $newBranding = [];
             }
-            
+
             $currentSettings['branding'] = array_merge($currentBranding, $newBranding);
-            
+
             $updatedTenant = $this->tenantService->updateTenantSettings($tenant, $currentSettings);
 
             return response()->json([
@@ -568,7 +570,7 @@ class TenantController extends Controller
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
-            
+
             return response()->json([
                 'error' => 'Failed to update tenant branding',
                 'message' => $e->getMessage(),
@@ -588,7 +590,7 @@ class TenantController extends Controller
     {
         $user = $request->user();
         $tenant = $user->getCurrentTenant();
-        
+
         if (!$tenant) {
             return response()->json(['error' => 'No current tenant set'], 404);
         }
@@ -609,7 +611,7 @@ class TenantController extends Controller
     {
         $currentUser = $request->user();
         $tenant = $currentUser->getCurrentTenant();
-        
+
         if (!$tenant) {
             return response()->json(['error' => 'No current tenant set'], 404);
         }
@@ -665,7 +667,7 @@ class TenantController extends Controller
     {
         $currentUser = $request->user();
         $tenant = $currentUser->getCurrentTenant();
-        
+
         if (!$tenant) {
             return response()->json(['error' => 'No current tenant set'], 404);
         }
@@ -677,7 +679,7 @@ class TenantController extends Controller
 
         try {
             $targetUser = \App\Models\User::findOrFail($userId);
-            
+
             // Prevent users from removing themselves
             if ($currentUser->id === $targetUser->id) {
                 return response()->json(['error' => 'You cannot remove yourself from the tenant'], 422);
@@ -692,16 +694,16 @@ class TenantController extends Controller
             // Check if target user is the owner (prevent removing owner)
             $targetUserContext = $targetUser->getTenantContext($tenant->id);
             $isOwner = $targetUserContext && $targetUserContext['is_owner'];
-            
+
             // Also check by role name for additional safety
             if (!$isOwner && $targetUserContext && $targetUserContext['role']) {
                 $isOwner = in_array(strtolower($targetUserContext['role']), ['owner', 'proprietário da organização']);
             }
-            
+
             if ($isOwner) {
                 return response()->json(['error' => 'Cannot remove the tenant owner'], 422);
             }
-            
+
             // Log the removal action for audit purposes
             \Log::info('User removed from tenant', [
                 'removed_user_id' => $userId,
@@ -711,7 +713,7 @@ class TenantController extends Controller
                 'removed_by_user_id' => $currentUser->id,
                 'removed_by_user_name' => $currentUser->name,
             ]);
-            
+
             // Remove user from tenant
             $tenant->users()->detach($userId);
 
@@ -754,7 +756,7 @@ class TenantController extends Controller
     {
         $currentUser = $request->user();
         $tenant = $currentUser->getCurrentTenant();
-        
+
         if (!$tenant) {
             return response()->json(['error' => 'No current tenant set'], 404);
         }
@@ -765,7 +767,7 @@ class TenantController extends Controller
 
         try {
             $targetUser = \App\Models\User::findOrFail($userId);
-            
+
             // Update user role in tenant
             $tenant->users()->updateExistingPivot($userId, [
                 'role_id' => $request->get('role')
@@ -792,7 +794,7 @@ class TenantController extends Controller
         ]);
 
         $token = $request->input('token');
-        
+
         try {
             $invitation = TenantInvitation::where('token', $token)
                 ->where('status', 'pending')
@@ -848,14 +850,14 @@ class TenantController extends Controller
         ]);
 
         $invitationId = $request->input('invitation_id');
-        
+
         try {
             $invitation = TenantInvitation::findOrFail($invitationId);
-            
+
             // Generate the URL and validate format
             $acceptUrl = $invitation->getAcceptUrl();
             $urlValidation = $invitation->validateUrlFormat();
-            
+
             // Get all relevant configuration
             $config = [
                 'environment' => app()->environment(),
@@ -865,7 +867,7 @@ class TenantController extends Controller
                 'app_env' => env('APP_ENV'),
                 'app_debug' => env('APP_DEBUG')
             ];
-            
+
             // Get invitation details
             $invitationDetails = [
                 'id' => $invitation->id,
@@ -880,7 +882,7 @@ class TenantController extends Controller
                 'is_pending' => $invitation->isPending(),
                 'is_expired' => $invitation->isExpired()
             ];
-            
+
             return response()->json([
                 'data' => [
                     'invitation' => $invitationDetails,
@@ -918,7 +920,7 @@ class TenantController extends Controller
         ]);
 
         $token = $request->input('token');
-        
+
         // Debug: Log the acceptance attempt
         Log::info('Invitation acceptance attempt', [
             'token' => $token,
@@ -926,7 +928,7 @@ class TenantController extends Controller
             'last_name' => $request->input('last_name'),
             'request_data' => $request->all()
         ]);
-        
+
         try {
             $invitation = TenantInvitation::where('token', $token)
                 ->where('status', 'pending')
@@ -962,7 +964,7 @@ class TenantController extends Controller
 
             // Get role ID by name
             $role = Role::where('name', $invitation->role)->first();
-            
+
             // Debug: Log role resolution
             Log::info('Role resolution for invitation', [
                 'invitation_role' => $invitation->role,
@@ -970,7 +972,7 @@ class TenantController extends Controller
                 'role_id' => $role ? $role->id : null,
                 'role_name' => $role ? $role->name : null
             ]);
-            
+
             if (!$role) {
                 throw new \Exception("Role '{$invitation->role}' not found");
             }

@@ -90,6 +90,20 @@ class SchoolController extends Controller
     }
 
     /**
+     * Check if user can access school (super_admin or same tenant)
+     */
+    protected function canAccessSchool($user, School $school): bool
+    {
+        // Super admin can access all schools
+        if ($user->hasRole('super_admin')) {
+            return true;
+        }
+
+        // Check if user's tenant matches school's tenant
+        return $user->tenant_id == $school->tenant_id;
+    }
+
+    /**
      * Find school by ID with proper error handling
      */
     protected function findSchool($id): School
@@ -118,13 +132,13 @@ class SchoolController extends Controller
     public function index(Request $request): JsonResponse
     {
         try {
-            $this->getUser();
+            $user = $this->getUser();
 
             $filters = $request->only(['status', 'school_type', 'state_province', 'country_code', 'search']);
             $perPage = $request->get('per_page', 15);
 
-            // Get schools
-            $schools = $this->schoolService->getSchools($filters, $perPage);
+            // Get schools - pass user for super_admin check
+            $schools = $this->schoolService->getSchools($filters, $perPage, $user);
 
             // Format response with pagination metadata
             return response()->json([
@@ -166,9 +180,43 @@ class SchoolController extends Controller
     public function store(CreateSchoolRequest $request): JsonResponse
     {
         try {
-            $this->getUser(); // Ensure user is authenticated
+            $user = $this->getUser(); // Ensure user is authenticated
 
-            $result = $this->schoolService->createSchool($request->validated());
+            // Get validated data and add tenant_id from authenticated user
+            $validatedData = $request->validated();
+            $validatedData['tenant_id'] = $user->tenant_id;
+
+            // Check for duplicate official_name within the same tenant
+            $existingSchool = School::where('tenant_id', $user->tenant_id)
+                ->where('official_name', $validatedData['official_name'])
+                ->first();
+
+            if ($existingSchool) {
+                return $this->errorResponse(
+                    'A school with this official name already exists in your organization',
+                    'SCHOOL_NAME_DUPLICATE',
+                    422,
+                    ['official_name' => ['A school with this official name already exists']]
+                );
+            }
+
+            // Check for duplicate school_code within the same tenant
+            if (isset($validatedData['school_code'])) {
+                $existingSchoolCode = School::where('tenant_id', $user->tenant_id)
+                    ->where('school_code', $validatedData['school_code'])
+                    ->first();
+
+                if ($existingSchoolCode) {
+                    return $this->errorResponse(
+                        'A school with this code already exists in your organization',
+                        'SCHOOL_CODE_DUPLICATE',
+                        422,
+                        ['school_code' => ['A school with this code already exists']]
+                    );
+                }
+            }
+
+            $result = $this->schoolService->createSchool($validatedData);
 
             return $this->successResponse([
                 'id' => $result['school']->id,
@@ -210,9 +258,18 @@ class SchoolController extends Controller
     public function show($id): JsonResponse
     {
         try {
-            $this->getUser(); // Ensure user is authenticated
+            $user = $this->getUser(); // Ensure user is authenticated
 
             $school = $this->findSchool($id);
+
+            // Check if user can access this school (super_admin or same tenant)
+            if (!$this->canAccessSchool($user, $school)) {
+                return $this->errorResponse(
+                    'You do not have permission to access this school',
+                    'SCHOOL_ACCESS_DENIED',
+                    403
+                );
+            }
 
             $school->load([
                 'academicYears:id,name,start_date,end_date,status',
@@ -263,9 +320,18 @@ class SchoolController extends Controller
     public function update(UpdateSchoolRequest $request, $id): JsonResponse
     {
         try {
-            $this->getUser(); // Ensure user is authenticated
+            $user = $this->getUser(); // Ensure user is authenticated
 
             $school = $this->findSchool($id);
+
+            // Check if user can access this school (super_admin or same tenant)
+            if (!$this->canAccessSchool($user, $school)) {
+                return $this->errorResponse(
+                    'You do not have permission to access this school',
+                    'SCHOOL_ACCESS_DENIED',
+                    403
+                );
+            }
 
             $updatedSchool = $this->schoolService->updateSchool($school, $request->validated());
 
@@ -318,9 +384,18 @@ class SchoolController extends Controller
     public function destroy($id): JsonResponse
     {
         try {
-            $this->getUser(); // Ensure user is authenticated
+            $user = $this->getUser(); // Ensure user is authenticated
 
             $school = $this->findSchool($id);
+
+            // Check if user can access this school (super_admin or same tenant)
+            if (!$this->canAccessSchool($user, $school)) {
+                return $this->errorResponse(
+                    'You do not have permission to access this school',
+                    'SCHOOL_ACCESS_DENIED',
+                    403
+                );
+            }
 
             $this->schoolService->deleteSchool($school);
 
@@ -356,6 +431,17 @@ class SchoolController extends Controller
     public function getDashboard(School $school): JsonResponse
     {
         try {
+            $user = $this->getUser();
+
+            // Check if user can access this school (super_admin or same tenant)
+            if (!$this->canAccessSchool($user, $school)) {
+                return $this->errorResponse(
+                    'You do not have permission to access this school',
+                    'SCHOOL_ACCESS_DENIED',
+                    403
+                );
+            }
+
             $dashboard = [
                 'school_info' => $school->only(['id', 'official_name', 'school_code', 'school_type', 'status']),
                 'enrollment_summary' => [
@@ -397,6 +483,17 @@ class SchoolController extends Controller
     public function getStatistics(School $school): JsonResponse
     {
         try {
+            $user = $this->getUser();
+
+            // Check if user can access this school (super_admin or same tenant)
+            if (!$this->canAccessSchool($user, $school)) {
+                return $this->errorResponse(
+                    'You do not have permission to access this school',
+                    'SCHOOL_ACCESS_DENIED',
+                    403
+                );
+            }
+
             $stats = [
                 'enrollment' => [
                     'total' => $school->students()->count(),
@@ -445,6 +542,17 @@ class SchoolController extends Controller
     public function getStudents(School $school, Request $request): JsonResponse
     {
         try {
+            $user = $this->getUser();
+
+            // Check if user can access this school (super_admin or same tenant)
+            if (!$this->canAccessSchool($user, $school)) {
+                return $this->errorResponse(
+                    'You do not have permission to access this school',
+                    'SCHOOL_ACCESS_DENIED',
+                    403
+                );
+            }
+
             $query = $school->students()->with([
                 'enrollments',
                 'familyRelationships',
@@ -496,6 +604,17 @@ class SchoolController extends Controller
     public function getAcademicYears(School $school): JsonResponse
     {
         try {
+            $user = $this->getUser();
+
+            // Check if user can access this school (super_admin or same tenant)
+            if (!$this->canAccessSchool($user, $school)) {
+                return $this->errorResponse(
+                    'You do not have permission to access this school',
+                    'SCHOOL_ACCESS_DENIED',
+                    403
+                );
+            }
+
             $academicYears = $school->academicYears()
                 ->with(['terms:id,academic_year_id,name,start_date,end_date'])
                 ->orderBy('start_date', 'desc')
@@ -532,6 +651,17 @@ class SchoolController extends Controller
         }
 
         try {
+            $user = $this->getUser();
+
+            // Check if user can access this school (super_admin or same tenant)
+            if (!$this->canAccessSchool($user, $school)) {
+                return $this->errorResponse(
+                    'You do not have permission to access this school',
+                    'SCHOOL_ACCESS_DENIED',
+                    403
+                );
+            }
+
             DB::beginTransaction();
 
             // Update school's current academic year
@@ -560,6 +690,17 @@ class SchoolController extends Controller
     public function getPerformanceMetrics(School $school, Request $request): JsonResponse
     {
         try {
+            $user = $this->getUser();
+
+            // Check if user can access this school (super_admin or same tenant)
+            if (!$this->canAccessSchool($user, $school)) {
+                return $this->errorResponse(
+                    'You do not have permission to access this school',
+                    'SCHOOL_ACCESS_DENIED',
+                    403
+                );
+            }
+
             $year = $request->get('year', date('Y'));
             $metrics = $this->schoolService->getSchoolPerformanceMetrics($school, $year);
 
@@ -819,6 +960,17 @@ class SchoolController extends Controller
     public function processFormSubmission(ProcessFormSubmissionRequest $request, School $school): JsonResponse
     {
         try {
+            $user = $this->getUser();
+
+            // Check if user can access this school (super_admin or same tenant)
+            if (!$this->canAccessSchool($user, $school)) {
+                return $this->errorResponse(
+                    'You do not have permission to access this school',
+                    'SCHOOL_ACCESS_DENIED',
+                    403
+                );
+            }
+
             $result = $this->schoolService->processFormSubmission($school, $request->validated());
 
             return response()->json([
@@ -846,6 +998,17 @@ class SchoolController extends Controller
     public function getFormInstances(School $school, Request $request): JsonResponse
     {
         try {
+            $user = $this->getUser();
+
+            // Check if user can access this school (super_admin or same tenant)
+            if (!$this->canAccessSchool($user, $school)) {
+                return $this->errorResponse(
+                    'You do not have permission to access this school',
+                    'SCHOOL_ACCESS_DENIED',
+                    403
+                );
+            }
+
             $query = $school->formInstances()
                 ->with(['template:id,name,category', 'creator:id,name,identifier']);
 
@@ -902,6 +1065,17 @@ class SchoolController extends Controller
     public function getFormInstance(School $school, $instanceId): JsonResponse
     {
         try {
+            $user = $this->getUser();
+
+            // Check if user can access this school (super_admin or same tenant)
+            if (!$this->canAccessSchool($user, $school)) {
+                return $this->errorResponse(
+                    'You do not have permission to access this school',
+                    'SCHOOL_ACCESS_DENIED',
+                    403
+                );
+            }
+
             $instance = $school->formInstances()
                 ->with(['template:id,name,category,form_configuration', 'creator:id,name,identifier'])
                 ->findOrFail($instanceId);
@@ -940,6 +1114,17 @@ class SchoolController extends Controller
         }
 
         try {
+            $user = $this->getUser();
+
+            // Check if user can access this school (super_admin or same tenant)
+            if (!$this->canAccessSchool($user, $school)) {
+                return $this->errorResponse(
+                    'You do not have permission to access this school',
+                    'SCHOOL_ACCESS_DENIED',
+                    403
+                );
+            }
+
             $instance = $school->formInstances()->findOrFail($instanceId);
 
             $instance->update([
@@ -981,6 +1166,17 @@ class SchoolController extends Controller
     public function getFormAnalytics(School $school, Request $request): JsonResponse
     {
         try {
+            $user = $this->getUser();
+
+            // Check if user can access this school (super_admin or same tenant)
+            if (!$this->canAccessSchool($user, $school)) {
+                return $this->errorResponse(
+                    'You do not have permission to access this school',
+                    'SCHOOL_ACCESS_DENIED',
+                    403
+                );
+            }
+
             $dateRange = $request->get('date_range', '30'); // days
             $startDate = now()->subDays($dateRange);
 

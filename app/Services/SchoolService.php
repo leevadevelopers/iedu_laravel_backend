@@ -27,15 +27,36 @@ class SchoolService
 
     /**
      * Get schools with filters and pagination
+     *
+     * @param array $filters
+     * @param int $perPage
+     * @param \App\Models\User|null $user - If provided and user is not super_admin, filters by tenant
+     * @return LengthAwarePaginator
      */
-    public function getSchools(array $filters, int $perPage = 15): LengthAwarePaginator
+    public function getSchools(array $filters, int $perPage = 15, $user = null): LengthAwarePaginator
     {
-        $query = School::withoutTenantScope()->select([
-            'id', 'tenant_id', 'school_code', 'official_name', 'display_name',
-            'school_type', 'status', 'city', 'state_province', 'country_code',
-            'email', 'phone', 'website', 'current_enrollment', 'staff_count', 
-            'created_at', 'updated_at'
-        ])->with([
+        // Check if user is super_admin
+        $isSuperAdmin = false;
+        if ($user) {
+            $isSuperAdmin = $user->hasRole('super_admin');
+        }
+
+        // Build query with or without tenant scope
+        $query = $isSuperAdmin
+            ? School::withoutTenantScope()->select([
+                'id', 'tenant_id', 'school_code', 'official_name', 'display_name',
+                'school_type', 'status', 'city', 'state_province', 'country_code',
+                'email', 'phone', 'website', 'current_enrollment', 'staff_count',
+                'created_at', 'updated_at'
+            ])
+            : School::select([
+                'id', 'tenant_id', 'school_code', 'official_name', 'display_name',
+                'school_type', 'status', 'city', 'state_province', 'country_code',
+                'email', 'phone', 'website', 'current_enrollment', 'staff_count',
+                'created_at', 'updated_at'
+            ]);
+
+        $query->with([
             'academicYears:id,school_id,name,start_date,end_date',
             'currentAcademicYear:id,school_id,name',
             'users:id,school_id,name,identifier'

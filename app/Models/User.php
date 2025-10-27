@@ -96,7 +96,7 @@ class User extends Authenticatable implements JWTSubject
     public function getCurrentTenant(): ?Tenant
     {
         // Check session first
-        $tenantId = session('tenant_id');
+        $tenantId = $this->tenant_id ?? session('tenant_id');
 
         if ($tenantId) {
             // Use cache to avoid repeated database queries
