@@ -50,35 +50,32 @@ use Illuminate\Support\Facades\Route;
     */
 
     Route::middleware(['auth:api'])->group(function () {
-        Route::apiResource('academic-years', \App\Http\Controllers\API\V1\School\AcademicYearController::class);
-
-        Route::prefix('academic-years')->group(function () {
-        // Academic year queries
-        Route::get('by-school/{schoolId}', [\App\Http\Controllers\API\V1\School\AcademicYearController::class, 'getBySchool'])
+        // Academic year queries (must be before apiResource to avoid conflicts)
+        Route::get('academic-years/search/by-year', [\App\Http\Controllers\API\V1\School\AcademicYearController::class, 'searchByYear'])
+            ->name('academic-years.search-by-year');
+        Route::get('academic-years/by-school/{schoolId}', [\App\Http\Controllers\API\V1\School\AcademicYearController::class, 'getBySchool'])
             ->name('academic-years.by-school');
-        Route::get('current/{schoolId}', [\App\Http\Controllers\API\V1\School\AcademicYearController::class, 'getCurrent'])
+        Route::get('academic-years/current/{schoolId}', [\App\Http\Controllers\API\V1\School\AcademicYearController::class, 'getCurrent'])
             ->name('academic-years.current');
 
-        // Academic year management
-        Route::post('{academicYear}/set-as-current', [\App\Http\Controllers\API\V1\School\AcademicYearController::class, 'setAsCurrent'])
-            ->name('academic-years.set-as-current');
-        Route::get('{academicYear}/calendar', [\App\Http\Controllers\API\V1\School\AcademicYearController::class, 'getCalendar'])
-            ->name('academic-years.calendar');
-
-        // Bulk operations
-        Route::post('bulk-create', [\App\Http\Controllers\API\V1\School\AcademicYearController::class, 'bulkCreate'])
+        // Bulk operations (must be before apiResource)
+        Route::post('academic-years/bulk-create', [\App\Http\Controllers\API\V1\School\AcademicYearController::class, 'bulkCreate'])
             ->name('academic-years.bulk-create');
 
-        // Statistics and trends
-        Route::get('statistics', [\App\Http\Controllers\API\V1\School\AcademicYearController::class, 'getStatistics'])
+        // Statistics and trends (must be before apiResource)
+        Route::get('academic-years/statistics', [\App\Http\Controllers\API\V1\School\AcademicYearController::class, 'getStatistics'])
             ->name('academic-years.statistics');
-        Route::get('trends', [\App\Http\Controllers\API\V1\School\AcademicYearController::class, 'getTrends'])
+        Route::get('academic-years/trends', [\App\Http\Controllers\API\V1\School\AcademicYearController::class, 'getTrends'])
             ->name('academic-years.trends');
 
-        // Search operations
-        Route::get('search/by-year', [\App\Http\Controllers\API\V1\School\AcademicYearController::class, 'searchByYear'])
-            ->name('academic-years.search-by-year');
-        });
+        // Main CRUD resource
+        Route::apiResource('academic-years', \App\Http\Controllers\API\V1\School\AcademicYearController::class);
+
+        // Specific year operations (must be after apiResource)
+        Route::post('academic-years/{academicYear}/set-as-current', [\App\Http\Controllers\API\V1\School\AcademicYearController::class, 'setAsCurrent'])
+            ->name('academic-years.set-as-current');
+        Route::get('academic-years/{academicYear}/calendar', [\App\Http\Controllers\API\V1\School\AcademicYearController::class, 'getCalendar'])
+            ->name('academic-years.calendar');
     });
 
     /*
@@ -87,30 +84,28 @@ use Illuminate\Support\Facades\Route;
     |--------------------------------------------------------------------------
     */
     Route::middleware(['auth:api'])->group(function () {
-
-    Route::apiResource('academic-terms', \App\Http\Controllers\API\V1\School\AcademicTermController::class);
-
-    Route::prefix('academic-terms')->group(function () {
-        // Academic term queries
-        Route::get('by-academic-year/{academicYearId}', [\App\Http\Controllers\API\V1\School\AcademicTermController::class, 'getByAcademicYear'])
+        // Academic term queries (must be before apiResource to avoid conflicts)
+        Route::get('academic-terms/by-academic-year/{academicYearId}', [\App\Http\Controllers\API\V1\School\AcademicTermController::class, 'getByAcademicYear'])
             ->name('academic-terms.by-academic-year');
-        Route::get('current/{schoolId}', [\App\Http\Controllers\API\V1\School\AcademicTermController::class, 'getCurrent'])
+        Route::get('academic-terms/current/{schoolId}', [\App\Http\Controllers\API\V1\School\AcademicTermController::class, 'getCurrent'])
             ->name('academic-terms.current');
 
-        // Academic term management
-        Route::post('{academicTerm}/set-as-current', [\App\Http\Controllers\API\V1\School\AcademicTermController::class, 'setAsCurrent'])
-            ->name('academic-terms.set-as-current');
-        Route::get('{academicTerm}/calendar', [\App\Http\Controllers\API\V1\School\AcademicTermController::class, 'getCalendar'])
-            ->name('academic-terms.calendar');
-
-        // Bulk operations
-        Route::post('bulk-create', [\App\Http\Controllers\API\V1\School\AcademicTermController::class, 'bulkCreate'])
+        // Bulk operations (must be before apiResource)
+        Route::post('academic-terms/bulk-create', [\App\Http\Controllers\API\V1\School\AcademicTermController::class, 'bulkCreate'])
             ->name('academic-terms.bulk-create');
 
-        // Statistics and trends
-        Route::get('statistics', [\App\Http\Controllers\API\V1\School\AcademicTermController::class, 'getStatistics'])
+        // Statistics and trends (must be before apiResource)
+        Route::get('academic-terms/statistics', [\App\Http\Controllers\API\V1\School\AcademicTermController::class, 'getStatistics'])
             ->name('academic-terms.statistics');
-        Route::get('trends', [\App\Http\Controllers\API\V1\School\AcademicTermController::class, 'getTrends'])
+        Route::get('academic-terms/trends', [\App\Http\Controllers\API\V1\School\AcademicTermController::class, 'getTrends'])
             ->name('academic-terms.trends');
+
+        // Main CRUD resource
+        Route::apiResource('academic-terms', \App\Http\Controllers\API\V1\School\AcademicTermController::class);
+
+        // Specific term operations (must be after apiResource)
+        Route::post('academic-terms/{academicTerm}/set-as-current', [\App\Http\Controllers\API\V1\School\AcademicTermController::class, 'setAsCurrent'])
+            ->name('academic-terms.set-as-current');
+        Route::get('academic-terms/{academicTerm}/calendar', [\App\Http\Controllers\API\V1\School\AcademicTermController::class, 'getCalendar'])
+            ->name('academic-terms.calendar');
     });
-});

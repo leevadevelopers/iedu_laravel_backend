@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\API\V1\School;
 
 use App\Http\Controllers\Controller;
+use App\Http\Constants\ErrorCodes;
+use App\Http\Helpers\ApiResponse;
 use App\Models\V1\SIS\School\AcademicYear;
 use App\Models\V1\SIS\School\AcademicTerm;
 use App\Models\V1\SIS\School\School;
@@ -15,6 +17,8 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 
 class AcademicYearController extends Controller
 {
@@ -28,11 +32,73 @@ class AcademicYearController extends Controller
     }
 
     /**
+     * Get authenticated user
+     */
+    protected function getAuthenticatedUser()
+    {
+        $user = auth('api')->user();
+        if (!$user) {
+            throw new \Exception('User not authenticated');
+        }
+        return $user;
+    }
+
+    /**
+     * Validate user has access to school via school_users table
+     */
+    protected function validateUserSchoolAccess(int $schoolId): bool
+    {
+        try {
+            $user = $this->getAuthenticatedUser();
+
+            return DB::table('school_users')
+                ->where('user_id', $user->id)
+                ->where('school_id', $schoolId)
+                ->where('status', 'active')
+                ->exists();
+        } catch (\Exception $e) {
+            return false;
+        }
+    }
+
+    /**
+     * Get current tenant ID from authenticated user
+     */
+    protected function getTenantId(): int
+    {
+        try {
+            $user = $this->getAuthenticatedUser();
+
+            // Try to get tenant from session first
+            $tenantId = session('tenant_id');
+
+            if (!$tenantId) {
+                // Try to get from user's tenant relationship
+                $userTenantId = $user->tenant_id;
+                if ($userTenantId) {
+                    $tenantId = $userTenantId;
+                    session(['tenant_id' => $tenantId]);
+                } else {
+                    throw new \Exception('No tenant context available');
+                }
+            }
+
+            return $tenantId;
+        } catch (\Exception $e) {
+            throw new \Exception('Failed to get tenant ID: ' . $e->getMessage());
+        }
+    }
+
+    /**
      * Display a listing of academic years with filters
      */
     public function index(Request $request): JsonResponse
     {
         try {
+            // Get authenticated user and tenant
+            $user = $this->getAuthenticatedUser();
+            $tenantId = $this->getTenantId();
+
             $query = AcademicYear::with([
                 'school:id,display_name,school_code',
                 'terms:id,academic_year_id,name,start_date,end_date',
@@ -41,7 +107,19 @@ class AcademicYearController extends Controller
 
             // Apply filters
             if ($request->has('school_id')) {
-                $query->where('school_id', $request->school_id);
+                $schoolId = $request->school_id;
+
+                // Validate user has access to this school
+                if (!$this->validateUserSchoolAccess($schoolId)) {
+                    return ApiResponse::error(
+                        'You do not have access to this school',
+                        ErrorCodes::SCHOOL_ACCESS_DENIED,
+                        null,
+                        403
+                    );
+                }
+
+                $query->where('school_id', $schoolId);
             }
 
             if ($request->has('status')) {
@@ -77,23 +155,20 @@ class AcademicYearController extends Controller
                 ->orderBy('start_date', 'desc')
                 ->paginate($request->get('per_page', 15));
 
-            return response()->json([
-                'success' => true,
-                'data' => $academicYears->items(),
-                'pagination' => [
-                    'current_page' => $academicYears->currentPage(),
-                    'per_page' => $academicYears->perPage(),
-                    'total' => $academicYears->total(),
-                    'last_page' => $academicYears->lastPage()
-                ]
-            ]);
+            return ApiResponse::paginated($academicYears);
 
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to retrieve academic years',
-                'error' => $e->getMessage()
-            ], 500);
+            Log::error('Failed to retrieve academic years', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return ApiResponse::error(
+                'Failed to retrieve academic years',
+                ErrorCodes::OPERATION_FAILED,
+                null,
+                500
+            );
         }
     }
 

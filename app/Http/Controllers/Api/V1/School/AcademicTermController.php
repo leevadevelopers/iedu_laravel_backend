@@ -258,17 +258,19 @@ class AcademicTermController extends Controller
             $academicTerm->load([
                 'academicYear:id,name,year,school_id',
                 'academicYear.school:id,display_name,school_code',
-                'createdBy:id,name',
-                'students:id,first_name,last_name,grade_level,status'
+                'createdBy:id,name'
             ]);
 
-            // Get term statistics
+            // Get term statistics using the academic year relationship instead
+            $academicYearId = $academicTerm->academic_year_id;
             $stats = [
-                'total_students' => $academicTerm->students()->count(),
-                'active_students' => $academicTerm->students()->where('status', 'active')->count(),
-                'by_grade_level' => $academicTerm->students()
-                    ->selectRaw('grade_level, COUNT(*) as count')
-                    ->groupBy('grade_level')
+                'total_students' => Student::where('current_academic_year_id', $academicYearId)->count(),
+                'active_students' => Student::where('current_academic_year_id', $academicYearId)
+                    ->where('enrollment_status', 'enrolled')
+                    ->count(),
+                'by_grade_level' => Student::where('current_academic_year_id', $academicYearId)
+                    ->selectRaw('current_grade_level, COUNT(*) as count')
+                    ->groupBy('current_grade_level')
                     ->get()
             ];
 
@@ -365,12 +367,15 @@ class AcademicTermController extends Controller
         try {
             DB::beginTransaction();
 
-            // Check if term has active students
-            $activeStudents = $academicTerm->students()->where('status', 'active')->count();
+            // Check if term has active students in the related academic year
+            $activeStudents = Student::where('current_academic_year_id', $academicTerm->academic_year_id)
+                ->where('enrollment_status', 'enrolled')
+                ->count();
+
             if ($activeStudents > 0) {
                 return response()->json([
                     'success' => false,
-                    'message' => "Cannot delete academic term with {$activeStudents} active students"
+                    'message' => "Cannot delete academic term in an academic year with {$activeStudents} active students"
                 ], 422);
             }
 
