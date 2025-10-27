@@ -20,6 +20,7 @@ class DatabaseSeeder extends Seeder
             UserSeeder::class,
             TenantSeeder::class,
             SchoolSeeder::class,
+            SchoolUserSeeder::class,
             SchoolFormTemplatesSeeder::class,
             LibrarySeeder::class,
             FinancialSeeder::class,

@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-Route::middleware(['auth:api'])->group(function () {
+Route::middleware(['auth:api', 'tenant'])->group(function () {
     
     // Academic Years Management
     Route::prefix('academic-years')->name('academic-years.')->group(function () {

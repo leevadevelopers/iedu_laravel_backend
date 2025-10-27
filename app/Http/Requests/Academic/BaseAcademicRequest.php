@@ -116,6 +116,9 @@ abstract class BaseAcademicRequest extends FormRequest
             'system_type' => 'system type',
             'grading_system_id' => 'grading system',
             'grade_scale_id' => 'grade scale',
+            'configuration_json.passing_threshold' => 'passing threshold',
+            'configuration_json.gpa_scale' => 'GPA scale',
+            'configuration_json.decimal_places' => 'decimal places',
         ];
     }
 }

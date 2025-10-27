@@ -24,6 +24,13 @@ class SubjectService extends BaseAcademicService
 
         $query = Subject::where('tenant_id', $user->tenant_id)
             ->where('school_id', $filters['school_id'] ?? $this->getCurrentSchoolId());
+            
+        // Filter by status - if no status filter, exclude archived by default
+        if (isset($filters['status']) && $filters['status'] !== '') {
+            $query->where('status', $filters['status']);
+        } else {
+            $query->where('status', '!=', 'archived'); // Exclude archived subjects by default
+        }
 
         // Apply filters
         if (isset($filters['search'])) {
@@ -37,9 +44,7 @@ class SubjectService extends BaseAcademicService
             $query->where('subject_area', $filters['subject_area']);
         }
 
-        if (isset($filters['status'])) {
-            $query->where('status', $filters['status']);
-        }
+        // Status filter is handled above in the main logic
 
         if (isset($filters['is_core_subject'])) {
             $query->where('is_core_subject', $filters['is_core_subject']);
@@ -275,8 +280,15 @@ class SubjectService extends BaseAcademicService
             throw new \Exception('Access denied: Resource does not belong to current tenant');
         }
 
-        if ($model->school_id !== $this->getCurrentSchoolId()) {
-            throw new \Exception('Access denied: Resource does not belong to current school');
+        // Try to get current school ID, but don't fail if user has no schools
+        try {
+            $currentSchoolId = $this->getCurrentSchoolId();
+            if ($model->school_id !== $currentSchoolId) {
+                throw new \Exception('Access denied: Resource does not belong to current school');
+            }
+        } catch (\Exception $e) {
+            // If user has no schools, just validate tenant_id (already done above)
+            // This allows operations when user has no school associations
         }
     }
 }

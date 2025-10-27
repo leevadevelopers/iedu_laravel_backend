@@ -42,6 +42,11 @@ class GradeScale extends BaseModel
         return $this->hasMany(GradeScaleRange::class)->orderBy('order');
     }
 
+    public function gradeLevels(): HasMany
+    {
+        return $this->hasMany(GradeLevel::class)->orderBy('sort_order');
+    }
+
     // Scopes
     public function scopeDefault(Builder $query): Builder
     {

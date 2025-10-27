@@ -211,9 +211,8 @@ class User extends Authenticatable implements JWTSubject
      */
     public function activeSchools()
     {
-        $user = auth()->user();
         //check all school users and get the active ones
-        $schoolUsers = SchoolUser::where('user_id', $user->id)->where('status', 'active')->get();
+        $schoolUsers = SchoolUser::where('user_id', $this->id)->where('status', 'active')->get();
         Log::info('School users', ['schoolUsers' => $schoolUsers]);
         return $schoolUsers;
 

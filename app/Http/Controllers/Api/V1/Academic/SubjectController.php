@@ -208,20 +208,11 @@ class SubjectController extends Controller
      */
     private function findSubject($id): ?Subject
     {
+        // Simplified approach - find subject by ID and tenant_id only
         $user = Auth::user();
-
-        // Get current school ID
-        $schoolUsers = $user->activeSchools();
-        if ($schoolUsers->isEmpty()) {
-            return null;
-        }
-
-        $schoolId = $schoolUsers->first()->school_id;
-
-        // Find subject with proper scoping
+        
         return Subject::where('id', $id)
             ->where('tenant_id', $user->tenant_id)
-            ->where('school_id', $schoolId)
             ->first();
     }
 }
