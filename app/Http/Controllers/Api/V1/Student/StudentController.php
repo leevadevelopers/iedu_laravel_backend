@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\API\V1\Student;
 
 use App\Http\Controllers\Controller;
+use App\Http\Constants\ErrorCodes;
+use App\Http\Helpers\ApiResponse;
 use App\Models\V1\SIS\Student\Student;
 use App\Models\V1\SIS\Student\StudentEnrollmentHistory;
 use App\Models\V1\SIS\Student\StudentDocument;
@@ -19,6 +21,9 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 
 class StudentController extends Controller
 {
@@ -32,11 +37,151 @@ class StudentController extends Controller
     }
 
     /**
+     * Get authenticated user
+     */
+    protected function getAuthenticatedUser()
+    {
+        $user = auth('api')->user();
+        if (!$user) {
+            throw new \Exception('User not authenticated');
+        }
+        return $user;
+    }
+
+    /**
+     * Validate user has access to school
+     */
+    protected function validateUserSchoolAccess(int $schoolId): bool
+    {
+        try {
+            $user = $this->getAuthenticatedUser();
+
+            return DB::table('school_users')
+                ->where('user_id', $user->id)
+                ->where('school_id', $schoolId)
+                ->where('status', 'active')
+                ->exists();
+        } catch (\Exception $e) {
+            return false;
+        }
+    }
+
+    /**
+     * Get current tenant ID
+     */
+    protected function getTenantId(): int
+    {
+        try {
+            $user = $this->getAuthenticatedUser();
+            $tenantId = $user->tenant_id ?? session('tenant_id');
+
+            if (!$tenantId) {
+                $userTenantId = $user->tenant_id;
+                if ($userTenantId) {
+                    $tenantId = $userTenantId;
+                    session(['tenant_id' => $tenantId]);
+                } else {
+                    throw new \Exception('No tenant context available');
+                }
+            }
+
+            return $tenantId;
+        } catch (\Exception $e) {
+            throw new \Exception('Failed to get tenant ID: ' . $e->getMessage());
+        }
+    }
+
+        /**
+     * Create user account for student automatically
+     */
+    protected function createUserForStudent(array $studentData): \App\Models\User
+    {
+        // Validate required fields
+        if (empty($studentData['email'])) {
+            throw new \Exception('Email is required to create user account');
+        }
+
+        // Check if user with this email already exists
+        $existingUser = \App\Models\User::where('identifier', $studentData['email'])
+            ->orWhere('identifier', strtolower($studentData['email']))
+            ->first();
+
+        if ($existingUser) {
+            throw new \Exception('A user with this email already exists');
+        }
+
+        // Get tenant ID
+        $tenantId = $this->getTenantId();
+
+        // Generate random password
+        $password = Str::random(12);
+
+        // Create user account (no school_id or role_id in users table)
+        $user = \App\Models\User::create([
+            'tenant_id' => $tenantId,
+            'name' => trim(($studentData['first_name'] ?? '') . ' ' . ($studentData['last_name'] ?? '')),
+            'identifier' => strtolower($studentData['email']), // Use email as identifier (lowercase)
+            'type' => 'email',
+            'school_id' => $studentData['school_id'],
+            'role_id' => $studentData['role_id'],
+            'password' => Hash::make($password),
+            'must_change' => true, // Force password change on first login
+        ]);
+
+        // Assign role with tenant context by directly inserting into model_has_roles
+        try {
+            $role = \Spatie\Permission\Models\Role::where('name', 'student')->first();
+            if (!$role) {
+                Log::error('Student role not found in database');
+            } else {
+                DB::table('model_has_roles')->insert([
+                    'role_id' => $role->id,
+                    'model_type' => \App\Models\User::class,
+                    'model_id' => $user->id,
+                    'tenant_id' => $tenantId
+                ]);
+                Log::info('Assigned student role to user', [
+                    'user_id' => $user->id,
+                    'role_id' => $role->id,
+                    'tenant_id' => $tenantId
+                ]);
+            }
+        } catch (\Exception $e) {
+            Log::error('Failed to assign role to user', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage()
+            ]);
+            // Don't throw - role assignment failure shouldn't prevent user creation
+        }
+
+        // Send welcome email with temporary password
+        try {
+            $user->notify(new \App\Notifications\StudentAccountCreated($password));
+        } catch (\Exception $e) {
+            Log::warning('Failed to send welcome email to student', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage()
+            ]);
+        }
+
+        Log::info('Auto-created user for student', [
+            'user_id' => $user->id,
+            'student_email' => $studentData['email']
+        ]);
+
+        return $user;
+    }
+
+    /**
      * Display a listing of students with filters and pagination
      */
     public function index(Request $request): JsonResponse
     {
         try {
+            // Get authenticated user and tenant
+            $user = $this->getAuthenticatedUser();
+            $tenantId = $this->getTenantId();
+
             $query = Student::with([
                 'enrollmentHistory',
                 'documents',
@@ -55,7 +200,19 @@ class StudentController extends Controller
             }
 
             if ($request->has('school_id')) {
-                $query->where('school_id', $request->school_id);
+                $schoolId = $request->school_id;
+
+                // Validate user has access to this school
+                if (!$this->validateUserSchoolAccess($schoolId)) {
+                    return ApiResponse::error(
+                        'You do not have access to this school',
+                        ErrorCodes::SCHOOL_ACCESS_DENIED,
+                        null,
+                        403
+                    );
+                }
+
+                $query->where('school_id', $schoolId);
             }
 
             if ($request->has('current_academic_year_id')) {
@@ -76,23 +233,19 @@ class StudentController extends Controller
                 ->orderBy('first_name')
                 ->paginate($request->get('per_page', 15));
 
-            return response()->json([
-                'success' => true,
-                'data' => $students->items(),
-                'pagination' => [
-                    'current_page' => $students->currentPage(),
-                    'per_page' => $students->perPage(),
-                    'total' => $students->total(),
-                    'last_page' => $students->lastPage()
-                ]
-            ]);
+            return ApiResponse::paginated($students);
 
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to retrieve students',
-                'error' => $e->getMessage()
-            ], 500);
+            Log::error('Failed to retrieve students', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return ApiResponse::error(
+                'Failed to retrieve students',
+                ErrorCodes::OPERATION_FAILED,
+                null,
+                500
+            );
         }
     }
 
@@ -103,17 +256,17 @@ class StudentController extends Controller
     {
         $validator = Validator::make($request->all(), [
             'tenant_id' => 'required|exists:tenants,id',
-            'user_id' => 'required|exists:users,id',
+            'user_id' => 'nullable|exists:users,id',
             'first_name' => 'required|string|max:100',
-            'middle_name' => 'nullable|string|max:100',
+            'middle_name' => 'required|string|max:100',
             'last_name' => 'required|string|max:100',
             'date_of_birth' => 'required|date|before:today',
             'birth_place' => 'nullable|string|max:255',
             'gender' => 'required|in:male,female,other',
             'nationality' => 'nullable|string|max:100',
-            'email' => 'nullable|email|max:255|unique:students,email',
-            'phone' => 'nullable|string|max:20',
-            'address_json' => 'nullable|array',
+            'email' => 'required|email|max:255|unique:users,identifier',
+            'phone' => 'required|string|max:20',
+            'address_json' => 'required|array',
             'school_id' => 'required|exists:schools,id',
             'current_academic_year_id' => 'required|exists:academic_years,id',
             'current_grade_level' => 'required|string|max:20',
@@ -133,28 +286,71 @@ class StudentController extends Controller
         ]);
 
         if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Validation failed',
-                'errors' => $validator->errors()
-            ], 422);
+            return ApiResponse::error(
+                'Validation failed',
+                ErrorCodes::VALIDATION_FAILED,
+                $validator->errors(),
+                422
+            );
         }
 
         try {
             DB::beginTransaction();
 
-            // Create student
-            $studentData = $request->except(['form_data', 'family_relationships']);
-            $studentData['tenant_id'] = Auth::user()->tenant_id ?? $request->tenant_id;
+            // Get authenticated user and tenant
+            $user = $this->getAuthenticatedUser();
+            $tenantId = $this->getTenantId();
 
-            // Ensure tenant_id is not null
-            if (empty($studentData['tenant_id'])) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Tenant ID is required',
-                    'error' => 'No tenant ID available from user or request'
-                ], 422);
+            // Validate school access
+            if (!$this->validateUserSchoolAccess($request->school_id)) {
+                return ApiResponse::error(
+                    'You do not have access to this school',
+                    ErrorCodes::SCHOOL_ACCESS_DENIED,
+                    null,
+                    403
+                );
             }
+
+            // Auto-create user if not provided
+            $userId = $request->user_id;
+            if (!$userId) {
+                if (!$request->email) {
+                    return ApiResponse::error(
+                        'Email is required to create user account',
+                        ErrorCodes::VALIDATION_FAILED,
+                        ['email' => ['Email is required when user_id is not provided']],
+                        422
+                    );
+                }
+
+                try {
+                    $newUser = $this->createUserForStudent([
+                        'tenant_id' => $tenantId,
+                        'first_name' => $request->first_name,
+                        'role_id' => 4,
+                        'school_id' => $request->school_id,
+                        'last_name' => $request->last_name,
+                        'email' => $request->email,
+                    ]);
+                    $userId = $newUser->id;
+                } catch (\Exception $e) {
+                    Log::error('Failed to auto-create user for student', [
+                        'error' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString()
+                    ]);
+                    return ApiResponse::error(
+                        'Failed to create user account: ' . $e->getMessage(),
+                        ErrorCodes::OPERATION_FAILED,
+                        ['error_details' => $e->getMessage()],
+                        500
+                    );
+                }
+            }
+
+            // Create student
+            $studentData = $request->except(['form_data', 'family_relationships', 'tenant_id', 'user_id']);
+            $studentData['tenant_id'] = $tenantId;
+            $studentData['user_id'] = $userId;
 
             $studentData['student_number'] = $this->generateStudentNumber();
 
@@ -178,7 +374,7 @@ class StudentController extends Controller
             // Process form data through Form Engine if provided
             if ($request->has('form_data')) {
                 $processedData = $this->formEngineService->processFormData('student_registration', $request->form_data);
-                $this->formEngineService->createFormInstance('student_registration', $processedData, 'Student', $student->id, $studentData['tenant_id']);
+                $this->formEngineService->createFormInstance('student_registration', $processedData, 'Student', $student->id, $tenantId);
             }
 
             // Start enrollment workflow
@@ -193,23 +389,24 @@ class StudentController extends Controller
 
             DB::commit();
 
-            return response()->json([
-                'success' => true,
-                'message' => 'Student created successfully',
-                'data' => [
-                    'student' => $student->load(['school', 'currentAcademicYear']),
-                    'workflow_id' => $workflow->id,
-                    'student_number' => $student->student_number
-                ]
-            ], 201);
+            return ApiResponse::created([
+                'student' => $student->load(['school', 'currentAcademicYear']),
+                'workflow_id' => $workflow->id,
+                'student_number' => $student->student_number
+            ], 'Student created successfully');
 
         } catch (\Exception $e) {
             DB::rollBack();
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to create student',
-                'error' => $e->getMessage()
-            ], 500);
+            Log::error('Failed to create student', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return ApiResponse::error(
+                'Failed to create student',
+                ErrorCodes::OPERATION_FAILED,
+                null,
+                500
+            );
         }
     }
 
@@ -219,6 +416,16 @@ class StudentController extends Controller
     public function show(Student $student): JsonResponse
     {
         try {
+            // Validate school access
+            if (!$this->validateUserSchoolAccess($student->school_id)) {
+                return ApiResponse::error(
+                    'You do not have access to this student',
+                    ErrorCodes::SCHOOL_ACCESS_DENIED,
+                    null,
+                    403
+                );
+            }
+
             $student->load([
                 'enrollmentHistory',
                 'documents',
@@ -227,17 +434,19 @@ class StudentController extends Controller
                 'currentAcademicYear'
             ]);
 
-            return response()->json([
-                'success' => true,
-                'data' => $student
-            ]);
+            return ApiResponse::success($student);
 
         } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to retrieve student',
-                'error' => $e->getMessage()
-            ], 500);
+            Log::error('Failed to retrieve student', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return ApiResponse::error(
+                'Failed to retrieve student',
+                ErrorCodes::OPERATION_FAILED,
+                null,
+                500
+            );
         }
     }
 

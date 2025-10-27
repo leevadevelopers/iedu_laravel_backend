@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Casts\Attribute;
+use App\Models\Traits\Tenantable;
 use App\Models\V1\SIS\Student\FamilyRelationship;
 use App\Models\V1\SIS\Student\StudentDocument;
 use App\Models\V1\SIS\Student\StudentEnrollmentHistory;
@@ -57,7 +58,7 @@ use Illuminate\Support\Carbon;
  */
 class Student extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, Tenantable;
 
     /**
      * The attributes that are mass assignable.
