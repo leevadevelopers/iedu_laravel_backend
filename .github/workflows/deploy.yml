@@ -22,6 +22,8 @@ jobs:
           local-dir: ./
           server-dir: ./
           dangerous-clean-slate: false
+          protocol: ftps
+          port: 21
           exclude: |
             **/.git/**
             **/node_modules/**
@@ -36,8 +38,6 @@ jobs:
             **/FORM_ENGINE_COMPLIANCE_REPORT.md
             **/DOCUMENTACAO_ESTRUTURA_SISTEMA.md
             **/documentacao_api_v1.md
-            **/.htaccess.sample
-            **/.htaccess
             **/.env.example
             **/.env.production
             **/.env.development
