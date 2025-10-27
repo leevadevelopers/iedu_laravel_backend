@@ -22,13 +22,22 @@ class StoreAcademicYearRequest extends BaseAcademicRequest
                 'max:20',
                 'unique:academic_years,code,NULL,id,school_id,' . $this->getCurrentSchoolId()
             ],
+            'year' => 'required|string|max:10',
+            'description' => 'nullable|string|max:1000',
             'start_date' => 'required|date|before:end_date',
             'end_date' => 'required|date|after:start_date',
+            'enrollment_start_date' => 'nullable|date|after_or_equal:start_date',
+            'enrollment_end_date' => 'nullable|date|before:end_date',
+            'registration_deadline' => 'nullable|date|before:start_date',
             'term_structure' => 'required|in:semesters,trimesters,quarters,year_round',
             'total_terms' => 'nullable|integer|min:1|max:4',
             'total_instructional_days' => 'nullable|integer|min:160|max:220',
+            'holidays_json' => 'nullable|array',
             'status' => 'nullable|in:planning,active,completed,archived',
-            'is_current' => 'nullable|boolean'
+            'is_current' => 'nullable|boolean',
+            'is_active' => 'nullable|boolean',
+            'school_id' => 'required|exists:schools,id',
+            'tenant_id' => 'required|exists:tenants,id'
         ];
     }
 

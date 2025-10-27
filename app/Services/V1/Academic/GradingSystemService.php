@@ -24,7 +24,12 @@ class GradingSystemService extends BaseAcademicService
     {
         $user = Auth::user();
 
-        $schoolId = SchoolUser::where('user_id', $user->id)->first()->school_id;
+        $schoolUser = SchoolUser::where('user_id', $user->id)->first();
+        if (!$schoolUser) {
+            throw new \Exception('User is not associated with any school');
+        }
+        
+        $schoolId = $schoolUser->school_id;
         $query = GradingSystem::where('tenant_id', $user->tenant_id)
             ->where('school_id', $schoolId);
 
@@ -57,15 +62,16 @@ class GradingSystemService extends BaseAcademicService
     {
         $user = Auth::user();
 
-        // Add tenant_id from authenticated user
+        // Add tenant_id and school_id from authenticated user
         $data['tenant_id'] = $user->tenant_id;
+        $data['school_id'] = $this->getCurrentSchoolId();
 
         $gradingSystem = GradingSystem::create($data);
 
         // Create default grade scale
         $this->createDefaultGradeScale($gradingSystem);
 
-        return $gradingSystem->load('gradeScales.gradeLevels');
+        return $gradingSystem->load('gradeScales.ranges');
     }
 
     /**
@@ -85,7 +91,7 @@ class GradingSystemService extends BaseAcademicService
     public function deleteGradingSystem(GradingSystem $gradingSystem): bool
     {
         // Load relationships explicitly
-        $gradingSystem->load(['gradeScales.gradeLevels']);
+        $gradingSystem->load(['gradeScales.ranges']);
 
         $this->validateTenantAndSchoolOwnership($gradingSystem);
 
@@ -112,7 +118,7 @@ class GradingSystemService extends BaseAcademicService
         return GradingSystem::where('tenant_id', $user->tenant_id)
             ->where('school_id', $this->getCurrentSchoolId())
             ->where('is_primary', true)
-            ->with(['gradeScales.gradeLevels'])
+            ->with(['gradeScales.ranges'])
             ->first();
     }
 

@@ -36,15 +36,21 @@ class StoreGradingSystemRequest extends BaseAcademicRequest
      */
     protected function prepareForValidation(): void
     {
-        // Set tenant_id automatically (school_id comes from payload)
+        // Set tenant_id and school_id automatically
         $tenantId = $this->getCurrentTenantIdOrNull();
+        $schoolId = $this->getCurrentSchoolIdOrNull();
 
         if (!$tenantId) {
             throw new \Exception('User must have a tenant to create grading systems');
         }
 
+        if (!$schoolId) {
+            throw new \Exception('User must be associated with a school to create grading systems');
+        }
+
         $this->merge([
-            'tenant_id' => $tenantId
+            'tenant_id' => $tenantId,
+            'school_id' => $schoolId
         ]);
 
         // Set default configuration based on system type

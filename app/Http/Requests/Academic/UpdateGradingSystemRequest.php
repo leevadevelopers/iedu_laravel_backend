@@ -36,15 +36,21 @@ class UpdateGradingSystemRequest extends BaseAcademicRequest
      */
     protected function prepareForValidation(): void
     {
-        // Set tenant_id automatically (school_id comes from payload or existing record)
+        // Set tenant_id and school_id automatically
         $tenantId = $this->getCurrentTenantIdOrNull();
+        $schoolId = $this->getCurrentSchoolIdOrNull();
 
         if (!$tenantId) {
             throw new \Exception('User must have a tenant to update grading systems');
         }
 
+        if (!$schoolId) {
+            throw new \Exception('User must be associated with a school to update grading systems');
+        }
+
         $this->merge([
-            'tenant_id' => $tenantId
+            'tenant_id' => $tenantId,
+            'school_id' => $schoolId
         ]);
     }
 }
