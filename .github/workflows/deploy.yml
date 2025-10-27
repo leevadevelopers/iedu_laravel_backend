@@ -12,6 +12,12 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Clear git rename tracking
+        run: |
+          git rm -rf --cached app/Http/Controllers/Api 2>/dev/null || true
 
       - name: Deploy Laravel to A2 Hosting
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
@@ -22,9 +28,8 @@ jobs:
           local-dir: ./
           server-dir: ./
           dangerous-clean-slate: false
-          delete-removed: false
-          protocol: ftps
-          port: 21
+          atomic: false
+          log-level: verbose
           exclude: |
             **/.git/**
             **/node_modules/**
