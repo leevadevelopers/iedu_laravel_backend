@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\API\V1\Student;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\StudentResource;
 use App\Models\V1\SIS\Student\Student;
 use App\Models\V1\SIS\Student\StudentEnrollmentHistory;
 use App\Models\V1\SIS\Student\StudentDocument;
@@ -78,12 +79,14 @@ class StudentController extends Controller
 
             return response()->json([
                 'success' => true,
-                'data' => $students->items(),
+                'data' => StudentResource::collection($students->items())->resolve(),
                 'pagination' => [
                     'current_page' => $students->currentPage(),
                     'per_page' => $students->perPage(),
                     'total' => $students->total(),
-                    'last_page' => $students->lastPage()
+                    'last_page' => $students->lastPage(),
+                    'from' => $students->firstItem(),
+                    'to' => $students->lastItem()
                 ]
             ]);
 

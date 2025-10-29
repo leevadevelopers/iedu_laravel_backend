@@ -97,8 +97,23 @@ class WorkflowService
         // Ensure we have a valid tenant_id
         $tenantId = $model->tenant_id ?? null;
 
+        // Fallback: Try to get tenant_id through school relationship (for models like FamilyRelationship)
+        if (!$tenantId && method_exists($model, 'school') && $model->relationLoaded('school')) {
+            $tenantId = $model->school?->tenant_id;
+        }
+        
+        // Fallback: Try to get tenant_id through SchoolContextService
+        if (!$tenantId && Auth::check()) {
+            try {
+                $schoolContextService = app(\App\Services\SchoolContextService::class);
+                $tenantId = $schoolContextService->getCurrentTenantId();
+            } catch (\Exception $e) {
+                // Ignore if service fails
+            }
+        }
+
         if (!$tenantId) {
-            throw new \Exception('Model must have a valid tenant_id to create form instance');
+            throw new \Exception('Model must have a valid tenant_id to create form instance. Could not determine tenant_id from model or context.');
         }
 
         return FormInstance::create([

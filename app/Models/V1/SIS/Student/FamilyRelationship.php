@@ -90,6 +90,26 @@ class FamilyRelationship extends Model
     }
 
     /**
+     * Get tenant_id accessor through school relationship.
+     * This is needed for WorkflowService which expects tenant_id on the model.
+     */
+    public function getTenantIdAttribute(): ?int
+    {
+        // If school relationship is loaded, use it
+        if ($this->relationLoaded('school') && $this->school) {
+            return $this->school->tenant_id;
+        }
+        
+        // Otherwise, load it dynamically if we have school_id
+        if ($this->school_id) {
+            $school = $this->school()->first();
+            return $school?->tenant_id;
+        }
+        
+        return null;
+    }
+
+    /**
      * Get the student in the relationship.
      */
     public function student(): BelongsTo
@@ -103,6 +123,14 @@ class FamilyRelationship extends Model
     public function guardian(): BelongsTo
     {
         return $this->belongsTo(User::class, 'guardian_user_id');
+    }
+
+    /**
+     * Alias for guardian relationship (used by some controllers).
+     */
+    public function relatedPerson(): BelongsTo
+    {
+        return $this->guardian();
     }
 
     /**
