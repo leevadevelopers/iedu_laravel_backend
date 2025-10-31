@@ -12,6 +12,7 @@ use App\Models\Settings\Tenant;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
+use Spatie\Permission\PermissionRegistrar;
 use App\Services\ActivityLogService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Validation\ValidationException;
@@ -98,6 +99,8 @@ class AuthController extends Controller
                 'identifier' => $validatedData['identifier'],
                 'type' => $validatedData['type'],
                 'password' => bcrypt($validatedData['password']),
+                'role_id'=>Role::where('name', 'owner')->value('id'),
+                'user_type'=>'admin'
                 // 'verified_at' => now(), // Uncomment if you want to auto-verify
             ]);
 
@@ -116,15 +119,28 @@ class AuthController extends Controller
                 'created_by' => $user->id, // Set created_by to the user as well
             ]);
 
+            // Update the user with the newly created tenant
+            $user->update(['tenant_id' => $tenant->id]);
+
+            // Ensure the correct team context when assigning tenant-scoped roles
+            app(PermissionRegistrar::class)->setPermissionsTeamId($tenant->id);
+            $user->assignRole('owner');
+            app(PermissionRegistrar::class)->setPermissionsTeamId(null);
             // Attach user to tenant as owner
             $ownerRoleId = Role::where('name', 'owner')->value('id');
-            $user->tenants()->attach($tenant->id, [
-                'role_id' => $ownerRoleId,
-                'permissions' => json_encode(['tenants.', 'users.', 'projects.', 'finance.']),
-                'current_tenant' => true,
-                'joined_at' => now(),
-                'status' => 'active',
+
+            $user->tenants()->syncWithoutDetaching([
+                $tenant->id => [
+                    'role_id' => $ownerRoleId,
+                    'permissions' => json_encode(['tenants.', 'users.', 'projects.', 'finance.']),
+                    'current_tenant' => true,
+                    'joined_at' => now(),
+                    'status' => 'active',
+                ],
             ]);
+
+            // Refresh the user instance to ensure latest relations
+            $user->refresh();
 
             $token = auth('api')->login($user);
 
