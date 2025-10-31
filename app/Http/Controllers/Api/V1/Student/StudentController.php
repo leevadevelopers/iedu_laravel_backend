@@ -166,16 +166,20 @@ class StudentController extends Controller
 
             $student = Student::create($studentData);
 
-            // Create SchoolUser association
+            // Create or update SchoolUser association (idempotent to avoid duplicates)
             if ($student->user_id && $student->school_id) {
-                SchoolUser::create([
+                SchoolUser::updateOrCreate(
+                    [
                     'school_id' => $student->school_id,
-                    'user_id' => $student->user_id,
-                    'role' => 'student',
-                    'status' => 'active',
-                    'start_date' => now(),
-                    'permissions' => $this->getDefaultStudentPermissions()
-                ]);
+                        'user_id'   => $student->user_id,
+                    ],
+                    [
+                        'role'        => 'student',
+                        'status'      => 'active',
+                        'start_date'  => now(),
+                        'permissions' => $this->getDefaultStudentPermissions(),
+                    ]
+                );
             }
 
             // Process form data through Form Engine if provided

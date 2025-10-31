@@ -52,16 +52,20 @@ class TeacherController extends Controller
 
             $teacher = $this->teacherService->createTeacher($request->validated());
 
-            // Create SchoolUser association
+            // Create or update SchoolUser association (idempotent)
             if ($teacher->user_id && $teacher->school_id) {
-                SchoolUser::create([
+                SchoolUser::updateOrCreate(
+                    [
                     'school_id' => $teacher->school_id,
-                    'user_id' => $teacher->user_id,
-                    'role' => 'teacher',
-                    'status' => 'active',
-                    'start_date' => now(),
-                    'permissions' => $this->getDefaultTeacherPermissions()
-                ]);
+                        'user_id'   => $teacher->user_id,
+                    ],
+                    [
+                        'role'        => 'teacher',
+                        'status'      => 'active',
+                        'start_date'  => now(),
+                        'permissions' => $this->getDefaultTeacherPermissions(),
+                    ]
+                );
             }
 
             DB::commit();
