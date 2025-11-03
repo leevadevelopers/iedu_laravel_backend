@@ -99,7 +99,7 @@ class AuthController extends Controller
                 'identifier' => $validatedData['identifier'],
                 'type' => $validatedData['type'],
                 'password' => bcrypt($validatedData['password']),
-                'role_id'=>Role::where('name', 'owner')->value('id'),
+                'role_id'=> Role::where('name', 'owner')->value('id'),
                 'user_type'=>'admin'
                 // 'verified_at' => now(), // Uncomment if you want to auto-verify
             ]);

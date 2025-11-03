@@ -15,17 +15,6 @@ use Illuminate\Support\Facades\Route;
         // Basic CRUD operations
         Route::get('/', [SchoolController::class, 'index']);
         Route::post('/', [SchoolController::class, 'store']);
-        Route::get('/{school}', [SchoolController::class, 'show']);
-        Route::put('/{id}', [SchoolController::class, 'update']);
-        Route::delete('/{id}', [SchoolController::class, 'destroy']);
-
-        // School-specific operations
-        Route::get('/{school}/dashboard', [SchoolController::class, 'getDashboard']);
-        Route::get('/{school}/statistics', [SchoolController::class, 'getStatistics']);
-        Route::get('/{school}/students', [SchoolController::class, 'getStudents']);
-        Route::get('/{school}/academic-years', [SchoolController::class, 'getAcademicYears']);
-        Route::post('/{school}/set-current-academic-year', [SchoolController::class, 'setCurrentAcademicYear']);
-        Route::get('/{school}/performance-metrics', [SchoolController::class, 'getPerformanceMetrics']);
 
         // Form Template Management
         Route::get('/form-templates', [SchoolController::class, 'getFormTemplates']);
@@ -34,6 +23,17 @@ use Illuminate\Support\Facades\Route;
         Route::put('/form-templates/{template}', [SchoolController::class, 'updateFormTemplate']);
         Route::delete('/form-templates/{template}', [SchoolController::class, 'deleteFormTemplate']);
         Route::post('/form-templates/{template}/duplicate', [SchoolController::class, 'duplicateFormTemplate']);
+
+        // School-specific operations
+        Route::get('/{school}', [SchoolController::class, 'show']);
+        Route::put('/{id}', [SchoolController::class, 'update']);
+        Route::delete('/{id}', [SchoolController::class, 'destroy']);
+        Route::get('/{school}/dashboard', [SchoolController::class, 'getDashboard']);
+        Route::get('/{school}/statistics', [SchoolController::class, 'getStatistics']);
+        Route::get('/{school}/students', [SchoolController::class, 'getStudents']);
+        Route::get('/{school}/academic-years', [SchoolController::class, 'getAcademicYears']);
+        Route::post('/{school}/set-current-academic-year', [SchoolController::class, 'setCurrentAcademicYear']);
+        Route::get('/{school}/performance-metrics', [SchoolController::class, 'getPerformanceMetrics']);
 
         // Form Engine Operations
         Route::post('/{school}/forms/submit', [SchoolController::class, 'processFormSubmission']);

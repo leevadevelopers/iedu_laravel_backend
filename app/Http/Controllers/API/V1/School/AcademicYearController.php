@@ -404,7 +404,7 @@ class AcademicYearController extends Controller
             DB::beginTransaction();
 
             // Check if academic year has active students
-            $activeStudents = $academicYear->students()->where('status', 'active')->count();
+            $activeStudents = $academicYear->students()->where('enrollment_status', 'enrolled')->count();
             if ($activeStudents > 0) {
                 return response()->json([
                     'success' => false,

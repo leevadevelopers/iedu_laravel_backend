@@ -185,6 +185,7 @@ class SchoolController extends Controller
             // Get validated data and add tenant_id from authenticated user
             $validatedData = $request->validated();
             $validatedData['tenant_id'] = $user->tenant_id;
+            $validatedData['created_by'] = $user->id; // Add creator for school_users association
 
             // Check for duplicate official_name within the same tenant
             $existingSchool = School::where('tenant_id', $user->tenant_id)
@@ -456,9 +457,9 @@ class SchoolController extends Controller
                         ->count()
                 ],
                 'grade_distribution' => $school->students()
-                    ->selectRaw('grade_level, COUNT(*) as count')
-                    ->groupBy('grade_level')
-                    ->orderBy('grade_level')
+                    ->selectRaw('current_grade_level, COUNT(*) as count')
+                    ->groupBy('current_grade_level')
+                    ->orderBy('current_grade_level')
                     ->get(),
                 'recent_activities' => $this->getRecentActivities($school),
                 'upcoming_events' => $this->getUpcomingEvents($school)
