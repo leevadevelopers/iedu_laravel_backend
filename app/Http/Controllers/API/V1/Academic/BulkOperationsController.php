@@ -7,6 +7,8 @@ use App\Http\Requests\Academic\BulkCreateClassesRequest;
 use App\Http\Requests\Academic\BulkEnrollStudentsRequest;
 use App\Http\Requests\Academic\BulkImportGradesRequest;
 use App\Http\Requests\Academic\BulkGenerateReportCardsRequest;
+use App\Http\Requests\Academic\BulkCreateTeachersRequest;
+use App\Http\Requests\Academic\BulkCreateSubjectsRequest;
 use App\Services\V1\Academic\BulkOperationsService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
@@ -29,10 +31,12 @@ class BulkOperationsController extends Controller
             $result = $this->bulkOperationsService->createClasses($request->validated());
 
             return response()->json([
-                'status' => 'success',
-                'message' => 'Bulk class creation completed',
+                'status' => $result['success'] ? 'success' : 'partial_success',
+                'message' => $result['success']
+                    ? 'Bulk class creation completed'
+                    : 'Bulk class creation completed with some errors',
                 'data' => $result
-            ]);
+            ], $result['success'] ? 200 : 207);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
@@ -51,10 +55,12 @@ class BulkOperationsController extends Controller
             $result = $this->bulkOperationsService->enrollStudents($request->validated());
 
             return response()->json([
-                'status' => 'success',
-                'message' => 'Bulk student enrollment completed',
+                'status' => $result['success'] ? 'success' : 'partial_success',
+                'message' => $result['success']
+                    ? 'Bulk student enrollment completed'
+                    : 'Bulk student enrollment completed with some errors',
                 'data' => $result
-            ]);
+            ], $result['success'] ? 200 : 207);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
@@ -140,28 +146,18 @@ class BulkOperationsController extends Controller
     /**
      * Bulk create teachers
      */
-    public function createTeachers(Request $request): JsonResponse
+    public function createTeachers(BulkCreateTeachersRequest $request): JsonResponse
     {
-        $request->validate([
-            'teachers' => 'required|array|min:1',
-            'teachers.*.user_id' => 'required|exists:users,id',
-            'teachers.*.employee_id' => 'required|string|max:50',
-            'teachers.*.first_name' => 'required|string|max:100',
-            'teachers.*.last_name' => 'required|string|max:100',
-            'teachers.*.hire_date' => 'required|date',
-            'teachers.*.employment_type' => 'required|in:full_time,part_time,substitute,contract,volunteer',
-            'teachers.*.department' => 'nullable|string|max:100',
-            'teachers.*.position' => 'nullable|string|max:100'
-        ]);
-
         try {
             $result = $this->bulkOperationsService->createTeachers($request->validated());
 
             return response()->json([
-                'status' => 'success',
-                'message' => 'Bulk teacher creation completed',
+                'status' => $result['success'] ? 'success' : 'partial_success',
+                'message' => $result['success']
+                    ? 'Bulk teacher creation completed'
+                    : 'Bulk teacher creation completed with some errors',
                 'data' => $result
-            ]);
+            ], $result['success'] ? 200 : 207);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
@@ -174,28 +170,18 @@ class BulkOperationsController extends Controller
     /**
      * Bulk create subjects
      */
-    public function createSubjects(Request $request): JsonResponse
+    public function createSubjects(BulkCreateSubjectsRequest $request): JsonResponse
     {
-        $request->validate([
-            'subjects' => 'required|array|min:1',
-            'subjects.*.name' => 'required|string|max:255',
-            'subjects.*.code' => 'required|string|max:50',
-            'subjects.*.subject_area' => 'required|in:mathematics,science,language_arts,social_studies,foreign_language,arts,physical_education,technology,vocational,other',
-            'subjects.*.grade_levels' => 'required|array|min:1',
-            'subjects.*.grade_levels.*' => 'required|string|in:Pre-K,K,1,2,3,4,5,6,7,8,9,10,11,12',
-            'subjects.*.credit_hours' => 'nullable|numeric|min:0.5|max:2.0',
-            'subjects.*.is_core_subject' => 'nullable|boolean',
-            'subjects.*.is_elective' => 'nullable|boolean'
-        ]);
-
         try {
             $result = $this->bulkOperationsService->createSubjects($request->validated());
 
             return response()->json([
-                'status' => 'success',
-                'message' => 'Bulk subject creation completed',
+                'status' => $result['success'] ? 'success' : 'partial_success',
+                'message' => $result['success']
+                    ? 'Bulk subject creation completed'
+                    : 'Bulk subject creation completed with some errors',
                 'data' => $result
-            ]);
+            ], $result['success'] ? 200 : 207);
         } catch (\Exception $e) {
             return response()->json([
                 'status' => 'error',
@@ -213,8 +199,8 @@ class BulkOperationsController extends Controller
         $request->validate([
             'transfers' => 'required|array|min:1',
             'transfers.*.student_id' => 'required|exists:students,id',
-            'transfers.*.from_class_id' => 'required|exists:academic_classes,id',
-            'transfers.*.to_class_id' => 'required|exists:academic_classes,id',
+            'transfers.*.from_class_id' => 'required|exists:classes,id',
+            'transfers.*.to_class_id' => 'required|exists:classes,id',
             'transfers.*.effective_date' => 'required|date|after_or_equal:today',
             'transfers.*.reason' => 'nullable|string|max:500'
         ]);

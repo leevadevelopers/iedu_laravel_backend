@@ -45,7 +45,7 @@ class AnalyticsController extends Controller
         $request->validate([
             'academic_year_id' => 'nullable|exists:academic_years,id',
             'subject_id' => 'nullable|exists:subjects,id',
-            'class_id' => 'nullable|exists:academic_classes,id',
+            'class_id' => 'nullable|exists:classes,id',
             'term' => 'nullable|string|in:first_term,second_term,third_term,annual'
         ]);
 
@@ -179,7 +179,7 @@ class AnalyticsController extends Controller
     {
         $request->validate([
             'academic_year_id' => 'nullable|exists:academic_years,id',
-            'class_id' => 'nullable|exists:academic_classes,id',
+            'class_id' => 'nullable|exists:classes,id',
             'start_date' => 'nullable|date',
             'end_date' => 'nullable|date|after_or_equal:start_date'
         ]);

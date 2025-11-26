@@ -7,11 +7,26 @@ use App\Models\V1\Academic\GradeEntry;
 use App\Models\V1\Academic\Subject;
 use App\Models\V1\Academic\Teacher;
 use App\Models\V1\SIS\Student\Student;
+use App\Models\V1\SIS\School\SchoolUser;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Auth;
 
 class BulkOperationsService extends BaseAcademicService
 {
+    protected AcademicClassService $classService;
+    protected TeacherService $teacherService;
+    protected SubjectService $subjectService;
+
+    public function __construct(
+        AcademicClassService $classService,
+        TeacherService $teacherService,
+        SubjectService $subjectService
+    ) {
+        $this->classService = $classService;
+        $this->teacherService = $teacherService;
+        $this->subjectService = $subjectService;
+    }
     /**
      * Create multiple classes in bulk
      */
@@ -25,9 +40,19 @@ class BulkOperationsService extends BaseAcademicService
         try {
             foreach ($classes as $index => $classData) {
                 try {
-                    $classData['school_id'] = $this->getCurrentSchoolId();
-                    $class = AcademicClass::create($classData);
-                    $createdClasses[] = $class;
+                    // Ensure school_id is set
+                    if (!isset($classData['school_id'])) {
+                        $classData['school_id'] = $this->getCurrentSchoolId();
+                    }
+
+                    // Use AcademicClassService to create class with all validations
+                    $class = $this->classService->createClass($classData);
+                    $createdClasses[] = [
+                        'id' => $class->id,
+                        'name' => $class->name,
+                        'class_code' => $class->class_code,
+                        'grade_level' => $class->grade_level
+                    ];
                 } catch (\Exception $e) {
                     $errors[] = [
                         'index' => $index,
@@ -37,7 +62,7 @@ class BulkOperationsService extends BaseAcademicService
                 }
             }
 
-            if (!empty($errors)) {
+            if (!empty($errors) && empty($createdClasses)) {
                 DB::rollBack();
                 return [
                     'success' => false,
@@ -50,7 +75,9 @@ class BulkOperationsService extends BaseAcademicService
             return [
                 'success' => true,
                 'created_count' => count($createdClasses),
-                'classes' => $createdClasses
+                'failed_count' => count($errors),
+                'classes' => $createdClasses,
+                'errors' => $errors
             ];
         } catch (\Exception $e) {
             DB::rollBack();
@@ -71,33 +98,24 @@ class BulkOperationsService extends BaseAcademicService
         try {
             foreach ($enrollments as $index => $enrollmentData) {
                 try {
-                    $class = AcademicClass::findOrFail($enrollmentData['class_id']);
-                    $this->validateSchoolOwnership($class);
+                    $class = $this->classService->getClassById($enrollmentData['class_id']);
 
-                    $student = Student::findOrFail($enrollmentData['student_id']);
-                    $this->validateSchoolOwnership($student);
-
-                    // Check if student is already enrolled
-                    if ($class->students()->where('student_id', $student->id)->exists()) {
-                        $errors[] = [
-                            'index' => $index,
-                            'student_id' => $student->id,
-                            'class_id' => $class->id,
-                            'error' => 'Student is already enrolled in this class'
-                        ];
-                        continue;
+                    if (!$class) {
+                        throw new \Exception('Class not found');
                     }
 
-                    $class->students()->attach($student->id, [
-                        'enrollment_date' => $enrollmentData['enrollment_date'] ?? now(),
-                        'status' => $enrollmentData['status'] ?? 'active'
-                    ]);
+                    // Use AcademicClassService to enroll student with all validations
+                    $enrollment = $this->classService->enrollStudent($class, $enrollmentData['student_id']);
+
+                    $student = Student::findOrFail($enrollmentData['student_id']);
 
                     $enrolledStudents[] = [
                         'student_id' => $student->id,
                         'class_id' => $class->id,
-                        'student_name' => $student->full_name,
-                        'class_name' => $class->name
+                        'student_name' => $student->first_name . ' ' . $student->last_name,
+                        'class_name' => $class->name,
+                        'enrollment_date' => $enrollment['enrollment_date'] ?? now(),
+                        'status' => $enrollment['status'] ?? 'active'
                     ];
                 } catch (\Exception $e) {
                     $errors[] = [
@@ -108,7 +126,7 @@ class BulkOperationsService extends BaseAcademicService
                 }
             }
 
-            if (!empty($errors)) {
+            if (!empty($errors) && empty($enrolledStudents)) {
                 DB::rollBack();
                 return [
                     'success' => false,
@@ -121,7 +139,9 @@ class BulkOperationsService extends BaseAcademicService
             return [
                 'success' => true,
                 'enrolled_count' => count($enrolledStudents),
-                'enrollments' => $enrolledStudents
+                'failed_count' => count($errors),
+                'enrollments' => $enrolledStudents,
+                'errors' => $errors
             ];
         } catch (\Exception $e) {
             DB::rollBack();
@@ -153,7 +173,7 @@ class BulkOperationsService extends BaseAcademicService
                     $this->validateSchoolOwnership($subject);
 
                     $gradeData['school_id'] = $this->getCurrentSchoolId();
-                    $gradeData['entered_by'] = auth()->id();
+                    $gradeData['entered_by'] = Auth::id();
 
                     $gradeEntry = GradeEntry::create($gradeData);
                     $importedGrades[] = $gradeEntry;
@@ -295,9 +315,33 @@ class BulkOperationsService extends BaseAcademicService
         try {
             foreach ($teachers as $index => $teacherData) {
                 try {
-                    $teacherData['school_id'] = $this->getCurrentSchoolId();
-                    $teacher = Teacher::create($teacherData);
-                    $createdTeachers[] = $teacher;
+                    // Ensure school_id is set
+                    if (!isset($teacherData['school_id'])) {
+                        $teacherData['school_id'] = $this->getCurrentSchoolId();
+                    }
+
+                    // Use TeacherService to create teacher with all validations and user creation
+                    $teacher = $this->teacherService->createTeacher($teacherData);
+
+                    // Create SchoolUser association (same as TeacherController)
+                    if ($teacher->user_id && $teacher->school_id) {
+                        SchoolUser::create([
+                            'school_id' => $teacher->school_id,
+                            'user_id' => $teacher->user_id,
+                            'role' => 'teacher',
+                            'status' => 'active',
+                            'start_date' => now(),
+                            'permissions' => $this->getDefaultTeacherPermissions()
+                        ]);
+                    }
+
+                    $createdTeachers[] = [
+                        'id' => $teacher->id,
+                        'first_name' => $teacher->first_name,
+                        'last_name' => $teacher->last_name,
+                        'employee_id' => $teacher->employee_id,
+                        'email' => $teacher->email
+                    ];
                 } catch (\Exception $e) {
                     $errors[] = [
                         'index' => $index,
@@ -307,7 +351,7 @@ class BulkOperationsService extends BaseAcademicService
                 }
             }
 
-            if (!empty($errors)) {
+            if (!empty($errors) && empty($createdTeachers)) {
                 DB::rollBack();
                 return [
                     'success' => false,
@@ -320,7 +364,9 @@ class BulkOperationsService extends BaseAcademicService
             return [
                 'success' => true,
                 'created_count' => count($createdTeachers),
-                'teachers' => $createdTeachers
+                'failed_count' => count($errors),
+                'teachers' => $createdTeachers,
+                'errors' => $errors
             ];
         } catch (\Exception $e) {
             DB::rollBack();
@@ -341,9 +387,20 @@ class BulkOperationsService extends BaseAcademicService
         try {
             foreach ($subjects as $index => $subjectData) {
                 try {
-                    $subjectData['school_id'] = $this->getCurrentSchoolId();
-                    $subject = Subject::create($subjectData);
-                    $createdSubjects[] = $subject;
+                    // Ensure school_id is set
+                    if (!isset($subjectData['school_id'])) {
+                        $subjectData['school_id'] = $this->getCurrentSchoolId();
+                    }
+
+                    // Use SubjectService to create subject with all validations
+                    $subject = $this->subjectService->createSubject($subjectData);
+
+                    $createdSubjects[] = [
+                        'id' => $subject->id,
+                        'name' => $subject->name,
+                        'code' => $subject->code,
+                        'subject_area' => $subject->subject_area
+                    ];
                 } catch (\Exception $e) {
                     $errors[] = [
                         'index' => $index,
@@ -353,7 +410,7 @@ class BulkOperationsService extends BaseAcademicService
                 }
             }
 
-            if (!empty($errors)) {
+            if (!empty($errors) && empty($createdSubjects)) {
                 DB::rollBack();
                 return [
                     'success' => false,
@@ -366,7 +423,9 @@ class BulkOperationsService extends BaseAcademicService
             return [
                 'success' => true,
                 'created_count' => count($createdSubjects),
-                'subjects' => $createdSubjects
+                'failed_count' => count($errors),
+                'subjects' => $createdSubjects,
+                'errors' => $errors
             ];
         } catch (\Exception $e) {
             DB::rollBack();
@@ -504,5 +563,28 @@ class BulkOperationsService extends BaseAcademicService
         }
 
         return array_intersect_key($data, array_flip($allowedFields));
+    }
+
+    /**
+     * Get default permissions for teachers
+     */
+    private function getDefaultTeacherPermissions(): array
+    {
+        return [
+            'view_students',
+            'view_classes',
+            'view_grades',
+            'create_grades',
+            'update_grades',
+            'view_attendance',
+            'create_attendance',
+            'update_attendance',
+            'view_schedule',
+            'view_assignments',
+            'create_assignments',
+            'update_assignments',
+            'view_announcements',
+            'create_announcements'
+        ];
     }
 }

@@ -17,7 +17,7 @@ class BulkImportGradesRequest extends BaseAcademicRequest
         return [
             'grades' => 'required|array|min:1|max:500',
             'grades.*.student_id' => 'required|exists:students,id',
-            'grades.*.academic_class_id' => 'required|exists:academic_classes,id',
+            'grades.*.academic_class_id' => 'required|exists:classes,id',
             'grades.*.subject_id' => 'required|exists:subjects,id',
             'grades.*.grade_level_id' => 'nullable|exists:grade_levels,id',
             'grades.*.percentage' => 'nullable|numeric|min:0|max:100',

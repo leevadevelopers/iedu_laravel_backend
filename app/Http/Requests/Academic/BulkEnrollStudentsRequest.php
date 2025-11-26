@@ -17,7 +17,7 @@ class BulkEnrollStudentsRequest extends BaseAcademicRequest
         return [
             'enrollments' => 'required|array|min:1|max:100',
             'enrollments.*.student_id' => 'required|exists:students,id',
-            'enrollments.*.class_id' => 'required|exists:academic_classes,id',
+            'enrollments.*.class_id' => 'required|exists:classes,id',
             'enrollments.*.enrollment_date' => 'nullable|date|before_or_equal:today',
             'enrollments.*.status' => 'nullable|in:active,inactive,withdrawn',
             'enrollments.*.notes' => 'nullable|string|max:500',
