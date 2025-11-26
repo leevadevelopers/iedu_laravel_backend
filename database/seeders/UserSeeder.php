@@ -15,10 +15,10 @@ class UserSeeder extends Seeder
     {
         $users = [
             [
-                'name' => 'Leeva Superadmin',
-                'identifier' => 'noreply@leeva.digital',
+                'name' => 'Admin User',
+                'identifier' => 'admin@admin.com',
                 'type' => 'email',
-                'password' => Hash::make('@Leeva@Ied_U2026'),
+                'password' => Hash::make('123456789'),
                 'verified_at' => now(),
                 'role_id' => 1,
                 'is_active' => true,

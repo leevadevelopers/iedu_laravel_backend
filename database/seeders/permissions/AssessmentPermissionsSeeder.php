@@ -120,7 +120,7 @@ class AssessmentPermissionsSeeder extends Seeder
     {
         // Assessment Administrator - Full access to assessment module
         $assessmentAdmin = Role::firstOrCreate([
-            'name' => 'assessment_admin',
+            'name' => 'Assessment Administrator',
             'guard_name' => 'api'
         ]);
 
@@ -184,7 +184,7 @@ class AssessmentPermissionsSeeder extends Seeder
 
         // Academic Coordinator - Management level access
         $coordinator = Role::firstOrCreate([
-            'name' => 'academic_coordinator',
+            'name' => 'Academic Coordinator',
             'guard_name' => 'api'
         ]);
 
@@ -238,7 +238,7 @@ class AssessmentPermissionsSeeder extends Seeder
 
         // Teacher - Can manage own assessments and grades
         $teacher = Role::firstOrCreate([
-            'name' => 'teacher',
+            'name' => 'Teacher',
             'guard_name' => 'api'
         ]);
 
@@ -270,7 +270,7 @@ class AssessmentPermissionsSeeder extends Seeder
 
         // Student - Can view own grades and assessments
         $student = Role::firstOrCreate([
-            'name' => 'student',
+            'name' => 'Student',
             'guard_name' => 'api'
         ]);
 
@@ -284,7 +284,7 @@ class AssessmentPermissionsSeeder extends Seeder
 
         // Parent - Can view children's grades
         $parent = Role::firstOrCreate([
-            'name' => 'parent',
+            'name' => 'Parent',
             'guard_name' => 'api'
         ]);
 

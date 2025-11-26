@@ -29,8 +29,8 @@ class IncidentManagementService
     public function getIncidents(array $filters = []): LengthAwarePaginator
     {
         $query = TransportIncident::with([
-            'reportedBy:id,name,identifier,phone',
-            'assignedTo:id,name,identifier,phone',
+            'reportedBy:id,name,email',
+            'assignedTo:id,name,email',
             'fleetBus:id,license_plate,internal_code',
             'transportRoute:id,name'
         ]);

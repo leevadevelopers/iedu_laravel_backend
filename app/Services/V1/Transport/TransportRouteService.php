@@ -24,10 +24,10 @@ class TransportRouteService
         }
 
         if (isset($filters['search'])) {
-            $query->where(function ($q) use ($filters) {
+            $query->where(function($q) use ($filters) {
                 $q->where('name', 'like', '%' . $filters['search'] . '%')
-                    ->orWhere('code', 'like', '%' . $filters['search'] . '%')
-                    ->orWhere('description', 'like', '%' . $filters['search'] . '%');
+                  ->orWhere('code', 'like', '%' . $filters['search'] . '%')
+                  ->orWhere('description', 'like', '%' . $filters['search'] . '%');
             });
         }
 
@@ -88,7 +88,7 @@ class TransportRouteService
     public function getRouteDetails(TransportRoute $route): array
     {
         $route->load([
-            'busStops' => function ($query) {
+            'busStops' => function($query) {
                 $query->orderBy('stop_order');
             },
             'busAssignments.fleetBus',
@@ -125,49 +125,23 @@ class TransportRouteService
             throw new \Exception('Route must have at least 3 stops to optimize');
         }
 
-        // Store original distance
-        $originalDistance = $route->total_distance_km;
-
         // Calculate optimal order using nearest neighbor algorithm
-        $optimizedStops = $this->calculateOptimalStopOrder($stops);
+        $optimizedOrder = $this->calculateOptimalStopOrder($stops);
 
-        // Update stop orders (now $stop is a BusStop model)
-        foreach ($optimizedStops as $index => $stop) {
+        // Update stop orders
+        foreach ($optimizedOrder as $index => $stop) {
             $stop->update(['stop_order' => $index + 1]);
         }
 
         // Recalculate total distance
-        $stopsArray = $optimizedStops->map(function ($stop) {
-            return [
-                'latitude' => $stop->latitude,
-                'longitude' => $stop->longitude
-            ];
-        })->toArray();
-
-        $totalDistance = $this->calculateTotalDistance($stopsArray);
-        $route->update([
-            'total_distance_km' => $totalDistance,
-            'estimated_duration_minutes' => $this->calculateEstimatedDuration($totalDistance)
-        ]);
+        $totalDistance = $this->calculateTotalDistance($optimizedOrder);
+        $route->update(['total_distance_km' => $totalDistance]);
 
         return [
-            'original_distance' => $originalDistance,
+            'original_distance' => $route->getOriginal('total_distance_km'),
             'optimized_distance' => $totalDistance,
-            'distance_saved' => round($originalDistance - $totalDistance, 2),
-            'percentage_saved' => $originalDistance > 0
-                ? round((($originalDistance - $totalDistance) / $originalDistance) * 100, 2)
-                : 0,
-            'total_stops' => $optimizedStops->count(),
-            'optimized_stops' => $optimizedStops->map(function ($stop, $index) {
-                return [
-                    'id' => $stop->id,
-                    'name' => $stop->name,
-                    'code' => $stop->code,
-                    'new_order' => $index + 1,
-                    'latitude' => $stop->latitude,
-                    'longitude' => $stop->longitude
-                ];
-            })
+            'distance_saved' => $route->getOriginal('total_distance_km') - $totalDistance,
+            'optimized_stops' => $optimizedOrder
         ];
     }
 
@@ -210,7 +184,7 @@ class TransportRouteService
     {
         // Check if stop has active subscriptions
         $hasActiveSubscriptions = $stop->pickupSubscriptions()->where('status', 'active')->exists() ||
-            $stop->dropoffSubscriptions()->where('status', 'active')->exists();
+                                 $stop->dropoffSubscriptions()->where('status', 'active')->exists();
 
         if ($hasActiveSubscriptions) {
             throw new \Exception('Cannot delete bus stop with active student subscriptions');
@@ -239,46 +213,43 @@ class TransportRouteService
         return (int) round($durationHours * 60); // Convert to minutes
     }
 
-
-    private function calculateOptimalStopOrder(Collection $stops): Collection
+    private function calculateOptimalStopOrder(Collection $stops): array
     {
         // Simple nearest neighbor algorithm
-        $unvisited = $stops->values(); // Keep as collection
+        $unvisited = $stops->toArray();
         $optimized = [];
 
         // Start with the first stop
-        $current = $unvisited->shift();
+        $current = array_shift($unvisited);
         $optimized[] = $current;
 
-        while ($unvisited->isNotEmpty()) {
+        while (!empty($unvisited)) {
             $nearest = null;
             $shortestDistance = PHP_FLOAT_MAX;
-            $nearestKey = null;
+            $nearestIndex = -1;
 
-            foreach ($unvisited as $key => $stop) {
+            foreach ($unvisited as $index => $stop) {
                 $distance = $this->calculateDistance(
-                    $current->latitude,
-                    $current->longitude,
-                    $stop->latitude,
-                    $stop->longitude
+                    $current['latitude'], $current['longitude'],
+                    $stop['latitude'], $stop['longitude']
                 );
 
                 if ($distance < $shortestDistance) {
                     $shortestDistance = $distance;
                     $nearest = $stop;
-                    $nearestKey = $key;
+                    $nearestIndex = $index;
                 }
             }
 
             if ($nearest) {
                 $optimized[] = $nearest;
                 $current = $nearest;
-                $unvisited->forget($nearestKey);
+                unset($unvisited[$nearestIndex]);
+                $unvisited = array_values($unvisited); // Re-index array
             }
         }
 
-        // Convert array back to Eloquent Collection
-        return new Collection($optimized);
+        return $optimized;
     }
 
     private function calculateDistance(float $lat1, float $lon1, float $lat2, float $lon2): float
@@ -289,8 +260,8 @@ class TransportRouteService
         $dLat = deg2rad($lat2 - $lat1);
         $dLon = deg2rad($lon2 - $lon1);
 
-        $a = sin($dLat / 2) * sin($dLat / 2) + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLon / 2) * sin($dLon / 2);
-        $c = 2 * atan2(sqrt($a), sqrt(1 - $a));
+        $a = sin($dLat/2) * sin($dLat/2) + cos(deg2rad($lat1)) * cos(deg2rad($lat2)) * sin($dLon/2) * sin($dLon/2);
+        $c = 2 * atan2(sqrt($a), sqrt(1-$a));
 
         return $earthRadius * $c;
     }
@@ -304,10 +275,8 @@ class TransportRouteService
         $totalDistance = 0;
         for ($i = 0; $i < count($stops) - 1; $i++) {
             $totalDistance += $this->calculateDistance(
-                $stops[$i]['latitude'],
-                $stops[$i]['longitude'],
-                $stops[$i + 1]['latitude'],
-                $stops[$i + 1]['longitude']
+                $stops[$i]['latitude'], $stops[$i]['longitude'],
+                $stops[$i + 1]['latitude'], $stops[$i + 1]['longitude']
             );
         }
 

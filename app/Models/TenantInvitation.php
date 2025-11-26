@@ -21,16 +21,12 @@ class TenantInvitation extends Model
         'status',
         'expires_at',
         'accepted_at',
-        'rejected_at',
-        'cancelled_at',
         'message',
     ];
 
     protected $casts = [
         'expires_at' => 'datetime',
         'accepted_at' => 'datetime',
-        'rejected_at' => 'datetime',
-        'cancelled_at' => 'datetime',
     ];
 
     protected static function boot()
@@ -99,7 +95,7 @@ class TenantInvitation extends Model
     public function validateUrlFormat(): array
     {
         $acceptUrl = $this->getAcceptUrl();
-
+        
         return [
             'url' => $acceptUrl,
             'is_valid' => filter_var($acceptUrl, FILTER_VALIDATE_URL) !== false,
@@ -134,17 +130,17 @@ class TenantInvitation extends Model
             ]);
             return '';
         }
-
+        
         // Use the same pattern as FormTemplate for consistency
         $frontendUrl = config('app.frontend_url');
-
+        
         // Debug: Log initial frontend URL from config
         Log::info('Initial frontend URL from config', [
             'invitation_id' => $this->id,
             'frontend_url_config' => $frontendUrl,
             'environment' => app()->environment()
         ]);
-
+        
         // Environment-specific URL generation
         if (app()->environment('local', 'development')) {
             // Local development - use localhost with port
@@ -170,11 +166,11 @@ class TenantInvitation extends Model
                 'frontend_url' => $frontendUrl
             ]);
         }
-
+        
         // Ensure proper URL formatting for hash routing
         $frontendUrl = rtrim($frontendUrl, '/'); // Remove trailing slash if present
         $finalUrl = "{$frontendUrl}/#/accept-invitation?token={$this->token}";
-
+        
         // Debug: Log final URL generation
         Log::info('Final invitation URL generated', [
             'invitation_id' => $this->id,
@@ -183,7 +179,7 @@ class TenantInvitation extends Model
             'final_url' => $finalUrl,
             'url_length' => strlen($finalUrl)
         ]);
-
+        
         return $finalUrl;
     }
-}
+} 

@@ -27,36 +27,15 @@ class SchoolService
 
     /**
      * Get schools with filters and pagination
-     *
-     * @param array $filters
-     * @param int $perPage
-     * @param \App\Models\User|null $user - If provided and user is not super_admin, filters by tenant
-     * @return LengthAwarePaginator
      */
-    public function getSchools(array $filters, int $perPage = 15, $user = null): LengthAwarePaginator
+    public function getSchools(array $filters, int $perPage = 15): LengthAwarePaginator
     {
-        // Check if user is super_admin
-        $isSuperAdmin = false;
-        if ($user) {
-            $isSuperAdmin = $user->hasRole('super_admin');
-        }
-
-        // Build query with or without tenant scope
-        $query = $isSuperAdmin
-            ? School::withoutTenantScope()->select([
-                'id', 'tenant_id', 'school_code', 'official_name', 'display_name',
-                'school_type', 'status', 'city', 'state_province', 'country_code',
-                'email', 'phone', 'website', 'current_enrollment', 'staff_count',
-                'created_at', 'updated_at'
-            ])
-            : School::select([
-                'id', 'tenant_id', 'school_code', 'official_name', 'display_name',
-                'school_type', 'status', 'city', 'state_province', 'country_code',
-                'email', 'phone', 'website', 'current_enrollment', 'staff_count',
-                'created_at', 'updated_at'
-            ]);
-
-        $query->with([
+        $query = School::withoutTenantScope()->select([
+            'id', 'tenant_id', 'school_code', 'official_name', 'display_name',
+            'school_type', 'status', 'city', 'state_province', 'country_code',
+            'email', 'phone', 'website', 'current_enrollment', 'staff_count', 
+            'created_at', 'updated_at'
+        ])->with([
             'academicYears:id,school_id,name,start_date,end_date',
             'currentAcademicYear:id,school_id,name',
             'users:id,school_id,name,identifier'
@@ -111,19 +90,6 @@ class SchoolService
             ]);
 
             $school = School::create($schoolData);
-
-            // Create school_users association if created_by is provided
-            if (isset($data['created_by'])) {
-                DB::table('school_users')->insert([
-                    'school_id' => $school->id,
-                    'user_id' => $data['created_by'],
-                    'role' => 'admin', // Default role for school creator
-                    'status' => 'active',
-                    'start_date' => now(),
-                    'created_at' => now(),
-                    'updated_at' => now()
-                ]);
-            }
 
             // Process form data through Form Engine if provided
             $formInstance = null;
@@ -271,19 +237,19 @@ class SchoolService
             'school_info' => $school->only(['id', 'official_name', 'school_code', 'school_type', 'status']),
             'enrollment_summary' => [
                 'total_students' => $school->students()->count(),
-                'active_students' => $school->students()->where('enrollment_status', 'enrolled')->count(),
+                'active_students' => $school->students()->where('status', 'active')->count(),
                 'new_enrollments' => $school->students()
                     ->where('created_at', '>=', now()->subDays(30))
                     ->count(),
                 'transfers_in' => $school->students()
-                    ->where('enrollment_status', 'transferred')
+                    ->where('status', 'transferred')
                     ->where('created_at', '>=', now()->subDays(30))
                     ->count()
             ],
             'grade_distribution' => $school->students()
-                ->selectRaw('current_grade_level, COUNT(*) as count')
-                ->groupBy('current_grade_level')
-                ->orderBy('current_grade_level')
+                ->selectRaw('grade_level, COUNT(*) as count')
+                ->groupBy('grade_level')
+                ->orderBy('grade_level')
                 ->get(),
             'recent_activities' => $this->getRecentActivities($school),
             'upcoming_events' => $this->getUpcomingEvents($school)
@@ -299,12 +265,12 @@ class SchoolService
             'enrollment' => [
                 'total' => $school->students()->count(),
                 'by_status' => $school->students()
-                    ->selectRaw('enrollment_status, COUNT(*) as count')
-                    ->groupBy('enrollment_status')
+                    ->selectRaw('status, COUNT(*) as count')
+                    ->groupBy('status')
                     ->get(),
                 'by_grade' => $school->students()
-                    ->selectRaw('current_grade_level, COUNT(*) as count')
-                    ->groupBy('current_grade_level')
+                    ->selectRaw('grade_level, COUNT(*) as count')
+                    ->groupBy('grade_level')
                     ->get(),
                 'by_gender' => $school->students()
                     ->selectRaw('gender, COUNT(*) as count')
@@ -338,11 +304,11 @@ class SchoolService
 
         // Apply filters
         if (isset($filters['status'])) {
-            $query->where('enrollment_status', $filters['status']);
+            $query->where('status', $filters['status']);
         }
 
         if (isset($filters['grade_level'])) {
-            $query->where('current_grade_level', $filters['grade_level']);
+            $query->where('grade_level', $filters['grade_level']);
         }
 
         if (isset($filters['academic_year_id'])) {

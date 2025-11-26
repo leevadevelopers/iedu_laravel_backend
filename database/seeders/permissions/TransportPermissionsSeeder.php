@@ -106,7 +106,7 @@ class TransportPermissionsSeeder extends Seeder
     {
         // Transport Administrator - Full access to transport module
         $transportAdmin = Role::firstOrCreate([
-            'name' => 'transport_admin',
+            'name' => 'Transport Administrator',
             'guard_name' => 'api'
         ]);
 
@@ -148,7 +148,7 @@ class TransportPermissionsSeeder extends Seeder
 
         // Transport Manager - Management level access
         $transportManager = Role::firstOrCreate([
-            'name' => 'transport_manager',
+            'name' => 'Transport Manager',
             'guard_name' => 'api'
         ]);
 
@@ -177,7 +177,7 @@ class TransportPermissionsSeeder extends Seeder
 
         // Transport Driver - Limited access for drivers
         $transportDriver = Role::firstOrCreate([
-            'name' => 'transport_driver',
+            'name' => 'Transport Driver',
             'guard_name' => 'api'
         ]);
 
@@ -190,7 +190,7 @@ class TransportPermissionsSeeder extends Seeder
 
         // Transport Coordinator - Coordination level access
         $transportCoordinator = Role::firstOrCreate([
-            'name' => 'transport_coordinator',
+            'name' => 'Transport Coordinator',
             'guard_name' => 'api'
         ]);
 
@@ -218,7 +218,7 @@ class TransportPermissionsSeeder extends Seeder
 
         // Parent - Limited access for parents
         $parent = Role::firstOrCreate([
-            'name' => 'parent',
+            'name' => 'Parent',
             'guard_name' => 'api'
         ]);
 

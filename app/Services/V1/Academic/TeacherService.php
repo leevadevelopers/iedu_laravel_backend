@@ -9,8 +9,6 @@ use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Str;
-use Spatie\Permission\Models\Role;
 
 class TeacherService extends BaseAcademicService
 {
@@ -71,8 +69,6 @@ class TeacherService extends BaseAcademicService
     public function createTeacher(array $data): Teacher
     {
         $data['school_id'] = $this->getCurrentSchoolId();
-        $data['tenant_id'] = Auth::user()->tenant_id;
-        $data['employee_id'] = $this->generateTeacherId();
 
         // Validate email uniqueness
         if (isset($data['email'])) {
@@ -379,14 +375,11 @@ class TeacherService extends BaseAcademicService
     {
         $userData = [
             'name' => trim($data['first_name'] . ' ' . $data['last_name']),
-            'identifier' => $data['email'],
+            'identifier' => $data['email'] ?? $data['employee_id'],
             'type' => 'email',
-            'tenant_id' => $data['tenant_id'],
-            'role_id' => Role::where('name', 'teacher')->value('id'),
             'phone' => $data['phone'] ?? null,
             'profile_photo_path' => $data['profile_photo_path'] ?? null,
-            'user_type' => 'teacher',
-            'school_id' => $data['school_id']
+            'user_type' => 'teacher'
         ];
 
         // Check if user already exists
@@ -397,7 +390,7 @@ class TeacherService extends BaseAcademicService
         }
 
         // Create new user
-        $employeeId = 'TEMP_' . uniqid();
+        $employeeId = $data['employee_id'] ?? 'TEMP_' . uniqid();
         $userData['password'] = Hash::make('temp_password_' . $employeeId);
         $userData['must_change'] = true;
 
@@ -556,18 +549,5 @@ class TeacherService extends BaseAcademicService
                 }
             }
         }
-    }
-    /**
-     *
-     * Gerar employerId para os teachrs automaticamente.
-     * @return string
-     */
-    private function generateTeacherId()
-    {
-        do {
-            $randomId = 'TEA' . mt_rand(100000, 999999);
-        } while (Teacher::where('employee_id', $randomId)->exists()); // garante unicidade
-
-        return $randomId;
     }
 }

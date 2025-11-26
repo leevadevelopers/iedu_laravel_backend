@@ -348,20 +348,19 @@ class StudentTransportService
     public function getTransportEvents(array $filters = []): LengthAwarePaginator
     {
         $query = StudentTransportEvent::with([
-            'student:id,student_number,first_name,middle_name,last_name',
+            'student:id,name,student_id',
             'fleetBus:id,license_plate,internal_code,make,model',
             'busStop:id,name,code,address',
             'transportRoute:id,name,code',
-            'recordedBy:id,name,identifier,phone'
+            'recordedBy:id,name,email'
         ]);
 
         // Apply filters
         if (isset($filters['search'])) {
             $query->where(function($q) use ($filters) {
                 $q->whereHas('student', function($subQ) use ($filters) {
-                    $subQ->where('first_name', 'like', '%' . $filters['search'] . '%')
-                         ->orWhere('last_name', 'like', '%' . $filters['search'] . '%')
-                         ->orWhere('student_number', 'like', '%' . $filters['search'] . '%');
+                    $subQ->where('name', 'like', '%' . $filters['search'] . '%')
+                         ->orWhere('student_id', 'like', '%' . $filters['search'] . '%');
                 })
                 ->orWhereHas('fleetBus', function($subQ) use ($filters) {
                     $subQ->where('license_plate', 'like', '%' . $filters['search'] . '%')
@@ -467,7 +466,7 @@ class StudentTransportService
                 'automation_rate' => $totalEvents > 0 ? round(($automatedEvents / $totalEvents) * 100, 2) : 0
             ],
             'validation_methods' => $validationMethods,
-            'events_by_type_breakdown' => $eventsByType,
+            'events_by_type' => $eventsByType,
             'attendance_rate' => $totalEvents > 0 ? round((($checkIns + $checkOuts) / $totalEvents) * 100, 2) : 0
         ];
     }
@@ -478,7 +477,7 @@ class StudentTransportService
     public function getRecentEvents(int $limit = 10): Collection
     {
         return StudentTransportEvent::with([
-            'student:id,student_number,first_name,middle_name,last_name',
+            'student:id,name,student_id',
             'fleetBus:id,license_plate,internal_code',
             'busStop:id,name,code',
             'transportRoute:id,name,code'
@@ -494,20 +493,19 @@ class StudentTransportService
     public function exportTransportEvents(array $filters = []): array
     {
         $query = StudentTransportEvent::with([
-            'student:id,student_number,first_name,middle_name,last_name',
+            'student:id,name,student_id',
             'fleetBus:id,license_plate,internal_code,make,model',
             'busStop:id,name,code,address',
             'transportRoute:id,name,code',
-            'recordedBy:id,name,identifier,phone'
+            'recordedBy:id,name,email'
         ]);
 
         // Apply same filters as getTransportEvents
         if (isset($filters['search'])) {
             $query->where(function($q) use ($filters) {
                 $q->whereHas('student', function($subQ) use ($filters) {
-                    $subQ->where('first_name', 'like', '%' . $filters['search'] . '%')
-                         ->orWhere('last_name', 'like', '%' . $filters['search'] . '%')
-                         ->orWhere('student_number', 'like', '%' . $filters['search'] . '%');
+                    $subQ->where('name', 'like', '%' . $filters['search'] . '%')
+                         ->orWhere('student_id', 'like', '%' . $filters['search'] . '%');
                 })
                 ->orWhereHas('fleetBus', function($subQ) use ($filters) {
                     $subQ->where('license_plate', 'like', '%' . $filters['search'] . '%')

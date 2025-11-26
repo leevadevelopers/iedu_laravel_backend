@@ -16,7 +16,7 @@ class StoreTeacherRequest extends BaseAcademicRequest
     {
         return [
             // Required fields
-            // 'employee_id' => 'nullable|string|max:20',
+            'employee_id' => 'nullable|string|max:20',
             'first_name' => 'required|string|max:100',
             'last_name' => 'required|string|max:100',
             'hire_date' => 'required|date|before_or_equal:today',

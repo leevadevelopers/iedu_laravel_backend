@@ -43,23 +43,15 @@ Route::middleware(['auth:api'])->group(function () {
     |--------------------------------------------------------------------------
     */
 
-    // Specific routes must be defined before apiResource
-    Route::prefix('student-documents')->group(function () {
-        // Upload and create in a single request (recommended)
-        Route::post('upload-and-create', [\App\Http\Controllers\API\V1\Student\StudentDocumentController::class, 'uploadAndCreate'])
-            ->name('student-documents.upload-and-create');
+    Route::apiResource('student-documents', \App\Http\Controllers\API\V1\Student\StudentDocumentController::class);
 
+    Route::prefix('student-documents')->group(function () {
         // File operations
         Route::post('upload-file', [\App\Http\Controllers\API\V1\Student\StudentDocumentController::class, 'uploadFile'])
             ->name('student-documents.upload-file');
         Route::get('{document}/download', [\App\Http\Controllers\API\V1\Student\StudentDocumentController::class, 'download'])
             ->name('student-documents.download');
-    });
 
-    // Standard CRUD operations
-    Route::apiResource('student-documents', \App\Http\Controllers\API\V1\Student\StudentDocumentController::class);
-
-    Route::prefix('student-documents')->group(function () {
         // Document queries
         Route::get('by-student/{studentId}', [\App\Http\Controllers\API\V1\Student\StudentDocumentController::class, 'getByStudent'])
             ->name('student-documents.by-student');

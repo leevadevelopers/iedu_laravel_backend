@@ -21,19 +21,9 @@ class UpdateSchoolRequest extends FormRequest
     public function rules(): array
     {
         $schoolId = $this->route('id');
-        $school = \App\Models\V1\SIS\School\School::find($schoolId);
-        $tenantId = $school?->tenant_id;
 
         return [
-            'official_name' => [
-                'sometimes',
-                'required',
-                'string',
-                'max:255',
-                Rule::unique('schools')->where(function ($query) use ($tenantId) {
-                    return $query->where('tenant_id', $tenantId);
-                })->ignore($schoolId)
-            ],
+            'official_name' => 'sometimes|required|string|max:255',
             'display_name' => 'sometimes|required|string|max:255',
             'short_name' => 'sometimes|required|string|max:50',
             'school_code' => [
@@ -41,23 +31,13 @@ class UpdateSchoolRequest extends FormRequest
                 'required',
                 'string',
                 'max:50',
-                Rule::unique('schools', 'school_code')->where(function ($query) use ($tenantId) {
-                    return $query->where('tenant_id', $tenantId);
-                })->ignore($schoolId)
+                Rule::unique('schools', 'school_code')->ignore($schoolId)
             ],
             'school_type' => 'sometimes|required|in:public,private,charter,magnet,international,vocational,special_needs,alternative',
             'educational_levels' => 'sometimes|required|array',
             'grade_range_min' => 'sometimes|required|string|max:10',
             'grade_range_max' => 'sometimes|required|string|max:10',
-            'email' => [
-                'sometimes',
-                'required',
-                'email',
-                'max:255',
-                Rule::unique('schools')->where(function ($query) use ($tenantId) {
-                    return $query->where('tenant_id', $tenantId);
-                })->ignore($schoolId)
-            ],
+            'email' => 'sometimes|required|email|max:255',
             'phone' => 'sometimes|string|max:50',
             'website' => 'nullable|url|max:255',
             'address_json' => 'sometimes|array',
@@ -91,11 +71,10 @@ class UpdateSchoolRequest extends FormRequest
     {
         return [
             'official_name.required' => 'Official name is required.',
-            'official_name.unique' => 'A school with this official name already exists in this tenant.',
             'display_name.required' => 'Display name is required.',
             'short_name.required' => 'Short name is required.',
             'school_code.required' => 'School code is required.',
-            'school_code.unique' => 'A school with this code already exists in this tenant.',
+            'school_code.unique' => 'School code must be unique.',
             'school_type.required' => 'School type is required.',
             'school_type.in' => 'Invalid school type selected.',
             'educational_levels.required' => 'Educational levels are required.',
@@ -103,7 +82,6 @@ class UpdateSchoolRequest extends FormRequest
             'grade_range_max.required' => 'Maximum grade range is required.',
             'email.required' => 'Email is required.',
             'email.email' => 'Please provide a valid email address.',
-            'email.unique' => 'A school with this email already exists in this tenant.',
             'country_code.required' => 'Country code is required.',
             'country_code.size' => 'Country code must be exactly 2 characters.',
             'city.required' => 'City is required.',

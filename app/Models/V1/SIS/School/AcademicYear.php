@@ -2,7 +2,6 @@
 
 namespace App\Models\V1\SIS\School;
 
-use App\Models\Traits\Tenantable;
 use App\Models\V1\SIS\Student\StudentEnrollmentHistory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -32,7 +31,7 @@ use Illuminate\Support\Carbon;
  */
 class AcademicYear extends Model
 {
-    use HasFactory, SoftDeletes, Tenantable;
+    use HasFactory, SoftDeletes;
 
     /**
      * The table associated with the model.

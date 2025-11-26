@@ -115,7 +115,7 @@ class AllPermissionsSeeder extends Seeder
     {
         // Super Administrator - Full access to everything
         $superAdmin = Role::firstOrCreate([
-            'name' => 'superadmin',
+            'name' => 'Super Administrator',
             'guard_name' => 'api'
         ]);
 
@@ -124,7 +124,7 @@ class AllPermissionsSeeder extends Seeder
 
         // System Administrator - Core system permissions
         $systemAdmin = Role::firstOrCreate([
-            'name' => 'admin',
+            'name' => 'System Administrator',
             'guard_name' => 'api'
         ]);
 
@@ -161,7 +161,7 @@ class AllPermissionsSeeder extends Seeder
 
         // Tenant Administrator - Tenant management
         $tenantAdmin = Role::firstOrCreate([
-            'name' => 'tenant_admin',
+            'name' => 'Tenant Administrator',
             'guard_name' => 'api'
         ]);
 

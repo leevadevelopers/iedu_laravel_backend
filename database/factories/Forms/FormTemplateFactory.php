@@ -29,8 +29,7 @@ class FormTemplateFactory extends Factory
                 'transportation', 'cafeteria_management', 'library_management',
                 'technology_management', 'security_management', 'maintenance_requests',
                 'financial_aid', 'tuition_management', 'donation_management',
-                'alumni_relations', 'community_outreach', 'partnership_management',
-                'academic_year_setup'
+                'alumni_relations', 'community_outreach', 'partnership_management'
             ]),
             'estimated_completion_time' => $this->faker->randomElement([
                 '15 minutes',
