@@ -1,9 +1,5 @@
 <?php
 
-
-use App\Models\Settings\Tenant;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 
 //v1 group
@@ -66,12 +62,12 @@ Route::bind('incident', function ($value) {
 });
 
 
-// 
+//
 Route::bind('event', function ($value) {
     return \App\Models\V1\Transport\StudentTransportEvent::findOrFail($value);
 });
 
-// Permission route model binding 
+// Permission route model binding
 Route::bind('permission', function ($value) {
     return \Spatie\Permission\Models\Permission::findOrFail($value);
 });
