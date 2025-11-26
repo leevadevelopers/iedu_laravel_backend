@@ -20,7 +20,29 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-Route::prefix('v1/assessments')->group(function () {
+Route::middleware(['auth:api', 'tenant'])->group(function () {
+    // Grade Review Routes (outside assessments group to avoid route binding conflicts)
+    Route::prefix('grade-reviews')->group(function () {
+        Route::get('/', [GradeReviewController::class, 'index']);
+        Route::post('/', [GradeReviewController::class, 'store']);
+        Route::get('{gradeReview}', [GradeReviewController::class, 'show']);
+        Route::put('{gradeReview}', [GradeReviewController::class, 'update']);
+        Route::delete('{gradeReview}', [GradeReviewController::class, 'destroy']);
+    });
+    
+    // Gradebook Routes (outside assessments group to avoid route binding conflicts)
+    Route::prefix('gradebooks')->group(function () {
+        Route::get('/', [GradebookController::class, 'index']);
+        Route::post('/', [GradebookController::class, 'store']);
+        Route::get('{gradebook}', [GradebookController::class, 'show']);
+        Route::delete('{gradebook}', [GradebookController::class, 'destroy']);
+        Route::get('{gradebook}/download', [GradebookController::class, 'download']);
+        Route::post('{gradebook}/approve', [GradebookController::class, 'approve']);
+        Route::post('{gradebook}/reject', [GradebookController::class, 'reject']);
+        Route::post('{gradebook}/generate', [GradebookController::class, 'generate']);
+    });
+    
+    Route::prefix('assessments')->group(function () {
     
     // Assessment Term Routes
     Route::prefix('terms')->group(function () {
@@ -45,6 +67,7 @@ Route::prefix('v1/assessments')->group(function () {
         Route::get('/', [AssessmentTypeController::class, 'index']);
         Route::post('/', [AssessmentTypeController::class, 'store']);
         Route::get('active', [AssessmentTypeController::class, 'getActive']);
+        Route::get('max-score', [AssessmentTypeController::class, 'getMaxScore']);
         Route::get('{assessmentType}', [AssessmentTypeController::class, 'show']);
         Route::put('{assessmentType}', [AssessmentTypeController::class, 'update']);
         Route::delete('{assessmentType}', [AssessmentTypeController::class, 'destroy']);
@@ -75,15 +98,6 @@ Route::prefix('v1/assessments')->group(function () {
     // Publish grades for an assessment
     Route::post('{assessment}/grades/publish', [GradeEntryController::class, 'publishGrades']);
     
-    // Grade Review Routes
-    Route::prefix('grade-reviews')->group(function () {
-        Route::get('/', [GradeReviewController::class, 'index']);
-        Route::post('/', [GradeReviewController::class, 'store']);
-        Route::get('{gradeReview}', [GradeReviewController::class, 'show']);
-        Route::put('{gradeReview}', [GradeReviewController::class, 'update']);
-        Route::delete('{gradeReview}', [GradeReviewController::class, 'destroy']);
-    });
-    
     // Grade Scale Routes
     Route::prefix('grade-scales')->group(function () {
         Route::get('/', [GradeScaleController::class, 'index']);
@@ -104,18 +118,6 @@ Route::prefix('v1/assessments')->group(function () {
         Route::post('{gradeScale}/calculate-gpa', [GradeScaleController::class, 'calculateGPA']);
     });
     
-    // Gradebook Routes
-    Route::prefix('gradebooks')->group(function () {
-        Route::get('/', [GradebookController::class, 'index']);
-        Route::post('/', [GradebookController::class, 'store']);
-        Route::get('{gradebook}', [GradebookController::class, 'show']);
-        Route::delete('{gradebook}', [GradebookController::class, 'destroy']);
-        Route::get('{gradebook}/download', [GradebookController::class, 'download']);
-        Route::post('{gradebook}/approve', [GradebookController::class, 'approve']);
-        Route::post('{gradebook}/reject', [GradebookController::class, 'reject']);
-        Route::post('{gradebook}/generate', [GradebookController::class, 'generate']);
-    });
-    
     // Assessment Settings Routes
     Route::prefix('settings')->group(function () {
         Route::get('/', [AssessmentSettingsController::class, 'index']);
@@ -130,6 +132,7 @@ Route::prefix('v1/assessments')->group(function () {
     Route::prefix('reports')->group(function () {
         Route::get('class/{classId}/term/{termId}/grades-summary', [ReportController::class, 'classGradesSummary']);
         Route::get('student/{studentId}/term/{termId}/transcript', [ReportController::class, 'studentTranscript']);
+    });
     });
 });
 

@@ -2,6 +2,8 @@
 
 
 use App\Models\Settings\Tenant;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 
 //v1 group

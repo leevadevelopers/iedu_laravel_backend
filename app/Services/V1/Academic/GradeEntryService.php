@@ -161,18 +161,23 @@ class GradeEntryService extends BaseAcademicService
     /**
      * Get student grades for a term
      */
-    public function getStudentGrades(int $studentId, int $academicTermId): Collection
+    public function getStudentGrades(int $studentId, ?int $academicTermId = null): Collection
     {
         $student = Student::findOrFail($studentId);
         $this->validateSchoolOwnership($student);
 
         $user = Auth::user();
 
-        return GradeEntry::where('tenant_id', $user->tenant_id)
+        $query = GradeEntry::where('tenant_id', $user->tenant_id)
             ->where('school_id', $this->getCurrentSchoolId())
-            ->where('student_id', $studentId)
-            ->where('academic_term_id', $academicTermId)
-            ->with(['class', 'academicTerm'])
+            ->where('student_id', $studentId);
+
+        // Only filter by academic term if provided
+        if ($academicTermId) {
+            $query->where('academic_term_id', $academicTermId);
+        }
+
+        return $query->with(['class', 'academicTerm'])
             ->orderBy('assessment_date', 'desc')
             ->get();
     }

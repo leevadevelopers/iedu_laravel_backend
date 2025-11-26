@@ -342,6 +342,48 @@ class GradingSystemService extends BaseAcademicService
     }
 
     /**
+     * Get maximum score for the primary grading system
+     * Returns the max_value from the highest range in the default grade scale
+     */
+    public function getMaxScore(): ?float
+    {
+        $primarySystem = $this->getPrimaryGradingSystem();
+        
+        if (!$primarySystem) {
+            return null;
+        }
+
+        $defaultScale = $primarySystem->getDefaultScale();
+        if (!$defaultScale) {
+            // If no default scale, get the first scale
+            $defaultScale = $primarySystem->gradeScales->first();
+        }
+
+        if (!$defaultScale) {
+            return null;
+        }
+
+        // Get the maximum value from all ranges
+        $maxValue = $defaultScale->ranges()->max('max_value');
+        
+        // If no ranges, check grade levels
+        if (!$maxValue) {
+            $maxValue = $defaultScale->gradeLevels()->max('percentage_max');
+        }
+
+        // If still no value, use system type defaults
+        if (!$maxValue) {
+            $maxValue = match ($primarySystem->system_type) {
+                'percentage' => 100.0,
+                'points' => 20.0, // Default for Portuguese system
+                default => 100.0
+            };
+        }
+
+        return $maxValue ? (float) $maxValue : null;
+    }
+
+    /**
      * Validate tenant and school ownership
      */
     private function validateTenantAndSchoolOwnership($model): void

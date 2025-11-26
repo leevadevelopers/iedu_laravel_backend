@@ -25,7 +25,7 @@ class GradeReviewController extends BaseController
         //     return $this->errorResponse('Unauthorized', 403);
         // }
 
-        $query = GradeReview::with(['gradeEntry.assessment', 'requester', 'reviewer']);
+        $query = GradeReview::with(['gradeEntry', 'gradeEntry.student', 'requester', 'reviewer']);
 
         // Filter by status
         if ($request->filled('status')) {
@@ -37,11 +37,11 @@ class GradeReviewController extends BaseController
             $query->where('requester_id', auth()->id());
         }
 
-        // Teachers see reviews for their assessments
+        // Teachers see reviews for their grade entries
+        // Note: GradeEntry doesn't have an assessment relationship, it stores assessment info directly
         if (auth()->user()->hasRole('teacher')) {
-            $query->whereHas('gradeEntry.assessment', function ($q) {
-                $q->where('teacher_id', auth()->id());
-            });
+            // You can add teacher filtering logic here if needed
+            // For now, teachers see all reviews
         }
 
         // Sort
@@ -64,8 +64,9 @@ class GradeReviewController extends BaseController
         // }
 
         // Check if user can request review
-        if (!$this->gradeReviewService->canRequestReview($request->grade_entry_id, auth()->id())) {
-            return $this->errorResponse('Cannot request review for this grade', 422);
+        $canRequest = $this->gradeReviewService->canRequestReview($request->grade_entry_id, auth()->id());
+        if (!$canRequest['allowed']) {
+            return $this->errorResponse($canRequest['reason'] ?? 'Cannot request review for this grade', 422);
         }
 
         $gradeReview = $this->gradeReviewService->createReviewRequest($request->validated());
@@ -88,7 +89,7 @@ class GradeReviewController extends BaseController
             return $this->errorResponse('Unauthorized', 403);
         }
 
-        $gradeReview->load(['gradeEntry.assessment', 'requester', 'reviewer']);
+        $gradeReview->load(['gradeEntry', 'gradeEntry.student', 'requester', 'reviewer']);
 
         return $this->successResponse(
             new GradeReviewResource($gradeReview),

@@ -255,14 +255,33 @@ class User extends Authenticatable implements JWTSubject
         $schoolId = session('current_school_id');
 
         if ($schoolId) {
-            $school = $this->activeSchools()->find($schoolId);
+            // Use the schools() relationship with active filter
+            $school = $this->schools()
+                ->wherePivot('status', 'active')
+                ->where('schools.id', $schoolId)
+                ->first();
+            
             if ($school) {
                 return $school;
             }
         }
 
-        // Fallback to first active school
-        return $this->activeSchools()->first();
+        // Fallback to first active school using schools() relationship
+        return $this->schools()
+            ->wherePivot('status', 'active')
+            ->where(function ($query) {
+                // Check that start_date is not in the future (if exists)
+                $query->where(function ($subQuery) {
+                    $subQuery->whereNull('school_users.start_date')
+                             ->orWhere('school_users.start_date', '<=', now());
+                })
+                // Check that end_date is not in the past (if exists)
+                ->where(function ($subQuery) {
+                    $subQuery->whereNull('school_users.end_date')
+                             ->orWhere('school_users.end_date', '>=', now());
+                });
+            })
+            ->first();
     }
 
     /**
@@ -270,7 +289,13 @@ class User extends Authenticatable implements JWTSubject
      */
     public function switchSchool(int $schoolId): bool
     {
-        if (!$this->activeSchools()->where('schools.id', $schoolId)->exists()) {
+        // Check if user has access to this school through schools() relationship
+        $hasAccess = $this->schools()
+            ->wherePivot('status', 'active')
+            ->where('schools.id', $schoolId)
+            ->exists();
+        
+        if (!$hasAccess) {
             return false;
         }
 

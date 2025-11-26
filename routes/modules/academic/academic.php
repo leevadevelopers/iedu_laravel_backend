@@ -48,6 +48,8 @@ Route::middleware(['auth:api', 'tenant'])->group(function () {
         // Class Enrollment Management
         Route::post('/{class}/students', [AcademicClassController::class, 'enrollStudent'])->name('enroll-student');
         Route::delete('/{class}/students', [AcademicClassController::class, 'removeStudent'])->name('remove-student');
+        // Alias for roster to list students in a class (frontend expects this path)
+        Route::get('/{class}/students', [AcademicClassController::class, 'roster'])->name('students');
         Route::get('/{class}/roster', [AcademicClassController::class, 'roster'])->name('roster');
     });
 

@@ -20,9 +20,10 @@ Route::prefix('finance')->name('finance.')->group(function () {
     // Financial Accounts
     // ========================================
     Route::prefix('accounts')->name('accounts.')->group(function () {
-        Route::get('/{account}/transactions', [FinancialAccountController::class, 'transactions'])->name('transactions');
         Route::get('/', [FinancialAccountController::class, 'index'])->name('index');
+        Route::get('/list', [FinancialAccountController::class, 'index'])->name('list');
         Route::post('/', [FinancialAccountController::class, 'store'])->name('store');
+        // Route::get('/{account}/transactions', [FinancialAccountController::class, 'transactions'])->name('transactions'); // Method not implemented yet
         Route::get('/{account}', [FinancialAccountController::class, 'show'])->name('show');
         Route::put('/{account}', [FinancialAccountController::class, 'update'])->name('update');
         Route::delete('/{account}', [FinancialAccountController::class, 'destroy'])->name('destroy');

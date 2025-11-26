@@ -15,7 +15,7 @@ use App\Http\Controllers\API\V1\UserProfileController;
 */
 
 // User Module Routes Group
-Route::prefix('v1')->middleware(['auth:api', 'tenant'])->group(function () {
+Route::middleware(['auth:api', 'tenant'])->group(function () {
 
     // ====================================================================
     // USER MANAGEMENT ROUTES
@@ -40,7 +40,10 @@ Route::prefix('v1')->middleware(['auth:api', 'tenant'])->group(function () {
 
         // Core User CRUD (catch-all routes last)
         Route::get('/', [UserController::class, 'index'])->name('users.index');
+        Route::post('/', [UserController::class, 'store'])->name('users.store');
         Route::get('/{id}', [UserController::class, 'show'])->name('users.show');
+        Route::put('/{id}', [UserController::class, 'update'])->name('users.update');
+        Route::delete('/{id}', [UserController::class, 'destroy'])->name('users.destroy');
     });
 
     // ====================================================================

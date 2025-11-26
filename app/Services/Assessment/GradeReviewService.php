@@ -5,6 +5,8 @@ namespace App\Services\Assessment;
 use App\Events\Assessment\GradeReviewRequested;
 use App\Events\Assessment\GradeReviewResolved;
 use App\Models\Assessment\GradeReview;
+use App\Models\Assessment\GradesAuditLog;
+use App\Models\V1\Academic\GradeEntry;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
 
@@ -21,8 +23,11 @@ class GradeReviewService
             ]);
 
             // Get the current grade
-            $gradeEntry = \App\Models\Assessment\GradeEntry::find($data['grade_entry_id']);
-            $reviewData['original_marks'] = $gradeEntry->marks_awarded;
+            $gradeEntry = GradeEntry::find($data['grade_entry_id']);
+            if (!$gradeEntry) {
+                throw new \Exception('Grade entry not found');
+            }
+            $reviewData['original_marks'] = $gradeEntry->percentage_score ?? $gradeEntry->raw_score ?? 0;
 
             $gradeReview = GradeReview::create($reviewData);
 
@@ -56,11 +61,11 @@ class GradeReviewService
             if ($data['status'] === 'accepted' && isset($data['revised_marks'])) {
                 $gradeEntry = $gradeReview->gradeEntry;
                 $gradeEntry->update([
-                    'marks_awarded' => $data['revised_marks'],
+                    'percentage_score' => $data['revised_marks'],
                 ]);
 
                 // Log the change
-                \App\Models\Assessment\GradesAuditLog::create([
+                GradesAuditLog::create([
                     'grade_entry_id' => $gradeEntry->id,
                     'changed_by' => Auth::id(),
                     'action' => 'updated',
@@ -79,36 +84,35 @@ class GradeReviewService
         });
     }
 
-    public function canRequestReview(int $gradeEntryId, int $userId): bool
+    public function canRequestReview($gradeEntryId, int $userId): array
     {
-        $gradeEntry = \App\Models\Assessment\GradeEntry::find($gradeEntryId);
+        // Convert to integer if needed
+        $gradeEntryId = (int) $gradeEntryId;
         
-        if (!$gradeEntry || !$gradeEntry->is_published) {
-            return false;
+        if ($gradeEntryId <= 0) {
+            return ['allowed' => false, 'reason' => 'Invalid grade entry ID'];
         }
 
-        // Check if there's already a pending review
-        $existingReview = GradeReview::where('grade_entry_id', $gradeEntryId)
-            ->where('status', 'pending')
-            ->exists();
-
-        if ($existingReview) {
-            return false;
+        $gradeEntry = GradeEntry::find($gradeEntryId);
+        
+        if (!$gradeEntry) {
+            return ['allowed' => false, 'reason' => "Grade entry with ID {$gradeEntryId} not found"];
         }
 
-        // Check deadline (if configured)
-        $settings = \App\Models\Assessment\AssessmentSettings::where('tenant_id', $gradeEntry->tenant_id)
-            ->where('academic_term_id', $gradeEntry->assessment->term->academic_term_id)
+        // Check if there's already a pending or in_review review
+        $existingActiveReview = GradeReview::where('grade_entry_id', $gradeEntryId)
+            ->whereIn('status', ['pending', 'in_review'])
             ->first();
 
-        if ($settings && $settings->review_deadline_days) {
-            $deadline = $gradeEntry->published_at->addDays($settings->review_deadline_days);
-            if (now()->greaterThan($deadline)) {
-                return false;
-            }
+        if ($existingActiveReview) {
+            return [
+                'allowed' => false, 
+                'reason' => "Já existe uma revisão {$existingActiveReview->status} para esta entrada de nota (ID: {$existingActiveReview->id}). Aguarde a resolução antes de criar uma nova revisão."
+            ];
         }
 
-        return true;
+        // For now, allow review requests if grade entry exists and no pending review
+        return ['allowed' => true, 'reason' => null];
     }
 }
 

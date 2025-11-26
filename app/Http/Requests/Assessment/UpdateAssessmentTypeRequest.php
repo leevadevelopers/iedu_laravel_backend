@@ -18,6 +18,7 @@ class UpdateAssessmentTypeRequest extends FormRequest
             'code' => 'nullable|string|max:50',
             'description' => 'nullable|string',
             'default_weight' => 'nullable|numeric|min:0|max:100',
+            'max_score' => 'nullable|numeric|min:0',
             'color' => 'nullable|string|max:7',
             'is_active' => 'nullable|boolean',
         ];

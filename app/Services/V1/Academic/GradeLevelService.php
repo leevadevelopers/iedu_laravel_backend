@@ -54,6 +54,15 @@ class GradeLevelService extends BaseAcademicService
         $gradeScale = GradeScale::findOrFail($data['grade_scale_id']);
         $this->validateSchoolOwnership($gradeScale);
 
+        // Ensure school_id and tenant_id are set
+        if (!isset($data['school_id'])) {
+            $data['school_id'] = $this->getCurrentSchoolId();
+        }
+        if (!isset($data['tenant_id'])) {
+            $user = \Illuminate\Support\Facades\Auth::user();
+            $data['tenant_id'] = $user?->tenant_id;
+        }
+
         // Set sort order if not provided
         if (!isset($data['sort_order'])) {
             $maxOrder = GradeLevel::where('grade_scale_id', $data['grade_scale_id'])

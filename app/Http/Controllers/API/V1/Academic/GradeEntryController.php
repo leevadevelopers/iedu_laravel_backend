@@ -148,7 +148,7 @@ class GradeEntryController extends Controller
     {
         $request->validate([
             'student_id' => 'required|exists:students,id',
-            'academic_term_id' => 'required|exists:academic_terms,id',
+            'academic_term_id' => 'nullable|exists:academic_terms,id',
         ]);
 
         $grades = $this->gradeEntryService->getStudentGrades(
@@ -156,7 +156,10 @@ class GradeEntryController extends Controller
             $request->academic_term_id
         );
 
-        return $this->successPaginatedResponse($grades);
+        return response()->json([
+            'success' => true,
+            'data' => $grades
+        ]);
     }
 
     /**

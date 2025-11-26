@@ -16,18 +16,36 @@ class FinancialAccount extends Model
 
     protected $fillable = [
         'tenant_id',
+        'school_id',
         'name',
         'code',
+        'account_number',
         'type',
+        'bank_name',
+        'bank_branch',
+        'currency',
         'balance',
+        'initial_balance',
         'is_active',
         'description',
     ];
 
     protected $casts = [
         'balance' => 'decimal:2',
+        'initial_balance' => 'decimal:2',
         'is_active' => 'boolean',
     ];
+    
+    // Accessors para compatibilidade
+    public function getAccountTypeAttribute()
+    {
+        return $this->type;
+    }
+    
+    public function getStatusAttribute()
+    {
+        return $this->is_active ? 'active' : 'inactive';
+    }
 
     public function transactions(): HasMany
     {

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\API\V1\Student;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\StudentEnrollmentHistoryResource;
 use App\Models\V1\SIS\Student\StudentEnrollmentHistory;
 use App\Models\V1\SIS\Student\Student;
 use App\Models\V1\SIS\School\School;
@@ -79,12 +80,14 @@ class StudentEnrollmentController extends Controller
 
             return response()->json([
                 'success' => true,
-                'data' => $enrollments->items(),
+                'data' => StudentEnrollmentHistoryResource::collection($enrollments->items())->resolve(),
                 'pagination' => [
                     'current_page' => $enrollments->currentPage(),
                     'per_page' => $enrollments->perPage(),
                     'total' => $enrollments->total(),
-                    'last_page' => $enrollments->lastPage()
+                    'last_page' => $enrollments->lastPage(),
+                    'from' => $enrollments->firstItem(),
+                    'to' => $enrollments->lastItem()
                 ]
             ]);
 
@@ -253,7 +256,7 @@ class StudentEnrollmentController extends Controller
             return response()->json([
                 'success' => true,
                 'message' => 'Enrollment record retrieved successfully',
-                'data' => $enrollment
+                'data' => new StudentEnrollmentHistoryResource($enrollment)
             ]);
 
         } catch (\Exception $e) {

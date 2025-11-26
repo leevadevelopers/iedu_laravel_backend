@@ -23,10 +23,40 @@ class StoreGradeLevelRequest extends BaseAcademicRequest
             'percentage_min' => 'nullable|numeric|min:0|max:100',
             'percentage_max' => 'nullable|numeric|min:0|max:100',
             'description' => 'nullable|string|max:500',
-            'color_code' => 'nullable|string|max:7|regex:/^#[0-9A-Fa-f]{6}$/',
             'is_passing' => 'nullable|boolean',
             'sort_order' => 'nullable|integer|min:0',
+            'school_id' => 'required|integer|exists:schools,id',
+            'tenant_id' => 'nullable|integer|exists:tenants,id',
         ];
+    }
+
+    /**
+     * Prepare the data for validation
+     */
+    protected function prepareForValidation(): void
+    {
+        // Set tenant_id and school_id automatically
+        $schoolId = $this->getCurrentSchoolIdOrNull();
+        $tenantId = $this->getCurrentTenantIdOrNull();
+
+        if (!$schoolId) {
+            // Try to get from grade scale if provided
+            if ($this->filled('grade_scale_id')) {
+                $gradeScale = \App\Models\V1\Academic\GradeScale::find($this->grade_scale_id);
+                if ($gradeScale) {
+                    $schoolId = $gradeScale->school_id;
+                }
+            }
+            // Fallback to default
+            if (!$schoolId) {
+                $schoolId = 1; // Default for development
+            }
+        }
+
+        $this->merge([
+            'tenant_id' => $tenantId,
+            'school_id' => $schoolId
+        ]);
     }
 
     /**
@@ -84,7 +114,6 @@ class StoreGradeLevelRequest extends BaseAcademicRequest
             'gpa_points.max' => 'GPA points cannot exceed 4',
             'percentage_min.max' => 'Minimum percentage cannot exceed 100',
             'percentage_max.max' => 'Maximum percentage cannot exceed 100',
-            'color_code.regex' => 'Color code must be a valid hex color (e.g., #FF0000)',
         ]);
     }
 
@@ -102,7 +131,6 @@ class StoreGradeLevelRequest extends BaseAcademicRequest
             'percentage_min' => 'minimum percentage',
             'percentage_max' => 'maximum percentage',
             'description' => 'description',
-            'color_code' => 'color code',
             'is_passing' => 'passing status',
             'sort_order' => 'sort order',
         ]);

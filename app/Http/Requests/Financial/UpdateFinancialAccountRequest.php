@@ -13,15 +13,36 @@ class UpdateFinancialAccountRequest extends FormRequest
 
     public function rules(): array
     {
-        $account = $this->route('account');
+        $accountId = $this->route('account');
+        $accountId = is_object($accountId) ? $accountId->id : $accountId;
 
         return [
             'name' => 'sometimes|required|string|max:255',
-            'code' => 'sometimes|required|string|max:50|unique:financial_accounts,code,' . ($account?->id ?? 'NULL'),
-            'type' => 'sometimes|required|in:asset,liability,equity,revenue,expense',
+            'code' => 'sometimes|required|string|max:50|unique:financial_accounts,code,' . ($accountId ?? 'NULL'),
+            'type' => 'sometimes|in:asset,liability,equity,revenue,expense,bank,cash,credit,savings,investment,other',
+            'account_type' => 'sometimes|in:bank,cash,credit,savings,investment,other,asset,liability,equity,revenue,expense',
+            'account_number' => 'nullable|string|max:100',
+            'bank_name' => 'nullable|string|max:255',
+            'bank_branch' => 'nullable|string|max:50',
+            'currency' => 'nullable|string|max:3',
             'balance' => 'nullable|numeric|min:0',
+            'initial_balance' => 'nullable|numeric|min:0',
             'is_active' => 'sometimes|boolean',
+            'status' => 'sometimes|in:active,inactive,closed',
             'description' => 'nullable|string',
         ];
+    }
+    
+    protected function prepareForValidation(): void
+    {
+        // Mapear account_type para type se necessário
+        if ($this->has('account_type') && !$this->has('type')) {
+            $this->merge(['type' => $this->input('account_type')]);
+        }
+        
+        // Mapear status para is_active se necessário
+        if ($this->has('status') && !$this->has('is_active')) {
+            $this->merge(['is_active' => $this->input('status') === 'active']);
+        }
     }
 }
