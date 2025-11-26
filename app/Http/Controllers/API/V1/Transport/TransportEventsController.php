@@ -59,11 +59,11 @@ class TransportEventsController extends Controller
     {
         try {
             $event->load([
-                'student:id,name,student_id',
+                'student:id,student_number,first_name,middle_name,last_name',
                 'fleetBus:id,license_plate,internal_code,make,model',
                 'busStop:id,name,code,address',
                 'transportRoute:id,name,code',
-                'recordedBy:id,name,email'
+                'recordedBy:id,name,identifier,phone'
             ]);
 
             return response()->json([
@@ -113,11 +113,11 @@ class TransportEventsController extends Controller
         try {
             $event = StudentTransportEvent::create($validator->validated());
             $event->load([
-                'student:id,name,student_id',
+                'student:id,student_number,first_name,middle_name,last_name',
                 'fleetBus:id,license_plate,internal_code,make,model',
                 'busStop:id,name,code,address',
                 'transportRoute:id,name,code',
-                'recordedBy:id,name,email'
+                'recordedBy:id,name,identifier,phone'
             ]);
 
             return response()->json([
@@ -161,11 +161,11 @@ class TransportEventsController extends Controller
         try {
             $event->update($validator->validated());
             $event->load([
-                'student:id,name,student_id',
+                'student:id,student_number,first_name,middle_name,last_name',
                 'fleetBus:id,license_plate,internal_code,make,model',
                 'busStop:id,name,code,address',
                 'transportRoute:id,name,code',
-                'recordedBy:id,name,email'
+                'recordedBy:id,name,identifier,phone'
             ]);
 
             return response()->json([

@@ -81,6 +81,15 @@ Route::middleware(['auth:api'])->prefix('transport')->name('transport.')->group(
     // FLEET MANAGEMENT
     // ==========================================
     Route::prefix('fleet')->name('fleet.')->group(function () {
+        // Legacy routes (must be registered before parameterized routes)
+        Route::get('/available', [FleetBusController::class, 'getAvailable'])->name('available');
+        Route::get('/maintenance-report', [FleetBusController::class, 'maintenanceReport'])->name('maintenance-report');
+        Route::get('/{bus}', [FleetBusController::class, 'show'])->name('legacy.show');
+        Route::put('/{bus}', [FleetBusController::class, 'update'])->name('legacy.update');
+        Route::delete('/{bus}', [FleetBusController::class, 'destroy'])->name('legacy.destroy');
+        Route::post('/{bus}/assign', [FleetBusController::class, 'assign'])->name('assign');
+        Route::post('/{bus}/maintenance', [FleetBusController::class, 'maintenance'])->name('maintenance');
+
         // New API routes
         Route::get('/', [FleetController::class, 'index'])->name('index');
         Route::post('/', [FleetController::class, 'store'])->name('store');
@@ -89,15 +98,6 @@ Route::middleware(['auth:api'])->prefix('transport')->name('transport.')->group(
         Route::get('/{fleet}', [FleetController::class, 'show'])->name('show');
         Route::put('/{fleet}', [FleetController::class, 'update'])->name('update');
         Route::delete('/{fleet}', [FleetController::class, 'destroy'])->name('destroy');
-
-        // Legacy routes (keeping for compatibility)
-        Route::get('/available', [FleetBusController::class, 'getAvailable'])->name('available');
-        Route::get('/maintenance-report', [FleetBusController::class, 'maintenanceReport'])->name('maintenance-report');
-        Route::get('/{bus}', [FleetBusController::class, 'show'])->name('legacy.show');
-        Route::put('/{bus}', [FleetBusController::class, 'update'])->name('legacy.update');
-        Route::delete('/{bus}', [FleetBusController::class, 'destroy'])->name('legacy.destroy');
-        Route::post('/{bus}/assign', [FleetBusController::class, 'assign'])->name('assign');
-        Route::post('/{bus}/maintenance', [FleetBusController::class, 'maintenance'])->name('maintenance');
     });
 
     // ==========================================

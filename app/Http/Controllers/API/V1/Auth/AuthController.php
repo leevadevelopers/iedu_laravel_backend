@@ -29,6 +29,8 @@ class AuthController extends Controller
 
     public function register(Request $request)
     {
+        $this->normalizeIdentifier($request);
+
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
             'identifier' => 'required|string|max:255|unique:users',
@@ -187,6 +189,8 @@ class AuthController extends Controller
 
     public function login(Request $request): JsonResponse
     {
+        $this->normalizeIdentifier($request);
+
         $request->validate([
             'identifier' => 'required',
             'password' => 'required|string',
@@ -197,7 +201,8 @@ class AuthController extends Controller
         $password = $request->get('password');
 
         // Buscar usuário por identifier (email ou telefone)
-        $user = \App\Models\User::where('identifier', $identifier)->first();
+        $normalizedIdentifier = $this->normalizeIdentifierValue($identifier);
+        $user = \App\Models\User::whereRaw('LOWER(identifier) = ?', [Str::lower($normalizedIdentifier ?? $identifier)])->first();
         if (!$user || !\Illuminate\Support\Facades\Hash::check($password, $user->password)) {
             $this->activityLogService->logSecurityEvent('failed_login_attempt', [
                 'identifier' => $identifier,
@@ -391,5 +396,36 @@ class AuthController extends Controller
                 'denied' => [],
             ],
         ];
+    }
+
+    private function normalizeIdentifier(Request $request): void
+    {
+        $identifier = $request->input('identifier');
+
+        if ($identifier === null) {
+            return;
+        }
+
+        $normalized = $this->normalizeIdentifierValue(
+            $identifier,
+            $request->input('type')
+        );
+
+        if ($normalized !== null) {
+            $request->merge(['identifier' => $normalized]);
+        }
+    }
+
+    private function normalizeIdentifierValue(?string $identifier, ?string $type = null): ?string
+    {
+        if ($identifier === null) {
+            return null;
+        }
+
+        $trimmed = trim($identifier);
+
+        $shouldLowercase = ($type === 'email') || Str::contains($trimmed, '@');
+
+        return $shouldLowercase ? Str::lower($trimmed) : $trimmed;
     }
 }

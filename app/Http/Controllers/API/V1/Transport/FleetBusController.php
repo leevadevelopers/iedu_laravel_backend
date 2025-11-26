@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\API\V1\Transport;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\Transport\FleetBusResource;
 use App\Models\V1\Transport\FleetBus;
 use App\Services\V1\Transport\FleetManagementService;
 use Illuminate\Http\JsonResponse;
@@ -203,7 +204,7 @@ class FleetBusController extends Controller
 
             return response()->json([
                 'success' => true,
-                'data' => $buses,
+                'data' => FleetBusResource::collection($buses),
                 'message' => 'Available buses retrieved successfully'
             ]);
         } catch (\Exception $e) {

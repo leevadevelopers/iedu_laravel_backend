@@ -127,6 +127,15 @@ class FleetManagementService
 
         // Create new assignment
         $data['fleet_bus_id'] = $bus->id;
+        $data['school_id'] = $data['school_id'] ?? $bus->school_id;
+        $data['transport_route_id'] = $data['transport_route_id'] ?? $data['route_id'] ?? null;
+        unset($data['route_id']);
+
+        if (!$data['transport_route_id']) {
+            throw new \Exception('Unable to determine transport route for assignment');
+        }
+
+        $data['status'] = $data['status'] ?? 'active';
         $assignment = BusRouteAssignment::create($data);
 
         activity()
@@ -139,7 +148,7 @@ class FleetManagementService
     public function getAvailableBuses(): Collection
     {
         return FleetBus::available()
-            ->with(['latestTracking'])
+            ->with(['latestTracking', 'school'])
             ->orderBy('internal_code')
             ->get();
     }

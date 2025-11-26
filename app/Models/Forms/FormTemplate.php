@@ -55,6 +55,14 @@ class FormTemplate extends Model
         return $this->hasMany(\App\Models\Forms\FormInstance::class);
     }
 
+    /**
+     * Compatibility alias for legacy code paths expecting formInstances().
+     */
+    public function formInstances(): HasMany
+    {
+        return $this->instances();
+    }
+
     public function versions(): HasMany
     {
         return $this->hasMany(FormTemplateVersion::class);
