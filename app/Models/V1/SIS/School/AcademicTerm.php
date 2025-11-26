@@ -2,6 +2,7 @@
 
 namespace App\Models\V1\SIS\School;
 
+use App\Models\Traits\Tenantable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -41,7 +42,7 @@ use App\Models\V1\SIS\Student\Student;
  */
 class AcademicTerm extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, Tenantable;
 
     /**
      * The table associated with the model.

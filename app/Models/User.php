@@ -27,18 +27,27 @@ class User extends Authenticatable implements JWTSubject
 
     protected $fillable = [
         'tenant_id',
+        'role_id',
+        'school_id',
         'name',
         'identifier',
         'type',
+        'user_type',
         'verified_at',
         'password',
         'must_change',
         'remember_token',
         'phone',
+        'whatsapp_phone',
         'company',
         'job_title',
         'bio',
         'profile_photo_path',
+        'is_active',
+        'last_login_at',
+        'settings',
+        'emergency_contact_json',
+        'transport_notification_preferences',
         'created_at',
         'updated_at',
     ];
@@ -47,7 +56,12 @@ class User extends Authenticatable implements JWTSubject
 
     protected $casts = [
         'verified_at' => 'datetime',
+        'last_login_at' => 'datetime',
         'must_change' => 'boolean',
+        'is_active' => 'boolean',
+        'settings' => 'array',
+        'emergency_contact_json' => 'array',
+        'transport_notification_preferences' => 'array',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
@@ -82,7 +96,7 @@ class User extends Authenticatable implements JWTSubject
     public function getCurrentTenant(): ?Tenant
     {
         // Check session first
-        $tenantId = session('tenant_id');
+        $tenantId = $this->tenant_id ?? session('tenant_id');
 
         if ($tenantId) {
             // Use cache to avoid repeated database queries

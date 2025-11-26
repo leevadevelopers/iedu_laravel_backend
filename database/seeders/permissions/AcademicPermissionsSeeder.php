@@ -99,7 +99,7 @@ class AcademicPermissionsSeeder extends Seeder
     {
         // Academic Administrator - Full access to academic module
         $academicAdmin = Role::firstOrCreate([
-            'name' => 'Academic Administrator',
+            'name' => 'academic_admin',
             'guard_name' => 'api'
         ]);
 
@@ -153,7 +153,7 @@ class AcademicPermissionsSeeder extends Seeder
 
         // Teacher - Limited access for teaching activities
         $teacher = Role::firstOrCreate([
-            'name' => 'Teacher',
+            'name' => 'teacher',
             'guard_name' => 'api'
         ]);
 
@@ -169,7 +169,7 @@ class AcademicPermissionsSeeder extends Seeder
 
         // Academic Coordinator - Management level access
         $coordinator = Role::firstOrCreate([
-            'name' => 'Academic Coordinator',
+            'name' => 'academic_coordinator',
             'guard_name' => 'api'
         ]);
 
@@ -206,7 +206,7 @@ class AcademicPermissionsSeeder extends Seeder
 
         // Student - Read-only access
         $student = Role::firstOrCreate([
-            'name' => 'Student',
+            'name' => 'student',
             'guard_name' => 'api'
         ]);
 

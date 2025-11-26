@@ -12,9 +12,10 @@ Route::prefix('v1')->group(function () {
     require __DIR__ . '/modules/users.php';
     require __DIR__ . '/modules/forms.php';
     require __DIR__ . '/modules/notification.php';
+    require __DIR__ . '/modules/emails.php';
     require __DIR__ . '/modules/tenant.php';
     require __DIR__ . '/modules/school.php';
-    require __DIR__ . '/modules/academic-years.php';
+    // require __DIR__ . '/modules/academic-years.php'; // Duplicate routes - already defined in school.php
     require __DIR__ . '/modules/students.php';
     require __DIR__ . '/modules/roles_permission/roles.php';
     require __DIR__ . '/modules/academic/academic.php';
@@ -66,12 +67,12 @@ Route::bind('incident', function ($value) {
 });
 
 
-// 
+//
 Route::bind('event', function ($value) {
     return \App\Models\V1\Transport\StudentTransportEvent::findOrFail($value);
 });
 
-// Permission route model binding 
+// Permission route model binding
 Route::bind('permission', function ($value) {
     return \Spatie\Permission\Models\Permission::findOrFail($value);
 });
