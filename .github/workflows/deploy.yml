@@ -37,29 +37,13 @@ jobs:
             **/DOCUMENTACAO_ESTRUTURA_SISTEMA.md
             **/documentacao_api_v1.md
             **/.htaccess.sample
-            **/.htaccess
             **/.env.example
             **/.env.production
             **/.env.development
             **/.env.staging
             **/.env.testing
             **/.env.local
-            **/.env.testing
-            **/.env.local
-            **/.env.production
-            **/.env.development
-            **/.env.staging
-            **/.env.testing
-            **/.env.local
-            **/.env.production
-            **/.env.development
-            **/.env.staging
-            **/.env.testing
-            **/.env.local
-            **/.env.production
-            **/.env.development
-            **/.env.staging
-            **/.env.testing
-            **/.env.local
+
+
 
 
