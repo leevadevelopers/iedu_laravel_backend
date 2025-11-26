@@ -3,6 +3,9 @@
 namespace App\Services\Assessment;
 
 use App\Models\Assessment\AssessmentTerm;
+use App\Models\Assessment\Assessment;
+use App\Models\V1\Academic\GradeEntry;
+use App\Models\V1\Academic\Subject;
 use App\Models\User;
 use Illuminate\Support\Collection;
 
@@ -68,47 +71,103 @@ class ReportService
         $student = User::findOrFail($studentId);
         $term = AssessmentTerm::findOrFail($termId);
 
-        $gradeEntries = \App\Models\Assessment\GradeEntry::where('student_id', $studentId)
-            ->where('is_published', true)
-            ->whereHas('assessment', function ($query) use ($termId) {
-                $query->where('term_id', $termId);
-            })
-            ->with(['assessment.subject', 'assessment.type'])
+        // Get grade entries for the student in this term
+        $gradeEntries = GradeEntry::where('student_id', $studentId)
+            ->where('academic_term_id', $termId)
             ->get();
 
-        $groupedBySubject = $gradeEntries->groupBy('assessment.subject_id');
+        // Get assessments for this term to match with grade entries
+        $assessments = Assessment::where('term_id', $termId)
+            ->with(['subject', 'type'])
+            ->get()
+            ->keyBy('id');
 
-        $subjects = [];
-        foreach ($groupedBySubject as $subjectId => $entries) {
-            $subjectGrades = [];
-            $totalMarks = 0;
-            $totalPossible = 0;
+        // Group grade entries by subject
+        $groupedBySubject = [];
+        
+        foreach ($gradeEntries as $entry) {
+            // Find matching assessment by assessment_name
+            $assessment = $assessments->first(function ($ass) use ($entry) {
+                return $ass->title === $entry->assessment_name;
+            });
 
-            foreach ($entries as $entry) {
-                $subjectGrades[] = [
-                    'assessment' => $entry->assessment->title,
-                    'type' => $entry->assessment->type->name,
-                    'marks' => $entry->marks_awarded,
-                    'total' => $entry->assessment->total_marks,
-                    'percentage' => ($entry->marks_awarded / $entry->assessment->total_marks) * 100,
-                ];
-
-                $totalMarks += $entry->marks_awarded;
-                $totalPossible += $entry->assessment->total_marks;
+            if (!$assessment) {
+                continue;
             }
 
-            $subjects[] = [
-                'subject' => $entries->first()->assessment->subject->name,
-                'grades' => $subjectGrades,
-                'average' => $totalPossible > 0 ? round(($totalMarks / $totalPossible) * 100, 2) : 0,
+            $subjectId = $assessment->subject_id;
+            
+            if (!isset($groupedBySubject[$subjectId])) {
+                $groupedBySubject[$subjectId] = [
+                    'subject' => $assessment->subject,
+                    'entries' => []
+                ];
+            }
+
+            $groupedBySubject[$subjectId]['entries'][] = [
+                'entry' => $entry,
+                'assessment' => $assessment
             ];
         }
 
+        // Build subjects array with grades
+        $subjects = [];
+        foreach ($groupedBySubject as $subjectId => $data) {
+            $subjectGrades = [];
+            $totalMarks = 0;
+            $totalPossible = 0;
+            $totalWeight = 0;
+            $weightedSum = 0;
+
+            foreach ($data['entries'] as $item) {
+                $entry = $item['entry'];
+                $assessment = $item['assessment'];
+                
+                $pointsEarned = $entry->points_earned ?? $entry->raw_score ?? 0;
+                $pointsPossible = $entry->points_possible ?? $assessment->total_marks ?? 100;
+                $weight = $entry->weight ?? $assessment->weight ?? 1.0;
+                $percentage = $entry->percentage_score ?? ($pointsPossible > 0 ? ($pointsEarned / $pointsPossible) * 100 : 0);
+
+                $subjectGrades[] = [
+                    'assessment_id' => $assessment->id,
+                    'assessment_title' => $assessment->title,
+                    'score' => $pointsEarned,
+                    'percentage' => round($percentage, 2),
+                    'weight' => $weight,
+                    'letter_grade' => $entry->letter_grade,
+                ];
+
+                $totalMarks += $pointsEarned;
+                $totalPossible += $pointsPossible;
+                $totalWeight += $weight;
+                $weightedSum += $percentage * $weight;
+            }
+
+            $finalScore = $totalPossible > 0 ? ($totalMarks / $totalPossible) * 100 : 0;
+            $finalPercentage = $totalWeight > 0 ? ($weightedSum / $totalWeight) : $finalScore;
+
+            $subjects[] = [
+                'subject_id' => $subjectId,
+                'subject_name' => $data['subject']->name ?? 'Unknown',
+                'assessments' => $subjectGrades,
+                'final_score' => round($totalMarks, 2),
+                'final_percentage' => round($finalPercentage, 2),
+                'final_grade' => $this->calculateLetterGrade($finalPercentage),
+            ];
+        }
+
+        // Calculate overall GPA and grade
+        $overallGPA = $this->calculateOverallGPA($subjects);
+        $overallGrade = $this->calculateOverallGrade($subjects);
+
         return [
-            'student' => $student,
-            'term' => $term,
+            'student_id' => $studentId,
+            'student_name' => $student->first_name . ' ' . $student->last_name,
+            'term_id' => $termId,
+            'term_name' => $term->name ?? 'Term ' . $termId,
             'subjects' => $subjects,
-            'overall_average' => $this->calculateOverallAverage($gradeEntries),
+            'overall_gpa' => $overallGPA,
+            'overall_grade' => $overallGrade,
         ];
     }
 
@@ -134,10 +193,69 @@ class ReportService
 
         $totalPercentage = 0;
         foreach ($gradeEntries as $entry) {
-            $totalPercentage += ($entry->marks_awarded / $entry->assessment->total_marks) * 100;
+            $percentage = $entry->percentage_score ?? 0;
+            $totalPercentage += $percentage;
         }
 
         return round($totalPercentage / $gradeEntries->count(), 2);
+    }
+
+    protected function calculateLetterGrade(float $percentage): ?string
+    {
+        if ($percentage >= 90) return 'A';
+        if ($percentage >= 80) return 'B';
+        if ($percentage >= 70) return 'C';
+        if ($percentage >= 60) return 'D';
+        return 'F';
+    }
+
+    protected function calculateOverallGPA(array $subjects): ?float
+    {
+        if (empty($subjects)) {
+            return null;
+        }
+
+        $totalGPA = 0;
+        $count = 0;
+
+        foreach ($subjects as $subject) {
+            $percentage = $subject['final_percentage'] ?? 0;
+            $gpa = $this->percentageToGPA($percentage);
+            if ($gpa !== null) {
+                $totalGPA += $gpa;
+                $count++;
+            }
+        }
+
+        return $count > 0 ? round($totalGPA / $count, 2) : null;
+    }
+
+    protected function percentageToGPA(float $percentage): ?float
+    {
+        if ($percentage >= 90) return 4.0;
+        if ($percentage >= 80) return 3.0;
+        if ($percentage >= 70) return 2.0;
+        if ($percentage >= 60) return 1.0;
+        return 0.0;
+    }
+
+    protected function calculateOverallGrade(array $subjects): ?string
+    {
+        if (empty($subjects)) {
+            return null;
+        }
+
+        $totalPercentage = 0;
+        $count = 0;
+
+        foreach ($subjects as $subject) {
+            $percentage = $subject['final_percentage'] ?? 0;
+            $totalPercentage += $percentage;
+            $count++;
+        }
+
+        $averagePercentage = $count > 0 ? ($totalPercentage / $count) : 0;
+        return $this->calculateLetterGrade($averagePercentage);
     }
 }
 

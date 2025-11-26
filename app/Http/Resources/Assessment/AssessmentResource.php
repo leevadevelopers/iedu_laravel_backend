@@ -21,6 +21,8 @@ class AssessmentResource extends JsonResource
             'description' => $this->description,
             'instructions' => $this->instructions,
             'scheduled_date' => $this->scheduled_date?->toISOString(),
+            'start_time' => $this->start_time ? $this->start_time->format('H:i') : null,
+            'duration_minutes' => $this->duration_minutes,
             'submission_deadline' => $this->submission_deadline?->toISOString(),
             'total_marks' => (float) $this->total_marks,
             'weight' => (float) $this->weight,

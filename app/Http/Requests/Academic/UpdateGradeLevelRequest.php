@@ -23,7 +23,6 @@ class UpdateGradeLevelRequest extends BaseAcademicRequest
             'percentage_min' => 'nullable|numeric|min:0|max:100',
             'percentage_max' => 'nullable|numeric|min:0|max:100',
             'description' => 'nullable|string|max:500',
-            'color_code' => 'nullable|string|max:7|regex:/^#[0-9A-Fa-f]{6}$/',
             'is_passing' => 'nullable|boolean',
             'sort_order' => 'nullable|integer|min:0',
         ];
@@ -91,7 +90,6 @@ class UpdateGradeLevelRequest extends BaseAcademicRequest
             'gpa_points.max' => 'GPA points cannot exceed 4',
             'percentage_min.max' => 'Minimum percentage cannot exceed 100',
             'percentage_max.max' => 'Maximum percentage cannot exceed 100',
-            'color_code.regex' => 'Color code must be a valid hex color (e.g., #FF0000)',
         ]);
     }
 
@@ -109,7 +107,6 @@ class UpdateGradeLevelRequest extends BaseAcademicRequest
             'percentage_min' => 'minimum percentage',
             'percentage_max' => 'maximum percentage',
             'description' => 'description',
-            'color_code' => 'color code',
             'is_passing' => 'passing status',
             'sort_order' => 'sort order',
         ]);

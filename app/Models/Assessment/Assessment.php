@@ -27,6 +27,8 @@ class Assessment extends BaseModel
         'description',
         'instructions',
         'scheduled_date',
+        'start_time',
+        'duration_minutes',
         'submission_deadline',
         'total_marks',
         'weight',
@@ -41,6 +43,7 @@ class Assessment extends BaseModel
 
     protected $casts = [
         'scheduled_date' => 'datetime',
+        'start_time' => 'datetime:H:i:s',
         'submission_deadline' => 'datetime',
         'published_at' => 'datetime',
         'total_marks' => 'decimal:2',

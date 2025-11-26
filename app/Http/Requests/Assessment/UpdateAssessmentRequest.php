@@ -23,6 +23,8 @@ class UpdateAssessmentRequest extends FormRequest
             'description' => 'nullable|string',
             'instructions' => 'nullable|string',
             'scheduled_date' => 'nullable|date',
+            'start_time' => 'nullable|date_format:H:i',
+            'duration_minutes' => 'nullable|integer|min:1',
             'submission_deadline' => 'nullable|date',
             'total_marks' => 'sometimes|numeric|min:0',
             'weight' => 'nullable|numeric|min:0|max:100',

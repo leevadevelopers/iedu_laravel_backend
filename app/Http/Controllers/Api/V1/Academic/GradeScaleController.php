@@ -82,19 +82,17 @@ class GradeScaleController extends Controller
     /**
      * Display the specified grade scale
      */
-    public function show(int $gradeScaleId): JsonResponse
+    public function show(GradeScale $gradeScale): JsonResponse
     {
-        $gradeScale = GradeScale::where('id', $gradeScaleId)
-            ->where('school_id', $this->getCurrentSchoolId())
-            ->with(['gradeLevels', 'gradingSystem'])
-            ->first();
-
-        if (!$gradeScale) {
+        // Verify school access
+        if ($gradeScale->school_id !== $this->getCurrentSchoolId()) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Grade scale not found'
             ], 404);
         }
+
+        $gradeScale->load(['gradeLevels', 'gradingSystem']);
 
         return response()->json([
             'status' => 'success',
@@ -105,14 +103,11 @@ class GradeScaleController extends Controller
     /**
      * Update the specified grade scale
      */
-    public function update(UpdateGradeScaleRequest $request, int $gradeScaleId): JsonResponse
+    public function update(UpdateGradeScaleRequest $request, GradeScale $gradeScale): JsonResponse
     {
         try {
-            $gradeScale = GradeScale::where('id', $gradeScaleId)
-                ->where('school_id', $this->getCurrentSchoolId())
-                ->first();
-
-            if (!$gradeScale) {
+            // Verify school access
+            if ($gradeScale->school_id !== $this->getCurrentSchoolId()) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Grade scale not found'
@@ -138,14 +133,11 @@ class GradeScaleController extends Controller
     /**
      * Remove the specified grade scale
      */
-    public function destroy(int $gradeScaleId): JsonResponse
+    public function destroy(GradeScale $gradeScale): JsonResponse
     {
         try {
-            $gradeScale = GradeScale::where('id', $gradeScaleId)
-                ->where('school_id', $this->getCurrentSchoolId())
-                ->first();
-
-            if (!$gradeScale) {
+            // Verify school access
+            if ($gradeScale->school_id !== $this->getCurrentSchoolId()) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Grade scale not found'
@@ -170,14 +162,11 @@ class GradeScaleController extends Controller
     /**
      * Set grade scale as default
      */
-    public function setDefault(int $gradeScaleId): JsonResponse
+    public function setDefault(GradeScale $gradeScale): JsonResponse
     {
         try {
-            $gradeScale = GradeScale::where('id', $gradeScaleId)
-                ->where('school_id', $this->getCurrentSchoolId())
-                ->first();
-
-            if (!$gradeScale) {
+            // Verify school access
+            if ($gradeScale->school_id !== $this->getCurrentSchoolId()) {
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Grade scale not found'
@@ -233,17 +222,14 @@ class GradeScaleController extends Controller
     /**
      * Get grade for percentage
      */
-    public function getGradeForPercentage(int $gradeScaleId, Request $request): JsonResponse
+    public function getGradeForPercentage(GradeScale $gradeScale, Request $request): JsonResponse
     {
         $request->validate([
             'percentage' => 'required|numeric|min:0|max:100'
         ]);
 
-        $gradeScale = GradeScale::where('id', $gradeScaleId)
-            ->where('school_id', $this->getCurrentSchoolId())
-            ->first();
-
-        if (!$gradeScale) {
+        // Verify school access
+        if ($gradeScale->school_id !== $this->getCurrentSchoolId()) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Grade scale not found'

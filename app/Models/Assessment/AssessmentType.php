@@ -17,12 +17,14 @@ class AssessmentType extends BaseModel
         'code',
         'description',
         'default_weight',
+        'max_score',
         'color',
         'is_active',
     ];
 
     protected $casts = [
         'default_weight' => 'decimal:2',
+        'max_score' => 'decimal:2',
         'is_active' => 'boolean',
     ];
 

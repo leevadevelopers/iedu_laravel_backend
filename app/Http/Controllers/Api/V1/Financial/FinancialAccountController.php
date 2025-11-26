@@ -32,14 +32,24 @@ class FinancialAccountController extends BaseController
             });
         }
 
-        // Filter by type
+        // Filter by type (accept both 'type' and 'account_type' for compatibility)
         if ($request->filled('type')) {
             $query->where('type', $request->type);
+        } elseif ($request->filled('account_type')) {
+            $query->where('type', $request->account_type);
         }
 
-        // Filter by active status
+        // Filter by active status (accept both 'is_active' and 'status' for compatibility)
         if ($request->filled('is_active')) {
             $query->where('is_active', $request->boolean('is_active'));
+        } elseif ($request->filled('status')) {
+            $status = $request->status;
+            if ($status === 'active') {
+                $query->where('is_active', true);
+            } elseif ($status === 'inactive') {
+                $query->where('is_active', false);
+            }
+            // 'closed' status might need special handling if it exists in the model
         }
 
         // Sort
@@ -57,7 +67,21 @@ class FinancialAccountController extends BaseController
 
     public function store(StoreFinancialAccountRequest $request): JsonResponse
     {
-        $account = FinancialAccount::create($request->validated());
+        $validated = $request->validated();
+        
+        // Mapear account_type para type se necessário
+        if (isset($validated['account_type']) && !isset($validated['type'])) {
+            $validated['type'] = $validated['account_type'];
+            unset($validated['account_type']);
+        }
+        
+        // Mapear status para is_active se necessário
+        if (isset($validated['status']) && !isset($validated['is_active'])) {
+            $validated['is_active'] = ($validated['status'] === 'active');
+            unset($validated['status']);
+        }
+        
+        $account = FinancialAccount::create($validated);
 
         return $this->successResponse(
             new FinancialAccountResource($account),
@@ -66,8 +90,9 @@ class FinancialAccountController extends BaseController
         );
     }
 
-    public function show(FinancialAccount $account): JsonResponse
+    public function show($id): JsonResponse
     {
+        $account = FinancialAccount::findOrFail($id);
         $account->loadCount(['transactions', 'expenses']);
 
         return $this->successResponse(
@@ -76,9 +101,24 @@ class FinancialAccountController extends BaseController
         );
     }
 
-    public function update(UpdateFinancialAccountRequest $request, FinancialAccount $account): JsonResponse
+    public function update(UpdateFinancialAccountRequest $request, $id): JsonResponse
     {
-        $account->update($request->validated());
+        $account = FinancialAccount::findOrFail($id);
+        $validated = $request->validated();
+        
+        // Mapear account_type para type se necessário
+        if (isset($validated['account_type']) && !isset($validated['type'])) {
+            $validated['type'] = $validated['account_type'];
+            unset($validated['account_type']);
+        }
+        
+        // Mapear status para is_active se necessário
+        if (isset($validated['status']) && !isset($validated['is_active'])) {
+            $validated['is_active'] = ($validated['status'] === 'active');
+            unset($validated['status']);
+        }
+        
+        $account->update($validated);
 
         return $this->successResponse(
             new FinancialAccountResource($account),
@@ -86,8 +126,10 @@ class FinancialAccountController extends BaseController
         );
     }
 
-    public function destroy(FinancialAccount $account): JsonResponse
+    public function destroy($id): JsonResponse
     {
+        $account = FinancialAccount::findOrFail($id);
+        
         // Check if account has transactions or expenses
         if ($account->transactions()->count() > 0 || $account->expenses()->count() > 0) {
             return $this->errorResponse(

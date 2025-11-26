@@ -7,15 +7,19 @@ use App\Http\Requests\Assessment\StoreAssessmentTypeRequest;
 use App\Http\Requests\Assessment\UpdateAssessmentTypeRequest;
 use App\Http\Resources\Assessment\AssessmentTypeResource;
 use App\Models\Assessment\AssessmentType;
+use App\Services\V1\Academic\GradingSystemService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class AssessmentTypeController extends BaseController
 {
-    public function __construct()
+    protected GradingSystemService $gradingSystemService;
+
+    public function __construct(GradingSystemService $gradingSystemService)
     {
         $this->middleware('auth:api');
+        $this->gradingSystemService = $gradingSystemService;
     }
 
     /**
@@ -57,9 +61,33 @@ class AssessmentTypeController extends BaseController
 
         $types = $query->paginate($request->get('per_page', 15));
 
-        return $this->paginatedResponse(
+        // Get max_score from grading system for response metadata
+        $maxScore = $this->gradingSystemService->getMaxScore();
+
+        $response = $this->paginatedResponse(
             AssessmentTypeResource::collection($types),
             'Assessment types retrieved successfully'
+        );
+
+        // Add max_score to response metadata
+        $responseData = $response->getData(true);
+        if ($maxScore) {
+            $responseData['meta']['max_score'] = $maxScore;
+        }
+
+        return response()->json($responseData);
+    }
+
+    /**
+     * Get max score from grading system
+     */
+    public function getMaxScore(): JsonResponse
+    {
+        $maxScore = $this->gradingSystemService->getMaxScore();
+        
+        return $this->successResponse(
+            ['max_score' => $maxScore],
+            'Max score retrieved successfully'
         );
     }
 
@@ -69,9 +97,18 @@ class AssessmentTypeController extends BaseController
     public function store(StoreAssessmentTypeRequest $request): JsonResponse
     {
         $tenantId = session('tenant_id') ?? Auth::user()->tenant_id;
+        
+        // Get max_score from grading system if not provided
+        $data = $request->validated();
+        if (!isset($data['max_score'])) {
+            $maxScore = $this->gradingSystemService->getMaxScore();
+            if ($maxScore) {
+                $data['max_score'] = $maxScore;
+            }
+        }
 
         $type = AssessmentType::create(array_merge(
-            $request->validated(),
+            $data,
             ['tenant_id' => $tenantId]
         ));
 
