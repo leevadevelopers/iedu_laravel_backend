@@ -2,10 +2,12 @@
 
 namespace Database\Seeders;
 
-use Database\Seeders\Library\LibrarySeeder;
-use Database\Seeders\Financial\FinancialSeeder;
-use Database\Seeders\Permissions\LibraryPermissionsSeeder;
+use Database\Seeders\Permissions\AcademicPermissionsSeeder;
+use Database\Seeders\Permissions\AssessmentPermissionsSeeder;
 use Database\Seeders\Permissions\FinancialPermissionsSeeder;
+use Database\Seeders\Permissions\FormPermissionSeeder;
+use Database\Seeders\Permissions\LibraryPermissionsSeeder;
+use Database\Seeders\Permissions\TransportPermissionsSeeder;
 use Illuminate\Database\Seeder;
 
 class DatabaseSeeder extends Seeder
@@ -14,18 +16,14 @@ class DatabaseSeeder extends Seeder
     {
         $this->call([
             AllPermissionsSeeder::class,
+            FormPermissionSeeder::class,
+            AcademicPermissionsSeeder::class,
+            AssessmentPermissionsSeeder::class,
+            TransportPermissionsSeeder::class,
             LibraryPermissionsSeeder::class,
             FinancialPermissionsSeeder::class,
-            PermissionRoleSeeder::class,
+            RolesSeeder::class,
             UserSeeder::class,
-            TenantSeeder::class,
-            SchoolSeeder::class,
-            SchoolUserSeeder::class,
-            SchoolFormTemplatesSeeder::class,
-            LibrarySeeder::class,
-            FinancialSeeder::class,
         ]);
-
-        $this->command->info('✅ Database seeded successfully!');
     }
 }

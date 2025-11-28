@@ -27,6 +27,7 @@ class User extends Authenticatable implements JWTSubject
 
     protected $fillable = [
         'tenant_id',
+        'role_id',
         'name',
         'identifier',
         'type',
@@ -246,7 +247,7 @@ class User extends Authenticatable implements JWTSubject
                 ->wherePivot('status', 'active')
                 ->where('schools.id', $schoolId)
                 ->first();
-            
+
             if ($school) {
                 return $school;
             }
@@ -280,7 +281,7 @@ class User extends Authenticatable implements JWTSubject
             ->wherePivot('status', 'active')
             ->where('schools.id', $schoolId)
             ->exists();
-        
+
         if (!$hasAccess) {
             return false;
         }

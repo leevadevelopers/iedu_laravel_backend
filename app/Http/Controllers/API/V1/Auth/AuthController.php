@@ -12,9 +12,11 @@ use App\Models\Settings\Tenant;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
+use Spatie\Permission\PermissionRegistrar;
 use App\Services\ActivityLogService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Validation\Rule;
 use App\Http\Resources\UserResource;
 use App\Http\Resources\TenantResource;
 
@@ -28,13 +30,26 @@ class AuthController extends Controller
 
     public function register(Request $request)
     {
+        $ownerRoleId = Role::where('name', 'owner')->value('id');
+        if (!$ownerRoleId) {
+            return response()->json(['error' => 'Owner role is not configured'], 500);
+        }
+
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
             'identifier' => 'required|string|max:255|unique:users',
             'type' => 'required|in:email,phone',
             'role_id' => 'required|int|exists:roles,id',
+            'tenant_id' => 'nullable|int|exists:tenants,id',
             'password' => 'required|string|min:8|confirmed',
-            'organization_name' => 'required|string|max:255',
+            'organization_name' => [
+                Rule::requiredIf(function () use ($request, $ownerRoleId) {
+                    return (int) $request->input('role_id') === (int) $ownerRoleId;
+                }),
+                'nullable',
+                'string',
+                'max:255',
+            ],
         ]);
 
         // Validação condicional baseada no tipo de identifier
@@ -89,6 +104,9 @@ class AuthController extends Controller
         }
 
         $validatedData = $validator->validated();
+        $selectedRoleId = (int) $validatedData['role_id'];
+        $shouldCreateTenant = $selectedRoleId === (int) $ownerRoleId;
+        $providedTenantId = isset($validatedData['tenant_id']) ? (int) $validatedData['tenant_id'] : null;
 
         DB::beginTransaction();
         try {
@@ -98,33 +116,85 @@ class AuthController extends Controller
                 'identifier' => $validatedData['identifier'],
                 'type' => $validatedData['type'],
                 'password' => bcrypt($validatedData['password']),
+                'role_id' => $selectedRoleId,
+                'tenant_id' => null,
                 // 'verified_at' => now(), // Uncomment if you want to auto-verify
             ]);
 
-            // Create the tenant (organization) with the user as owner
-            $tenant = Tenant::create([
-                'name' => $validatedData['organization_name'],
-                'slug' => Str::slug($validatedData['organization_name']),
-                'owner_id' => $user->id, // Set the owner_id to the newly created user
-                'is_active' => true,
-                'settings' => [
-                    'timezone' => 'UTC',
-                    'currency' => 'USD',
-                    'language' => 'en',
-                    'features' => [],
-                ],
-                'created_by' => $user->id, // Set created_by to the user as well
-            ]);
+            // Ensure role assignment is persisted both in users table and Spatie mapping
+            $role = Role::find($selectedRoleId);
+            if (!$role) {
+                throw new \RuntimeException('Selected role could not be found.');
+            }
 
-            // Attach user to tenant as owner
-            $ownerRoleId = Role::where('name', 'owner')->value('id');
-            $user->tenants()->attach($tenant->id, [
-                'role_id' => $ownerRoleId,
-                'permissions' => json_encode(['tenants.', 'users.', 'projects.', 'finance.']),
-                'current_tenant' => true,
-                'joined_at' => now(),
-                'status' => 'active',
-            ]);
+            $tenant = null;
+            $tenantContext = null;
+            $tenantData = null;
+            $tenantIdForRoleAssignment = null;
+
+            if ($shouldCreateTenant) {
+                // Create the tenant (organization) with the user as owner
+                $tenant = Tenant::create([
+                    'name' => $validatedData['organization_name'],
+                    'slug' => Str::slug($validatedData['organization_name']),
+                    'owner_id' => $user->id, // Set the owner_id to the newly created user
+                    'is_active' => true,
+                    'settings' => [
+                        'timezone' => 'UTC',
+                        'currency' => 'USD',
+                        'language' => 'en',
+                        'features' => [],
+                    ],
+                    'created_by' => $user->id, // Set created_by to the user as well
+                ]);
+
+                $ownerPermissions = ['tenants.', 'users.', 'projects.', 'finance.'];
+
+                // Attach user to tenant as owner
+                $user->tenants()->attach($tenant->id, [
+                    'role_id' => $ownerRoleId,
+                    'permissions' => json_encode($ownerPermissions),
+                    'current_tenant' => true,
+                    'joined_at' => now(),
+                    'status' => 'active',
+                ]);
+
+                // Update user references to reflect ownership of the tenant
+                $user->update(['tenant_id' => $tenant->id]);
+                $user->refresh();
+                $tenantIdForRoleAssignment = $tenant->id;
+
+                $tenantContext = [
+                    'tenant_id' => $tenant->id,
+                    'role' => 'owner',
+                    'permissions' => $ownerPermissions,
+                    'is_owner' => true,
+                    'custom_permissions' => [
+                        'granted' => [],
+                        'denied' => [],
+                    ],
+                ];
+
+                $tenantData = [
+                    'id' => $tenant->id,
+                    'name' => $tenant->name,
+                    'slug' => $tenant->slug,
+                    'domain' => $tenant->domain,
+                    'is_active' => $tenant->is_active,
+                    'settings' => $tenant->settings,
+                    'features' => $tenant->getFeatures(),
+                    'created_at' => $tenant->created_at,
+                    'updated_at' => $tenant->updated_at,
+                ];
+            } elseif ($providedTenantId) {
+                $tenantIdForRoleAssignment = $providedTenantId;
+            }
+
+            if ($tenantIdForRoleAssignment) {
+                app(PermissionRegistrar::class)->setPermissionsTeamId($tenantIdForRoleAssignment);
+                $user->assignRole($role);
+                app(PermissionRegistrar::class)->setPermissionsTeamId(null);
+            }
 
             $token = auth('api')->login($user);
 
@@ -132,28 +202,7 @@ class AuthController extends Controller
 
             // Prepare response
             $userData = $user->toArray();
-            $userData['current_tenant_context'] = [
-                'tenant_id' => $tenant->id,
-                'role' => 'owner',
-                'permissions' => ['tenants.', 'users.', 'projects.', 'finance.'],
-                'is_owner' => true,
-                'custom_permissions' => [
-                    'granted' => [],
-                    'denied' => [],
-                ],
-            ];
-
-            $tenantData = [
-                'id' => $tenant->id,
-                'name' => $tenant->name,
-                'slug' => $tenant->slug,
-                'domain' => $tenant->domain,
-                'is_active' => $tenant->is_active,
-                'settings' => $tenant->settings,
-                'features' => $tenant->getFeatures(),
-                'created_at' => $tenant->created_at,
-                'updated_at' => $tenant->updated_at,
-            ];
+            $userData['current_tenant_context'] = $tenantContext;
 
             return response()->json([
                 'access_token' => $token,
