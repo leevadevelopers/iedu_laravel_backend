@@ -28,6 +28,251 @@ class AcademicYearController extends Controller
     }
 
     /**
+     * Get the current school ID from authenticated user
+     */
+    protected function getCurrentSchoolId(): ?int
+    {
+        $user = auth('api')->user();
+
+        if (!$user) {
+            return null;
+        }
+
+        // Try getCurrentSchool method first (preferred)
+        if (method_exists($user, 'getCurrentSchool')) {
+            $currentSchool = $user->getCurrentSchool();
+            if ($currentSchool) {
+                return $currentSchool->id;
+            }
+        }
+
+        // Fallback to school_id attribute
+        if (isset($user->school_id) && $user->school_id) {
+            return $user->school_id;
+        }
+
+        // Try activeSchools relationship
+        if (method_exists($user, 'activeSchools')) {
+            $activeSchools = $user->activeSchools();
+            if ($activeSchools && $activeSchools->count() > 0) {
+                $firstSchool = $activeSchools->first();
+                if ($firstSchool && isset($firstSchool->school_id)) {
+                    return $firstSchool->school_id;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Get the current tenant ID from authenticated user
+     */
+    protected function getCurrentTenantId(): ?int
+    {
+        $user = auth('api')->user();
+
+        if (!$user) {
+            return null;
+        }
+
+        // Try tenant_id attribute first
+        if (isset($user->tenant_id) && $user->tenant_id) {
+            return $user->tenant_id;
+        }
+
+        // Try getCurrentTenant method
+        if (method_exists($user, 'getCurrentTenant')) {
+            $currentTenant = $user->getCurrentTenant();
+            if ($currentTenant) {
+                return $currentTenant->id;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Verify that a school_id belongs to the user's tenant
+     */
+    protected function verifySchoolAccess(int $schoolId): bool
+    {
+        $tenantId = $this->getCurrentTenantId();
+        if (!$tenantId) {
+            return false;
+        }
+
+        // Check if school belongs to user's tenant
+        $school = School::where('id', $schoolId)
+            ->where('tenant_id', $tenantId)
+            ->exists();
+
+        return $school;
+    }
+
+    /**
+     * Ensure form template exists, create if it doesn't
+     */
+    protected function ensureFormTemplateExists(string $formType, int $tenantId, int $userId): FormTemplate
+    {
+        // Check if template already exists
+        $template = FormTemplate::where('category', $formType)
+            ->where('tenant_id', $tenantId)
+            ->where('is_active', true)
+            ->first();
+
+        if ($template) {
+            return $template;
+        }
+
+        // Create default template
+        return FormTemplate::create([
+            'tenant_id' => $tenantId,
+            'name' => 'Academic Year Setup Form',
+            'description' => 'Default form template for academic year setup. You can customize this template later.',
+            'category' => $formType,
+            'version' => '1.0',
+            'estimated_completion_time' => '15 minutes',
+            'is_multi_step' => false,
+            'auto_save' => true,
+            'compliance_level' => 'standard',
+            'is_active' => true,
+            'is_default' => true,
+            'form_configuration' => [
+                'type' => 'academic_year_setup',
+                'auto_approve' => false,
+                'require_comments' => false,
+                'allow_draft' => true
+            ],
+            'steps' => [
+                [
+                    'step_id' => 'step_1',
+                    'step_title' => 'Academic Year Information',
+                    'step_number' => 1,
+                    'sections' => [
+                        [
+                            'section_id' => 'section_basic_info',
+                            'section_title' => 'Basic Information',
+                            'fields' => [
+                                [
+                                    'field_id' => 'name',
+                                    'field_type' => 'text',
+                                    'label' => 'Academic Year Name',
+                                    'placeholder' => 'e.g., 2024-2025 Academic Year',
+                                    'required' => true,
+                                    'validation' => ['required', 'string', 'max:255']
+                                ],
+                                [
+                                    'field_id' => 'year',
+                                    'field_type' => 'text',
+                                    'label' => 'Year',
+                                    'placeholder' => 'e.g., 2024-2025',
+                                    'required' => true,
+                                    'validation' => ['required', 'string', 'max:10']
+                                ],
+                                [
+                                    'field_id' => 'description',
+                                    'field_type' => 'textarea',
+                                    'label' => 'Description',
+                                    'placeholder' => 'Enter a description for this academic year',
+                                    'required' => false,
+                                    'validation' => ['nullable', 'string', 'max:1000']
+                                ]
+                            ]
+                        ],
+                        [
+                            'section_id' => 'section_dates',
+                            'section_title' => 'Important Dates',
+                            'fields' => [
+                                [
+                                    'field_id' => 'start_date',
+                                    'field_type' => 'date',
+                                    'label' => 'Start Date',
+                                    'required' => true,
+                                    'validation' => ['required', 'date']
+                                ],
+                                [
+                                    'field_id' => 'end_date',
+                                    'field_type' => 'date',
+                                    'label' => 'End Date',
+                                    'required' => true,
+                                    'validation' => ['required', 'date', 'after:start_date']
+                                ],
+                                [
+                                    'field_id' => 'enrollment_start_date',
+                                    'field_type' => 'date',
+                                    'label' => 'Enrollment Start Date',
+                                    'required' => false,
+                                    'validation' => ['nullable', 'date', 'after_or_equal:start_date']
+                                ],
+                                [
+                                    'field_id' => 'enrollment_end_date',
+                                    'field_type' => 'date',
+                                    'label' => 'Enrollment End Date',
+                                    'required' => false,
+                                    'validation' => ['nullable', 'date', 'before:end_date']
+                                ]
+                            ]
+                        ],
+                        [
+                            'section_id' => 'section_settings',
+                            'section_title' => 'Settings',
+                            'fields' => [
+                                [
+                                    'field_id' => 'term_structure',
+                                    'field_type' => 'select',
+                                    'label' => 'Term Structure',
+                                    'required' => false,
+                                    'options' => [
+                                        ['value' => 'semesters', 'label' => 'Semesters'],
+                                        ['value' => 'trimesters', 'label' => 'Trimesters'],
+                                        ['value' => 'quarters', 'label' => 'Quarters'],
+                                        ['value' => 'year_round', 'label' => 'Year Round']
+                                    ],
+                                    'validation' => ['nullable', 'in:semesters,trimesters,quarters,year_round']
+                                ],
+                                [
+                                    'field_id' => 'total_terms',
+                                    'field_type' => 'number',
+                                    'label' => 'Total Terms',
+                                    'required' => false,
+                                    'validation' => ['nullable', 'integer', 'min:1']
+                                ],
+                                [
+                                    'field_id' => 'is_current',
+                                    'field_type' => 'checkbox',
+                                    'label' => 'Set as Current Academic Year',
+                                    'required' => false,
+                                    'validation' => ['nullable', 'boolean']
+                                ]
+                            ]
+                        ]
+                    ]
+                ]
+            ],
+            'validation_rules' => [
+                'name' => 'required|string|max:255',
+                'year' => 'required|string|max:10',
+                'description' => 'nullable|string|max:1000',
+                'start_date' => 'required|date',
+                'end_date' => 'required|date|after:start_date',
+                'enrollment_start_date' => 'nullable|date|after_or_equal:start_date',
+                'enrollment_end_date' => 'nullable|date|before:end_date',
+                'term_structure' => 'nullable|in:semesters,trimesters,quarters,year_round',
+                'total_terms' => 'nullable|integer|min:1',
+                'is_current' => 'nullable|boolean'
+            ],
+            'workflow_configuration' => [],
+            'metadata' => [
+                'auto_created' => true,
+                'created_for' => 'academic_year_setup',
+                'can_be_customized' => true
+            ],
+            'created_by' => $userId
+        ]);
+    }
+
+    /**
      * Display a listing of academic years with filters
      */
     public function index(Request $request): JsonResponse
@@ -39,9 +284,29 @@ class AcademicYearController extends Controller
                 'createdBy:id,name'
             ]);
 
-            // Apply filters
+            // Apply school_id filter
+            // Always use user's school_id or verify requested school_id belongs to user's tenant
             if ($request->has('school_id')) {
-                $query->where('school_id', $request->school_id);
+                $requestedSchoolId = $request->school_id;
+                if ($this->verifySchoolAccess($requestedSchoolId)) {
+                    $query->where('school_id', $requestedSchoolId);
+                } else {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'You do not have access to this school'
+                    ], 403);
+                }
+            } else {
+                // Auto-filter by user's school_id
+                $userSchoolId = $this->getCurrentSchoolId();
+                if ($userSchoolId) {
+                    $query->where('school_id', $userSchoolId);
+                } else {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'User is not associated with any school'
+                    ], 403);
+                }
             }
 
             if ($request->has('status')) {
@@ -111,9 +376,36 @@ class AcademicYearController extends Controller
             ], 401);
         }
 
+        // Get tenant_id from user if not provided
+        $tenantId = $this->getCurrentTenantId();
+        if (!$tenantId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Tenant ID is required'
+            ], 422);
+        }
+
+        // Get school_id from user if not provided
+        $schoolId = $user->school_id;
+        if (!$schoolId) {
+            $schoolId = $this->getCurrentSchoolId();
+            if (!$schoolId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'User is not associated with any school'
+                ], 403);
+            }
+        }
+
+        // Verify school access
+        if (!$this->verifySchoolAccess($schoolId)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'You do not have access to this school'
+            ], 403);
+        }
+
         $validator = Validator::make($request->all(), [
-            'school_id' => 'required|exists:schools,id',
-            'tenant_id' => 'required|exists:tenants,id',
             'name' => 'required|string|max:255',
             'year' => 'required|string|max:10',
             'start_date' => 'required|date',
@@ -145,8 +437,11 @@ class AcademicYearController extends Controller
         try {
             DB::beginTransaction();
 
-            // Check for overlapping academic years
-            $overlapping = AcademicYear::where('school_id', $request->school_id)
+            // Check for overlapping academic years (only within same school and tenant, excluding soft deleted)
+            // Use withoutTenantScope to ensure we check only the specific tenant_id
+            $overlapping = AcademicYear::withoutTenantScope()
+                ->where('school_id', $schoolId)
+                ->where('tenant_id', $tenantId)
                 ->where(function($query) use ($request) {
                     $query->whereBetween('start_date', [$request->start_date, $request->end_date])
                           ->orWhereBetween('end_date', [$request->start_date, $request->end_date])
@@ -164,25 +459,47 @@ class AcademicYearController extends Controller
                 ], 422);
             }
 
-            // Create academic year
-            $academicYearData = $request->except(['form_data', 'holidays']);
-            $academicYearData['created_by'] = $user->id;
-            $academicYearData['tenant_id'] = $request->tenant_id;
-            $academicYearData['holidays_json'] = $request->holidays ? json_encode($request->holidays) : null;
+            // Check if there's a soft deleted academic year with the same school_id, tenant_id, and year
+            $existingDeleted = AcademicYear::withoutTenantScope()
+                ->withTrashed()
+                ->where('school_id', $schoolId)
+                ->where('tenant_id', $tenantId)
+                ->where('year', $request->year)
+                ->whereNotNull('deleted_at')
+                ->first();
 
-            $academicYear = AcademicYear::create($academicYearData);
+            if ($existingDeleted) {
+                // Restore and update the existing academic year
+                $existingDeleted->restore();
+                $academicYearData = $request->except(['form_data', 'holidays']);
+                $academicYearData['holidays_json'] = $request->holidays ? json_encode($request->holidays) : null;
+                $existingDeleted->update($academicYearData);
+                $academicYear = $existingDeleted->fresh();
+            } else {
+                // Create new academic year
+                $academicYearData = $request->except(['form_data', 'holidays']);
+                $academicYearData['created_by'] = $user->id;
+                $academicYearData['tenant_id'] = $tenantId;
+                $academicYearData['school_id'] = $schoolId;
+                $academicYearData['holidays_json'] = $request->holidays ? json_encode($request->holidays) : null;
+
+                $academicYear = AcademicYear::create($academicYearData);
+            }
 
             // If this is set as current, update other academic years
             if ($request->is_current) {
-                AcademicYear::where('school_id', $request->school_id)
+                AcademicYear::where('school_id', $schoolId)
                     ->where('id', '!=', $academicYear->id)
                     ->update(['is_current' => false]);
             }
 
             // Process form data through Form Engine if provided
             if ($request->has('form_data')) {
+                // Ensure form template exists, create if it doesn't
+                $this->ensureFormTemplateExists('academic_year_setup', $tenantId, $user->id);
+
                 $processedData = $this->formEngineService->processFormData('academic_year_setup', $request->form_data);
-                $this->formEngineService->createFormInstance('academic_year_setup', $processedData, 'AcademicYear', $academicYear->id, $request->tenant_id);
+                $this->formEngineService->createFormInstance('academic_year_setup', $processedData, 'AcademicYear', $academicYear->id, $tenantId);
             }
 
             // Start academic year setup workflow
@@ -215,6 +532,15 @@ class AcademicYearController extends Controller
     public function show(AcademicYear $academicYear): JsonResponse
     {
         try {
+            // Verify access: must belong to user's school
+            $userSchoolId = $this->getCurrentSchoolId();
+            if (!$userSchoolId || $academicYear->school_id != $userSchoolId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You do not have access to this academic year'
+                ], 403);
+            }
+
             $academicYear->load([
                 'school:id,display_name,school_code,school_type',
                 'terms:id,academic_year_id,name,start_date,end_date,status',
@@ -256,6 +582,15 @@ class AcademicYearController extends Controller
      */
     public function update(Request $request, AcademicYear $academicYear): JsonResponse
     {
+        // Verify access: must belong to user's school
+        $userSchoolId = $this->getCurrentSchoolId();
+        if (!$userSchoolId || $academicYear->school_id != $userSchoolId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'You do not have access to this academic year'
+            ], 403);
+        }
+
         $validator = Validator::make($request->all(), [
             'name' => 'sometimes|required|string|max:255',
             'year' => 'sometimes|required|string|max:10',
@@ -326,14 +661,23 @@ class AcademicYearController extends Controller
     public function destroy(AcademicYear $academicYear): JsonResponse
     {
         try {
-            DB::beginTransaction();
-
-            // Check if academic year has active students
-            $activeStudents = $academicYear->students()->where('status', 'active')->count();
-            if ($activeStudents > 0) {
+            // Verify access: must belong to user's school
+            $userSchoolId = $this->getCurrentSchoolId();
+            if (!$userSchoolId || $academicYear->school_id != $userSchoolId) {
                 return response()->json([
                     'success' => false,
-                    'message' => "Cannot delete academic year with {$activeStudents} active students"
+                    'message' => 'You do not have access to this academic year'
+                ], 403);
+            }
+
+            DB::beginTransaction();
+
+            // Check if academic year has enrolled students
+            $enrolledStudents = $academicYear->students()->where('enrollment_status', 'enrolled')->count();
+            if ($enrolledStudents > 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => "Cannot delete academic year with {$enrolledStudents} enrolled students"
                 ], 422);
             }
 
@@ -371,6 +715,14 @@ class AcademicYearController extends Controller
     public function getBySchool(int $schoolId): JsonResponse
     {
         try {
+            // Verify access to this school
+            if (!$this->verifySchoolAccess($schoolId)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You do not have access to this school'
+                ], 403);
+            }
+
             $academicYears = AcademicYear::where('school_id', $schoolId)
                 ->with(['terms:id,academic_year_id,name,start_date,end_date,status'])
                 ->orderBy('year', 'desc')
@@ -394,9 +746,28 @@ class AcademicYearController extends Controller
     /**
      * Get current academic year for a school
      */
-    public function getCurrent(int $schoolId): JsonResponse
+    public function getCurrent(?int $schoolId = null): JsonResponse
     {
         try {
+            // If no school_id provided, use user's school_id
+            if (!$schoolId) {
+                $schoolId = $this->getCurrentSchoolId();
+                if (!$schoolId) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'User is not associated with any school'
+                    ], 403);
+                }
+            }
+
+            // Verify access to this school
+            if (!$this->verifySchoolAccess($schoolId)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You do not have access to this school'
+                ], 403);
+            }
+
             $currentYear = AcademicYear::where('school_id', $schoolId)
                 ->where('is_current', true)
                 ->with(['terms:id,academic_year_id,name,start_date,end_date,status'])
@@ -429,6 +800,15 @@ class AcademicYearController extends Controller
     public function setAsCurrent(AcademicYear $academicYear): JsonResponse
     {
         try {
+            // Verify access: must belong to user's school
+            $userSchoolId = $this->getCurrentSchoolId();
+            if (!$userSchoolId || $academicYear->school_id != $userSchoolId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You do not have access to this academic year'
+                ], 403);
+            }
+
             DB::beginTransaction();
 
             // Update other academic years to not current
@@ -463,6 +843,15 @@ class AcademicYearController extends Controller
     public function getCalendar(AcademicYear $academicYear): JsonResponse
     {
         try {
+            // Verify access: must belong to user's school
+            $userSchoolId = $this->getCurrentSchoolId();
+            if (!$userSchoolId || $academicYear->school_id != $userSchoolId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You do not have access to this academic year'
+                ], 403);
+            }
+
             $calendar = [
                 'academic_year' => $academicYear->only(['id', 'name', 'year', 'start_date', 'end_date']),
                 'terms' => $academicYear->terms()
@@ -505,9 +894,36 @@ class AcademicYearController extends Controller
             ], 401);
         }
 
+        // Get tenant_id from user if not provided
+        $tenantId = $request->tenant_id ?? $this->getCurrentTenantId();
+        if (!$tenantId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Tenant ID is required'
+            ], 422);
+        }
+
+        // Get school_id from user if not provided
+        $schoolId = $request->school_id;
+        if (!$schoolId) {
+            $schoolId = $this->getCurrentSchoolId();
+            if (!$schoolId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'User is not associated with any school'
+                ], 403);
+            }
+        }
+
+        // Verify school access
+        if (!$this->verifySchoolAccess($schoolId)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'You do not have access to this school'
+            ], 403);
+        }
+
         $validator = Validator::make($request->all(), [
-            'school_id' => 'required|exists:schools,id',
-            'tenant_id' => 'required|exists:tenants,id',
             'academic_years' => 'required|array|min:1',
             'academic_years.*.name' => 'required|string|max:255',
             'academic_years.*.year' => 'required|string|max:10',
@@ -531,8 +947,11 @@ class AcademicYearController extends Controller
             $academicYears = [];
 
             foreach ($request->academic_years as $yearData) {
-                // Check for overlapping dates
-                $overlapping = AcademicYear::where('school_id', $request->school_id)
+                // Check for overlapping dates (only within same school and tenant, excluding soft deleted)
+                // Use withoutTenantScope to ensure we check only the specific tenant_id
+                $overlapping = AcademicYear::withoutTenantScope()
+                    ->where('school_id', $schoolId)
+                    ->where('tenant_id', $tenantId)
                     ->where(function($query) use ($yearData) {
                         $query->whereBetween('start_date', [$yearData['start_date'], $yearData['end_date']])
                               ->orWhereBetween('end_date', [$yearData['start_date'], $yearData['end_date']])
@@ -544,18 +963,42 @@ class AcademicYearController extends Controller
                     ->exists();
 
                 if (!$overlapping) {
-                    $academicYear = AcademicYear::create([
-                        'school_id' => $request->school_id,
-                        'name' => $yearData['name'],
-                        'year' => $yearData['year'],
-                        'start_date' => $yearData['start_date'],
-                        'end_date' => $yearData['end_date'],
-                        'description' => $yearData['description'] ?? null,
-                        'status' => 'planning',
-                        'is_current' => false,
-                        'created_by' => $user->id,
-                        'tenant_id' => $request->tenant_id
-                    ]);
+                    // Check if there's a soft deleted academic year with the same school_id, tenant_id, and year
+                    $existingDeleted = AcademicYear::withoutTenantScope()
+                        ->withTrashed()
+                        ->where('school_id', $schoolId)
+                        ->where('tenant_id', $tenantId)
+                        ->where('year', $yearData['year'])
+                        ->whereNotNull('deleted_at')
+                        ->first();
+
+                    if ($existingDeleted) {
+                        // Restore and update the existing academic year
+                        $existingDeleted->restore();
+                        $existingDeleted->update([
+                            'name' => $yearData['name'],
+                            'start_date' => $yearData['start_date'],
+                            'end_date' => $yearData['end_date'],
+                            'description' => $yearData['description'] ?? $existingDeleted->description,
+                            'status' => 'planning',
+                            'is_current' => false,
+                        ]);
+                        $academicYear = $existingDeleted->fresh();
+                    } else {
+                        // Create new academic year
+                        $academicYear = AcademicYear::create([
+                            'school_id' => $schoolId,
+                            'name' => $yearData['name'],
+                            'year' => $yearData['year'],
+                            'start_date' => $yearData['start_date'],
+                            'end_date' => $yearData['end_date'],
+                            'description' => $yearData['description'] ?? null,
+                            'status' => 'planning',
+                            'is_current' => false,
+                            'created_by' => $user->id,
+                            'tenant_id' => $tenantId
+                        ]);
+                    }
 
                     $academicYears[] = $academicYear;
                     $createdCount++;
@@ -589,18 +1032,31 @@ class AcademicYearController extends Controller
     public function getStatistics(): JsonResponse
     {
         try {
+            $query = AcademicYear::query();
+
+            // Filter by school_id
+            $userSchoolId = $this->getCurrentSchoolId();
+            if ($userSchoolId) {
+                $query->where('school_id', $userSchoolId);
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'User is not associated with any school'
+                ], 403);
+            }
+
             $stats = [
-                'total_academic_years' => AcademicYear::count(),
-                'by_status' => AcademicYear::selectRaw('status, COUNT(*) as count')
+                'total_academic_years' => (clone $query)->count(),
+                'by_status' => (clone $query)->selectRaw('status, COUNT(*) as count')
                     ->groupBy('status')
                     ->get(),
-                'by_school' => AcademicYear::selectRaw('school_id, COUNT(*) as count')
+                'by_school' => (clone $query)->selectRaw('school_id, COUNT(*) as count')
                     ->with('school:id,official_name')
                     ->groupBy('school_id')
                     ->get(),
-                'current_years' => AcademicYear::where('is_current', true)->count(),
-                'active_years' => AcademicYear::where('status', 'active')->count(),
-                'recent_years' => AcademicYear::where('created_at', '>=', now()->subDays(30))
+                'current_years' => (clone $query)->where('is_current', true)->count(),
+                'active_years' => (clone $query)->where('status', 'active')->count(),
+                'recent_years' => (clone $query)->where('created_at', '>=', now()->subDays(30))
                     ->count()
             ];
 
@@ -626,6 +1082,25 @@ class AcademicYearController extends Controller
         try {
             $schoolId = $request->get('school_id');
             $years = $request->get('years', 5);
+
+            // If no school_id provided, use user's school_id
+            if (!$schoolId) {
+                $schoolId = $this->getCurrentSchoolId();
+                if (!$schoolId) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'User is not associated with any school'
+                    ], 403);
+                }
+            }
+
+            // Verify school access
+            if (!$this->verifySchoolAccess($schoolId)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You do not have access to this school'
+                ], 403);
+            }
 
             $query = AcademicYear::selectRaw('year, COUNT(*) as count, AVG(DATEDIFF(end_date, start_date)) as avg_duration')
                 ->groupBy('year')
@@ -690,14 +1165,31 @@ class AcademicYearController extends Controller
                 $query->where('year', 'like', "%{$request->year}%");
             }
 
-            // Apply additional filters
+            // Apply school_id filter
             if ($request->has('school_id')) {
-                $query->where('school_id', $request->school_id);
+                $requestedSchoolId = $request->school_id;
+                if ($this->verifySchoolAccess($requestedSchoolId)) {
+                    $query->where('school_id', $requestedSchoolId);
+                } else {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'You do not have access to this school'
+                    ], 403);
+                }
+            } else {
+                // Auto-filter by user's school_id
+                $userSchoolId = $this->getCurrentSchoolId();
+                if ($userSchoolId) {
+                    $query->where('school_id', $userSchoolId);
+                } else {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'User is not associated with any school'
+                    ], 403);
+                }
             }
 
-            if ($request->has('tenant_id')) {
-                $query->where('tenant_id', $request->tenant_id);
-            }
+            // tenant_id is automatically filtered by Tenantable trait
 
             if ($request->has('status')) {
                 $query->where('status', $request->status);

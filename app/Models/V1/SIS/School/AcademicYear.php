@@ -3,6 +3,7 @@
 namespace App\Models\V1\SIS\School;
 
 use App\Models\V1\SIS\Student\StudentEnrollmentHistory;
+use App\Models\Traits\Tenantable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -31,7 +32,7 @@ use Illuminate\Support\Carbon;
  */
 class AcademicYear extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, Tenantable;
 
     /**
      * The table associated with the model.
@@ -274,11 +275,11 @@ class AcademicYear extends Model
 
     /**
      * Generate automatic code for academic year.
+     * Includes tenant_id in the code to ensure uniqueness across tenants.
      */
     public function generateCode(): string
     {
         $year = $this->year ?? date('Y');
-        $schoolCode = $this->school ? $this->school->code : 'SCH';
 
         // Extract year from year field (e.g., "2025-2026" -> "25-26")
         if (strpos($year, '-') !== false) {
@@ -289,17 +290,35 @@ class AcademicYear extends Model
         }
 
         $prefix = 'AY'; // Academic Year prefix
-        $baseCode = $prefix . $shortYear;
+
+        // Ensure tenant_id is set (should be set by Tenantable trait)
+        $tenantId = $this->tenant_id;
+        if (!$tenantId) {
+            // Fallback: try to get from authenticated user
+            $user = auth('api')->user();
+            if ($user && method_exists($user, 'getCurrentTenant')) {
+                $tenant = $user->getCurrentTenant();
+                $tenantId = $tenant ? $tenant->id : null;
+            }
+        }
+
+        // Include tenant_id in the code to ensure uniqueness across tenants
+        // Format: AY25-T1 (where T1 is tenant_id)
+        $tenantSuffix = $tenantId ? '-T' . $tenantId : '';
+        $baseCode = $prefix . $shortYear . $tenantSuffix;
 
         // Check for duplicates and add counter if needed
+        // Since we're including tenant_id in the code, we only need to check within the same school
         $counter = 1;
         $code = $baseCode;
 
-        while (static::where('school_id', $this->school_id)
+        // Use withoutTenantScope to check across all tenants, then filter by school_id
+        while (static::withoutTenantScope()
+                    ->where('school_id', $this->school_id)
                     ->where('code', $code)
                     ->where('id', '!=', $this->id ?? 0)
                     ->exists()) {
-            $code = $baseCode . '-' . $counter;
+            $code = $prefix . $shortYear . $tenantSuffix . '-' . $counter;
             $counter++;
         }
 

@@ -6,73 +6,91 @@ use Illuminate\Support\Facades\Route;
 
 /*
 |--------------------------------------------------------------------------
-| Academic Years API Routes
+| Academic Years and Terms API Routes
 |--------------------------------------------------------------------------
 |
 | These routes handle all academic years and terms management functionality.
-| All routes are school-scoped and require authentication.
+| All routes are school-scoped and require authentication with tenant middleware.
 |
 */
 
 Route::middleware(['auth:api', 'tenant'])->group(function () {
-    
-    // Academic Years Management
+
+    /*
+    |--------------------------------------------------------------------------
+    | Academic Year Management Routes
+    |--------------------------------------------------------------------------
+    */
+
     Route::prefix('academic-years')->name('academic-years.')->group(function () {
-        // Basic CRUD operations
-        Route::get('/', [AcademicYearController::class, 'index'])->name('index');
-        Route::post('/', [AcademicYearController::class, 'store'])->name('store');
-        Route::get('/{id}', [AcademicYearController::class, 'show'])->name('show');
-        Route::put('/{id}', [AcademicYearController::class, 'update'])->name('update');
-        Route::delete('/{id}', [AcademicYearController::class, 'destroy'])->name('destroy');
-        
-        // Academic year queries
+        // Statistics and trends - must be defined BEFORE apiResource to avoid model binding conflicts
+        Route::get('statistics', [AcademicYearController::class, 'getStatistics'])
+            ->name('statistics');
+        Route::get('trends', [AcademicYearController::class, 'getTrends'])
+            ->name('trends');
+
+        // Search operations - must be defined BEFORE apiResource
+        Route::get('search/by-year', [AcademicYearController::class, 'searchByYear'])
+            ->name('search-by-year');
+
+        // Bulk operations - must be defined BEFORE apiResource
+        Route::post('bulk-create', [AcademicYearController::class, 'bulkCreate'])
+            ->name('bulk-create');
+
+        // Academic year queries - must be defined BEFORE apiResource
         Route::get('by-school/{schoolId}', [AcademicYearController::class, 'getBySchool'])
             ->name('by-school');
         Route::get('current/{schoolId}', [AcademicYearController::class, 'getCurrent'])
             ->name('current');
         Route::get('current', [AcademicYearController::class, 'getCurrent'])
             ->name('current-general');
-
-        // Academic year management
-        Route::post('{id}/set-as-current', [AcademicYearController::class, 'setAsCurrent'])
-            ->name('set-as-current');
-        Route::get('{id}/calendar', [AcademicYearController::class, 'getCalendar'])
-            ->name('calendar');
-
-        // Bulk operations
-        Route::post('bulk-create', [AcademicYearController::class, 'bulkCreate'])
-            ->name('bulk-create');
-
-        // Statistics and trends
-        Route::get('statistics', [AcademicYearController::class, 'getStatistics'])
-            ->name('statistics');
-        Route::get('trends', [AcademicYearController::class, 'getTrends'])
-            ->name('trends');
-
-        // Search operations
-        Route::get('search/by-year', [AcademicYearController::class, 'searchByYear'])
-            ->name('search-by-year');
     });
 
-    // Academic Terms Management
+    // apiResource must be defined AFTER specific routes to avoid conflicts
+    Route::apiResource('academic-years', AcademicYearController::class);
+
+    Route::prefix('academic-years')->name('academic-years.')->group(function () {
+        // Academic year management - these use model binding so must be AFTER apiResource
+        Route::post('{academicYear}/set-as-current', [AcademicYearController::class, 'setAsCurrent'])
+            ->name('set-as-current');
+        Route::get('{academicYear}/calendar', [AcademicYearController::class, 'getCalendar'])
+            ->name('calendar');
+    });
+
+    /*
+    |--------------------------------------------------------------------------
+    | Academic Term Management Routes
+    |--------------------------------------------------------------------------
+    */
+
     Route::prefix('academic-terms')->name('academic-terms.')->group(function () {
-        // Basic CRUD operations
-        Route::get('/', [AcademicTermController::class, 'index'])->name('index');
-        Route::post('/', [AcademicTermController::class, 'store'])->name('store');
-        Route::get('/{id}', [AcademicTermController::class, 'show'])->name('show');
-        Route::put('/{id}', [AcademicTermController::class, 'update'])->name('update');
-        Route::delete('/{id}', [AcademicTermController::class, 'destroy'])->name('destroy');
-        
-        // Academic term queries
+        // Statistics and trends - must be defined BEFORE apiResource
+        Route::get('statistics', [AcademicTermController::class, 'getStatistics'])
+            ->name('statistics');
+        Route::get('trends', [AcademicTermController::class, 'getTrends'])
+            ->name('trends');
+
+        // Bulk operations - must be defined BEFORE apiResource
+        Route::post('bulk-create', [AcademicTermController::class, 'bulkCreate'])
+            ->name('bulk-create');
+
+        // Academic term queries - must be defined BEFORE apiResource
         Route::get('by-academic-year/{academicYearId}', [AcademicTermController::class, 'getByAcademicYear'])
             ->name('by-academic-year');
         Route::get('current/{schoolId}', [AcademicTermController::class, 'getCurrent'])
             ->name('current');
         Route::get('current', [AcademicTermController::class, 'getCurrent'])
             ->name('current-general');
+    });
 
-        // Academic term management
-        Route::post('{id}/set-as-current', [AcademicTermController::class, 'setAsCurrent'])
+    // apiResource must be defined AFTER specific routes to avoid conflicts
+    Route::apiResource('academic-terms', AcademicTermController::class);
+
+    Route::prefix('academic-terms')->name('academic-terms.')->group(function () {
+        // Academic term management - these use model binding so must be AFTER apiResource
+        Route::post('{academicTerm}/set-as-current', [AcademicTermController::class, 'setAsCurrent'])
             ->name('set-as-current');
+        Route::get('{academicTerm}/calendar', [AcademicTermController::class, 'getCalendar'])
+            ->name('calendar');
     });
 });

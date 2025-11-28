@@ -28,6 +28,89 @@ class AcademicTermController extends Controller
     }
 
     /**
+     * Get the current school ID from authenticated user
+     */
+    protected function getCurrentSchoolId(): ?int
+    {
+        $user = auth('api')->user();
+
+        if (!$user) {
+            return null;
+        }
+
+        // Try getCurrentSchool method first (preferred)
+        if (method_exists($user, 'getCurrentSchool')) {
+            $currentSchool = $user->getCurrentSchool();
+            if ($currentSchool) {
+                return $currentSchool->id;
+            }
+        }
+
+        // Fallback to school_id attribute
+        if (isset($user->school_id) && $user->school_id) {
+            return $user->school_id;
+        }
+
+        // Try activeSchools relationship
+        if (method_exists($user, 'activeSchools')) {
+            $activeSchools = $user->activeSchools();
+            if ($activeSchools && $activeSchools->count() > 0) {
+                $firstSchool = $activeSchools->first();
+                if ($firstSchool && isset($firstSchool->school_id)) {
+                    return $firstSchool->school_id;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Get the current tenant ID from authenticated user
+     */
+    protected function getCurrentTenantId(): ?int
+    {
+        $user = auth('api')->user();
+
+        if (!$user) {
+            return null;
+        }
+
+        // Try tenant_id attribute first
+        if (isset($user->tenant_id) && $user->tenant_id) {
+            return $user->tenant_id;
+        }
+
+        // Try getCurrentTenant method
+        if (method_exists($user, 'getCurrentTenant')) {
+            $currentTenant = $user->getCurrentTenant();
+            if ($currentTenant) {
+                return $currentTenant->id;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Verify that a school_id belongs to the user's tenant
+     */
+    protected function verifySchoolAccess(int $schoolId): bool
+    {
+        $tenantId = $this->getCurrentTenantId();
+        if (!$tenantId) {
+            return false;
+        }
+
+        // Check if school belongs to user's tenant
+        $school = School::where('id', $schoolId)
+            ->where('tenant_id', $tenantId)
+            ->exists();
+
+        return $school;
+    }
+
+    /**
      * Display a listing of academic terms with filters
      */
     public function index(Request $request): JsonResponse
@@ -40,15 +123,34 @@ class AcademicTermController extends Controller
                 'createdBy:id,name'
             ]);
 
+            // Apply school_id filter
+            // Always use user's school_id or verify requested school_id belongs to user's tenant
+            if ($request->has('school_id')) {
+                $requestedSchoolId = $request->school_id;
+                if ($this->verifySchoolAccess($requestedSchoolId)) {
+                    $query->where('school_id', $requestedSchoolId);
+                } else {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'You do not have access to this school'
+                    ], 403);
+                }
+            } else {
+                // Auto-filter by user's school_id
+                $userSchoolId = $this->getCurrentSchoolId();
+                if ($userSchoolId) {
+                    $query->where('school_id', $userSchoolId);
+                } else {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'User is not associated with any school'
+                    ], 403);
+                }
+            }
+
             // Apply filters
             if ($request->has('academic_year_id')) {
                 $query->where('academic_year_id', $request->academic_year_id);
-            }
-
-            if ($request->has('school_id')) {
-                $query->whereHas('academicYear', function($q) use ($request) {
-                    $q->where('school_id', $request->school_id);
-                });
             }
 
             if ($request->has('status')) {
@@ -103,8 +205,43 @@ class AcademicTermController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
+        $user = auth('api')->user();
+
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User not authenticated'
+            ], 401);
+        }
+
+        // Get tenant_id from user if not provided
+        $tenantId = $this->getCurrentTenantId();
+        if (!$tenantId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Tenant ID is required'
+            ], 422);
+        }
+
+        // Get academic year and verify access
+        if (!$request->has('academic_year_id')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Academic year ID is required'
+            ], 422);
+        }
+
+        $academicYear = AcademicYear::findOrFail($request->academic_year_id);
+
+        // Verify access to the academic year's school
+        if (!$this->verifySchoolAccess($academicYear->school_id)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'You do not have access to this academic year'
+            ], 403);
+        }
+
         $validator = Validator::make($request->all(), [
-            'tenant_id' => 'required|exists:tenants,id',
             'academic_year_id' => 'required|exists:academic_years,id',
             'name' => 'required|string|max:255',
             'type' => 'required|in:semester,quarter,trimester,other',
@@ -136,8 +273,11 @@ class AcademicTermController extends Controller
         try {
             DB::beginTransaction();
 
-            // Check for overlapping terms within the same academic year
-            $overlapping = AcademicTerm::where('academic_year_id', $request->academic_year_id)
+            // Check for overlapping terms within the same academic year and tenant
+            // Use withoutTenantScope to ensure we check only the specific tenant_id
+            $overlapping = AcademicTerm::withoutTenantScope()
+                ->where('academic_year_id', $request->academic_year_id)
+                ->where('tenant_id', $tenantId)
                 ->where(function($query) use ($request) {
                     $query->whereBetween('start_date', [$request->start_date, $request->end_date])
                           ->orWhereBetween('end_date', [$request->start_date, $request->end_date])
@@ -155,24 +295,41 @@ class AcademicTermController extends Controller
                 ], 422);
             }
 
-            // Get school_id from academic year
-            $academicYear = AcademicYear::findOrFail($request->academic_year_id);
+            // Check if there's a soft deleted academic term with the same academic_year_id, tenant_id, and name
+            $existingDeleted = AcademicTerm::withoutTenantScope()
+                ->withTrashed()
+                ->where('academic_year_id', $request->academic_year_id)
+                ->where('tenant_id', $tenantId)
+                ->where('name', $request->name)
+                ->whereNotNull('deleted_at')
+                ->first();
 
             // Auto-generate term_number if not provided
             if (!$request->has('term_number') || is_null($request->term_number)) {
-                $maxTermNumber = AcademicTerm::where('academic_year_id', $request->academic_year_id)
+                $maxTermNumber = AcademicTerm::withoutTenantScope()
+                    ->where('academic_year_id', $request->academic_year_id)
+                    ->where('tenant_id', $tenantId)
                     ->max('term_number') ?? 0;
                 $request->merge(['term_number' => $maxTermNumber + 1]);
             }
 
-            // Create academic term
-            $termData = $request->except(['form_data', 'holidays']);
-            $termData['created_by'] = Auth::id();
-            $termData['tenant_id'] = $request->tenant_id;
-            $termData['school_id'] = $academicYear->school_id;
-            $termData['holidays_json'] = $request->holidays ? json_encode($request->holidays) : null;
+            if ($existingDeleted) {
+                // Restore and update the existing academic term
+                $existingDeleted->restore();
+                $termData = $request->except(['form_data', 'holidays']);
+                $termData['holidays_json'] = $request->holidays ? json_encode($request->holidays) : null;
+                $existingDeleted->update($termData);
+                $academicTerm = $existingDeleted->fresh();
+            } else {
+                // Create academic term
+                $termData = $request->except(['form_data', 'holidays']);
+                $termData['created_by'] = $user->id;
+                $termData['tenant_id'] = $tenantId;
+                $termData['school_id'] = $academicYear->school_id;
+                $termData['holidays_json'] = $request->holidays ? json_encode($request->holidays) : null;
 
-            $academicTerm = AcademicTerm::create($termData);
+                $academicTerm = AcademicTerm::create($termData);
+            }
 
             // If this is set as current, update other terms in the same academic year
             if ($request->is_current) {
@@ -255,6 +412,15 @@ class AcademicTermController extends Controller
     public function show(AcademicTerm $academicTerm): JsonResponse
     {
         try {
+            // Verify access: must belong to user's school
+            $userSchoolId = $this->getCurrentSchoolId();
+            if (!$userSchoolId || $academicTerm->school_id != $userSchoolId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You do not have access to this academic term'
+                ], 403);
+            }
+
             $academicTerm->load([
                 'academicYear:id,name,year,school_id',
                 'academicYear.school:id,display_name,school_code',
@@ -290,6 +456,15 @@ class AcademicTermController extends Controller
      */
     public function update(Request $request, AcademicTerm $academicTerm): JsonResponse
     {
+        // Verify access: must belong to user's school
+        $userSchoolId = $this->getCurrentSchoolId();
+        if (!$userSchoolId || $academicTerm->school_id != $userSchoolId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'You do not have access to this academic term'
+            ], 403);
+        }
+
         $validator = Validator::make($request->all(), [
             'name' => 'sometimes|required|string|max:255',
             'type' => 'sometimes|required|in:semester,quarter,trimester,other',
@@ -319,6 +494,33 @@ class AcademicTermController extends Controller
 
         try {
             DB::beginTransaction();
+
+            // Check for overlapping terms if dates are being updated
+            if ($request->has('start_date') || $request->has('end_date')) {
+                $startDate = $request->start_date ?? $academicTerm->start_date;
+                $endDate = $request->end_date ?? $academicTerm->end_date;
+
+                $overlapping = AcademicTerm::withoutTenantScope()
+                    ->where('academic_year_id', $academicTerm->academic_year_id)
+                    ->where('tenant_id', $academicTerm->tenant_id)
+                    ->where('id', '!=', $academicTerm->id)
+                    ->where(function($query) use ($startDate, $endDate) {
+                        $query->whereBetween('start_date', [$startDate, $endDate])
+                              ->orWhereBetween('end_date', [$startDate, $endDate])
+                              ->orWhere(function($q) use ($startDate, $endDate) {
+                                  $q->where('start_date', '<=', $startDate)
+                                    ->where('end_date', '>=', $endDate);
+                              });
+                    })
+                    ->exists();
+
+                if ($overlapping) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Term dates overlap with existing term in this academic year'
+                    ], 422);
+                }
+            }
 
             $updateData = $request->except(['holidays']);
 
@@ -359,16 +561,16 @@ class AcademicTermController extends Controller
     public function destroy(AcademicTerm $academicTerm): JsonResponse
     {
         try {
-            DB::beginTransaction();
-
-            // Check if term has active students (simplified for now)
-            $activeStudents = 0; // TODO: Implement proper student-term relationship
-            if ($activeStudents > 0) {
+            // Verify access: must belong to user's school
+            $userSchoolId = $this->getCurrentSchoolId();
+            if (!$userSchoolId || $academicTerm->school_id != $userSchoolId) {
                 return response()->json([
                     'success' => false,
-                    'message' => "Cannot delete academic term with {$activeStudents} active students"
-                ], 422);
+                    'message' => 'You do not have access to this academic term'
+                ], 403);
             }
+
+            DB::beginTransaction();
 
             // Check if it's the current term
             if ($academicTerm->is_current) {
@@ -404,6 +606,17 @@ class AcademicTermController extends Controller
     public function getByAcademicYear(int $academicYearId): JsonResponse
     {
         try {
+            // Get academic year and verify access
+            $academicYear = AcademicYear::findOrFail($academicYearId);
+
+            // Verify access to this school
+            if (!$this->verifySchoolAccess($academicYear->school_id)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You do not have access to this academic year'
+                ], 403);
+            }
+
             $academicTerms = AcademicTerm::where('academic_year_id', $academicYearId)
                 ->orderBy('start_date', 'asc')
                 ->get();
@@ -425,9 +638,28 @@ class AcademicTermController extends Controller
     /**
      * Get current academic term for a school
      */
-    public function getCurrent(int $schoolId): JsonResponse
+    public function getCurrent(?int $schoolId = null): JsonResponse
     {
         try {
+            // If no school_id provided, use user's school_id
+            if (!$schoolId) {
+                $schoolId = $this->getCurrentSchoolId();
+                if (!$schoolId) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'User is not associated with any school'
+                    ], 403);
+                }
+            }
+
+            // Verify access to this school
+            if (!$this->verifySchoolAccess($schoolId)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You do not have access to this school'
+                ], 403);
+            }
+
             $currentTerm = AcademicTerm::whereHas('academicYear', function($query) use ($schoolId) {
                     $query->where('school_id', $schoolId);
                 })
@@ -462,6 +694,15 @@ class AcademicTermController extends Controller
     public function setAsCurrent(AcademicTerm $academicTerm): JsonResponse
     {
         try {
+            // Verify access: must belong to user's school
+            $userSchoolId = $this->getCurrentSchoolId();
+            if (!$userSchoolId || $academicTerm->school_id != $userSchoolId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You do not have access to this academic term'
+                ], 403);
+            }
+
             DB::beginTransaction();
 
             // Update other terms in the same academic year to not current
@@ -496,6 +737,15 @@ class AcademicTermController extends Controller
     public function getCalendar(AcademicTerm $academicTerm): JsonResponse
     {
         try {
+            // Verify access: must belong to user's school
+            $userSchoolId = $this->getCurrentSchoolId();
+            if (!$userSchoolId || $academicTerm->school_id != $userSchoolId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You do not have access to this academic term'
+                ], 403);
+            }
+
             $calendar = [
                 'academic_term' => $academicTerm->only(['id', 'name', 'type', 'start_date', 'end_date']),
                 'academic_year' => $academicTerm->academicYear->only(['id', 'name', 'year']),
@@ -527,6 +777,24 @@ class AcademicTermController extends Controller
      */
     public function bulkCreate(Request $request): JsonResponse
     {
+        $user = auth('api')->user();
+
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User not authenticated'
+            ], 401);
+        }
+
+        // Get tenant_id from user if not provided
+        $tenantId = $this->getCurrentTenantId();
+        if (!$tenantId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Tenant ID is required'
+            ], 422);
+        }
+
         $validator = Validator::make($request->all(), [
             'academic_year_id' => 'required|exists:academic_years,id',
             'academic_terms' => 'required|array|min:1',
@@ -549,12 +817,22 @@ class AcademicTermController extends Controller
         try {
             DB::beginTransaction();
 
-            // Get school_id from academic year
+            // Get school_id from academic year and verify access
             $academicYear = AcademicYear::findOrFail($request->academic_year_id);
+
+            // Verify access to this school
+            if (!$this->verifySchoolAccess($academicYear->school_id)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You do not have access to this academic year'
+                ], 403);
+            }
 
             $createdCount = 0;
             $academicTerms = [];
-            $currentTermNumber = AcademicTerm::where('academic_year_id', $request->academic_year_id)
+            $currentTermNumber = AcademicTerm::withoutTenantScope()
+                ->where('academic_year_id', $request->academic_year_id)
+                ->where('tenant_id', $tenantId)
                 ->max('term_number') ?? 0;
 
             foreach ($request->academic_terms as $termData) {
@@ -563,8 +841,12 @@ class AcademicTermController extends Controller
                     $currentTermNumber++;
                     $termData['term_number'] = $currentTermNumber;
                 }
-                // Check for overlapping dates within the same academic year
-                $overlapping = AcademicTerm::where('academic_year_id', $request->academic_year_id)
+
+                // Check for overlapping dates within the same academic year and tenant
+                // Use withoutTenantScope to ensure we check only the specific tenant_id
+                $overlapping = AcademicTerm::withoutTenantScope()
+                    ->where('academic_year_id', $request->academic_year_id)
+                    ->where('tenant_id', $tenantId)
                     ->where(function($query) use ($termData) {
                         $query->whereBetween('start_date', [$termData['start_date'], $termData['end_date']])
                               ->orWhereBetween('end_date', [$termData['start_date'], $termData['end_date']])
@@ -576,20 +858,45 @@ class AcademicTermController extends Controller
                     ->exists();
 
                 if (!$overlapping) {
-                    $academicTerm = AcademicTerm::create([
-                        'academic_year_id' => $request->academic_year_id,
-                        'school_id' => $academicYear->school_id,
-                        'name' => $termData['name'],
-                        'type' => $termData['type'],
-                        'term_number' => $termData['term_number'] ?? null,
-                        'start_date' => $termData['start_date'],
-                        'end_date' => $termData['end_date'],
-                        'description' => $termData['description'] ?? null,
-                        'status' => 'planning',
-                        'is_current' => false,
-                        'created_by' => Auth::id(),
-                        'tenant_id' => Auth::user()->current_tenant_id
-                    ]);
+                    // Check if there's a soft deleted academic term with the same academic_year_id, tenant_id, and name
+                    $existingDeleted = AcademicTerm::withoutTenantScope()
+                        ->withTrashed()
+                        ->where('academic_year_id', $request->academic_year_id)
+                        ->where('tenant_id', $tenantId)
+                        ->where('name', $termData['name'])
+                        ->whereNotNull('deleted_at')
+                        ->first();
+
+                    if ($existingDeleted) {
+                        // Restore and update the existing academic term
+                        $existingDeleted->restore();
+                        $existingDeleted->update([
+                            'type' => $termData['type'],
+                            'term_number' => $termData['term_number'] ?? null,
+                            'start_date' => $termData['start_date'],
+                            'end_date' => $termData['end_date'],
+                            'description' => $termData['description'] ?? $existingDeleted->description,
+                            'status' => 'planning',
+                            'is_current' => false,
+                        ]);
+                        $academicTerm = $existingDeleted->fresh();
+                    } else {
+                        // Create new academic term
+                        $academicTerm = AcademicTerm::create([
+                            'academic_year_id' => $request->academic_year_id,
+                            'school_id' => $academicYear->school_id,
+                            'name' => $termData['name'],
+                            'type' => $termData['type'],
+                            'term_number' => $termData['term_number'] ?? null,
+                            'start_date' => $termData['start_date'],
+                            'end_date' => $termData['end_date'],
+                            'description' => $termData['description'] ?? null,
+                            'status' => 'planning',
+                            'is_current' => false,
+                            'created_by' => $user->id,
+                            'tenant_id' => $tenantId
+                        ]);
+                    }
 
                     $academicTerms[] = $academicTerm;
                     $createdCount++;
@@ -623,21 +930,34 @@ class AcademicTermController extends Controller
     public function getStatistics(): JsonResponse
     {
         try {
+            $query = AcademicTerm::query();
+
+            // Filter by school_id
+            $userSchoolId = $this->getCurrentSchoolId();
+            if ($userSchoolId) {
+                $query->where('school_id', $userSchoolId);
+            } else {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'User is not associated with any school'
+                ], 403);
+            }
+
             $stats = [
-                'total_academic_terms' => AcademicTerm::count(),
-                'by_status' => AcademicTerm::selectRaw('status, COUNT(*) as count')
+                'total_academic_terms' => (clone $query)->count(),
+                'by_status' => (clone $query)->selectRaw('status, COUNT(*) as count')
                     ->groupBy('status')
                     ->get(),
-                'by_type' => AcademicTerm::selectRaw('type, COUNT(*) as count')
+                'by_type' => (clone $query)->selectRaw('type, COUNT(*) as count')
                     ->groupBy('type')
                     ->get(),
-                'by_academic_year' => AcademicTerm::selectRaw('academic_year_id, COUNT(*) as count')
+                'by_academic_year' => (clone $query)->selectRaw('academic_year_id, COUNT(*) as count')
                     ->with('academicYear:id,name,year')
                     ->groupBy('academic_year_id')
                     ->get(),
-                'current_terms' => AcademicTerm::where('is_current', true)->count(),
-                'active_terms' => AcademicTerm::where('status', 'active')->count(),
-                'recent_terms' => AcademicTerm::where('created_at', '>=', now()->subDays(30))
+                'current_terms' => (clone $query)->where('is_current', true)->count(),
+                'active_terms' => (clone $query)->where('status', 'active')->count(),
+                'recent_terms' => (clone $query)->where('created_at', '>=', now()->subDays(30))
                     ->count()
             ];
 
@@ -664,17 +984,31 @@ class AcademicTermController extends Controller
             $academicYearId = $request->get('academic_year_id');
             $schoolId = $request->get('school_id');
 
+            // If no school_id provided, use user's school_id
+            if (!$schoolId) {
+                $schoolId = $this->getCurrentSchoolId();
+                if (!$schoolId) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'User is not associated with any school'
+                    ], 403);
+                }
+            }
+
+            // Verify school access
+            if (!$this->verifySchoolAccess($schoolId)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You do not have access to this school'
+                ], 403);
+            }
+
             $query = AcademicTerm::selectRaw('type, COUNT(*) as count, AVG(DATEDIFF(end_date, start_date)) as avg_duration')
+                ->where('school_id', $schoolId)
                 ->groupBy('type');
 
             if ($academicYearId) {
                 $query->where('academic_year_id', $academicYearId);
-            }
-
-            if ($schoolId) {
-                $query->whereHas('academicYear', function($q) use ($schoolId) {
-                    $q->where('school_id', $schoolId);
-                });
             }
 
             $trends = $query->get();

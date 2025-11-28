@@ -2,10 +2,12 @@
 
 namespace App\Models\V1\SIS\School;
 
+use App\Models\Traits\Tenantable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
 use App\Models\User;
@@ -41,7 +43,7 @@ use App\Models\V1\SIS\Student\Student;
  */
 class AcademicTerm extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, Tenantable;
 
     /**
      * The table associated with the model.
@@ -113,11 +115,22 @@ class AcademicTerm extends Model
     }
 
     /**
-     * Get the students enrolled in this term.
+     * Get the students enrolled in this term's academic year.
+     * Note: Students are related to academic years, not directly to terms.
+     * This is an indirect relationship through the academic year.
      */
     public function students()
     {
-        return $this->hasMany(Student::class, 'current_term_id');
+        // Students are related to academic years via current_academic_year_id
+        // This is an indirect relationship - students belong to the academic year, not the term
+        return $this->hasManyThrough(
+            Student::class,
+            AcademicYear::class,
+            'id', // Foreign key on academic_years table
+            'current_academic_year_id', // Foreign key on students table
+            'academic_year_id', // Local key on academic_terms table
+            'id' // Local key on academic_years table
+        );
     }
 
     /**
