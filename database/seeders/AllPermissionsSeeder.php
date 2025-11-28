@@ -63,6 +63,14 @@ class AllPermissionsSeeder extends Seeder
                 'teams.remove',
                 'teams.assign_roles',
             ],
+            'schools' => [
+                'schools.view',
+                'schools.create',
+                'schools.edit',
+                'schools.delete',
+                'schools.view_all',
+                'schools.statistics',
+            ],
         ];
     }
 }

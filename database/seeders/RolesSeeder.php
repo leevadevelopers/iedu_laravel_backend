@@ -204,41 +204,93 @@ class RolesSeeder extends Seeder
             'admin' => array_merge(
                 $this->libraryAdminPermissions(),
                 $this->financeAdminPermissions(),
-                $this->formAdminPermissions()
+                $this->formAdminPermissions(),
+                $this->schoolPermissions()
             ),
-            'tenant_admin' => $this->tenantAdminPermissions(),
+            'tenant_admin' => array_merge(
+                $this->tenantAdminPermissions(),
+                $this->schoolPermissions()
+            ),
             'librarian' => $this->librarianPermissions(),
             'finance_manager' => $this->financeManagerPermissions(),
             'teacher' => array_merge(
                 $this->teacherLibraryPermissions(),
                 $this->academicTeacherPermissions(),
-                $this->assessmentTeacherPermissions()
+                $this->assessmentTeacherPermissions(),
+                $this->schoolViewPermissions()
             ),
             'student' => array_merge(
                 $this->studentLibraryPermissions(),
                 $this->academicStudentPermissions(),
-                $this->assessmentStudentPermissions()
+                $this->assessmentStudentPermissions(),
+                $this->schoolViewPermissions()
             ),
             'parent' => array_merge(
                 $this->parentLibraryFinancePermissions(),
                 $this->assessmentParentPermissions(),
-                $this->transportParentPermissions()
+                $this->transportParentPermissions(),
+                $this->schoolViewPermissions()
             ),
-            'guest' => $this->guestLibraryPermissions(),
-            'form_designer' => $this->formDesignerPermissions(),
-            'form_reviewer' => $this->formReviewerPermissions(),
-            'form_submitter' => $this->formSubmitterPermissions(),
-            'form_analyst' => $this->formAnalystPermissions(),
-            'project_manager' => $this->projectManagerFormPermissions(),
-            'team_member' => $this->teamMemberFormPermissions(),
-            'viewer' => $this->viewerFormPermissions(),
-            'Academic Administrator' => $this->academicAdministratorPermissions(),
-            'Academic Coordinator' => $this->academicCoordinatorPermissions(),
-            'Assessment Administrator' => $this->assessmentAdministratorPermissions(),
-            'Transport Administrator' => $this->transportAdministratorPermissions(),
-            'Transport Manager' => $this->transportManagerPermissions(),
-            'Transport Coordinator' => $this->transportCoordinatorPermissions(),
-            'Transport Driver' => $this->transportDriverPermissions(),
+            'guest' => array_merge(
+                $this->guestLibraryPermissions(),
+                $this->schoolViewPermissions()
+            ),
+            'form_designer' => array_merge(
+                $this->formDesignerPermissions(),
+                $this->schoolViewPermissions()
+            ),
+            'form_reviewer' => array_merge(
+                $this->formReviewerPermissions(),
+                $this->schoolViewPermissions()
+            ),
+            'form_submitter' => array_merge(
+                $this->formSubmitterPermissions(),
+                $this->schoolViewPermissions()
+            ),
+            'form_analyst' => array_merge(
+                $this->formAnalystPermissions(),
+                $this->schoolViewPermissions()
+            ),
+            'project_manager' => array_merge(
+                $this->projectManagerFormPermissions(),
+                $this->schoolViewPermissions()
+            ),
+            'team_member' => array_merge(
+                $this->teamMemberFormPermissions(),
+                $this->schoolViewPermissions()
+            ),
+            'viewer' => array_merge(
+                $this->viewerFormPermissions(),
+                $this->schoolViewPermissions()
+            ),
+            'Academic Administrator' => array_merge(
+                $this->academicAdministratorPermissions(),
+                $this->schoolViewPermissions()
+            ),
+            'Academic Coordinator' => array_merge(
+                $this->academicCoordinatorPermissions(),
+                $this->schoolViewPermissions()
+            ),
+            'Assessment Administrator' => array_merge(
+                $this->assessmentAdministratorPermissions(),
+                $this->schoolViewPermissions()
+            ),
+            'Transport Administrator' => array_merge(
+                $this->transportAdministratorPermissions(),
+                $this->schoolViewPermissions()
+            ),
+            'Transport Manager' => array_merge(
+                $this->transportManagerPermissions(),
+                $this->schoolViewPermissions()
+            ),
+            'Transport Coordinator' => array_merge(
+                $this->transportCoordinatorPermissions(),
+                $this->schoolViewPermissions()
+            ),
+            'Transport Driver' => array_merge(
+                $this->transportDriverPermissions(),
+                $this->schoolViewPermissions()
+            ),
         ];
     }
 
@@ -968,6 +1020,24 @@ class RolesSeeder extends Seeder
             'transport.notifications.view',
             'view-transport',
             'view-transport-subscriptions',
+        ];
+    }
+
+    private function schoolPermissions(): array
+    {
+        return [
+            'schools.view',
+            'schools.create',
+            'schools.edit',
+            'schools.delete',
+            'schools.statistics',
+        ];
+    }
+
+    private function schoolViewPermissions(): array
+    {
+        return [
+            'schools.view',
         ];
     }
 }

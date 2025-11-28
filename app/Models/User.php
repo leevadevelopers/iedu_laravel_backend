@@ -7,16 +7,18 @@ use App\Models\Traits\TenantPermission;
 use App\Models\V1\SIS\School\SchoolUser;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Spatie\Permission\Traits\HasRoles;
 use Tymon\JWTAuth\Contracts\JWTSubject;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\DB;
 
 class User extends Authenticatable implements JWTSubject
 {
-    use HasFactory, Notifiable, HasRoles, TenantPermission {
+    use HasFactory, Notifiable, HasRoles, TenantPermission, SoftDeletes {
         TenantPermission::hasPermissionTo insteadof HasRoles;
         HasRoles::hasPermissionTo as hasRolePermissionTo;
         TenantPermission::hasRole insteadof HasRoles;
@@ -27,6 +29,7 @@ class User extends Authenticatable implements JWTSubject
 
     protected $fillable = [
         'tenant_id',
+        'school_id',
         'role_id',
         'name',
         'identifier',
@@ -36,10 +39,14 @@ class User extends Authenticatable implements JWTSubject
         'must_change',
         'remember_token',
         'phone',
-        'company',
-        'job_title',
-        'bio',
         'profile_photo_path',
+        'is_active',
+        'last_login_at',
+        'settings',
+        'user_type',
+        'emergency_contact_json',
+        'transport_notification_preferences',
+        'whatsapp_phone',
         'created_at',
         'updated_at',
     ];
@@ -49,8 +56,14 @@ class User extends Authenticatable implements JWTSubject
     protected $casts = [
         'verified_at' => 'datetime',
         'must_change' => 'boolean',
+        'is_active' => 'boolean',
+        'last_login_at' => 'datetime',
+        'settings' => 'array',
+        'emergency_contact_json' => 'array',
+        'transport_notification_preferences' => 'array',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
+        'deleted_at' => 'datetime',
     ];
 
     public function getJWTIdentifier()
@@ -288,5 +301,113 @@ class User extends Authenticatable implements JWTSubject
 
         session(['current_school_id' => $schoolId]);
         return true;
+    }
+
+    /**
+     * Check if user is super_admin (cross-tenant role)
+     * This method safely checks for super_admin role with tenant_id NULL or 0
+     */
+    public function isSuperAdmin(): bool
+    {
+        // Use cache to avoid repeated queries
+        $cacheKey = "user_is_super_admin_{$this->id}";
+        return Cache::remember($cacheKey, 300, function () {
+            Log::info('User::isSuperAdmin - Checking super admin status', [
+                'user_id' => $this->id,
+                'guard_name' => $this->guard_name,
+            ]);
+
+            // Method 1: Check via hasRoleBase (Spatie base method - checks all tenants)
+            if (method_exists($this, 'hasRoleBase')) {
+                // hasRoleBase with null tenant_id checks cross-tenant roles
+                $hasRoleBase = $this->hasRoleBase('super_admin', $this->guard_name);
+                Log::info('User::isSuperAdmin - hasRoleBase check', [
+                    'user_id' => $this->id,
+                    'hasRoleBase' => $hasRoleBase,
+                ]);
+                if ($hasRoleBase) {
+                    return true;
+                }
+            }
+
+            // Method 2: Check via direct database query (bypass Spatie's team filtering)
+            // Spatie with teams enabled filters by tenant_id automatically, so we need direct query
+            $hasSuperAdmin = DB::table('model_has_roles')
+                ->where('model_has_roles.model_type', get_class($this))
+                ->where('model_has_roles.model_id', $this->id)
+                ->where(function($q) {
+                    // Check for cross-tenant role (tenant_id IS NULL or 0)
+                    $q->whereNull('model_has_roles.tenant_id')
+                      ->orWhere('model_has_roles.tenant_id', 0);
+                })
+                ->join('roles', 'model_has_roles.role_id', '=', 'roles.id')
+                ->where('roles.name', 'super_admin')
+                ->where('roles.guard_name', $this->guard_name)
+                ->exists();
+
+            Log::info('User::isSuperAdmin - direct database check', [
+                'user_id' => $this->id,
+                'hasSuperAdmin' => $hasSuperAdmin,
+            ]);
+
+            if ($hasSuperAdmin) {
+                return true;
+            }
+
+            // Method 3: Check via getRoleNames (may include tenant filtering)
+            if (method_exists($this, 'getRoleNames')) {
+                $roles = $this->getRoleNames();
+                Log::info('User::isSuperAdmin - getRoleNames check', [
+                    'user_id' => $this->id,
+                    'roles' => $roles->toArray(),
+                    'contains_super_admin' => $roles->contains('super_admin'),
+                ]);
+                if ($roles->contains('super_admin')) {
+                    // Verify it's a cross-tenant role
+                    $superAdminRole = $this->roles()
+                        ->where('name', 'super_admin')
+                        ->where('guard_name', $this->guard_name)
+                        ->where(function($q) {
+                            $q->whereNull('model_has_roles.tenant_id')
+                              ->orWhere('model_has_roles.tenant_id', 0);
+                        })
+                        ->exists();
+                    if ($superAdminRole) {
+                        return true;
+                    }
+                }
+            }
+
+            Log::info('User::isSuperAdmin - Not super admin', [
+                'user_id' => $this->id,
+            ]);
+            return false;
+        });
+    }
+
+    /**
+     * Clear super admin cache
+     */
+    public function clearSuperAdminCache(): void
+    {
+        Cache::forget("user_is_super_admin_{$this->id}");
+    }
+
+    /**
+     * Boot the model
+     */
+    protected static function boot()
+    {
+        parent::boot();
+
+        // Clear super admin cache when user is updated
+        static::updated(function ($user) {
+            $user->clearSuperAdminCache();
+        });
+
+        // Clear super admin cache when roles are synced
+        static::saved(function ($user) {
+            $user->clearSuperAdminCache();
+        });
     }
 }

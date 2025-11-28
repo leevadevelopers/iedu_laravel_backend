@@ -5,6 +5,7 @@ namespace App\Http\Controllers\API\V1\School;
 use App\Http\Controllers\Controller;
 use App\Models\V1\SIS\School\School;
 use App\Models\Forms\FormTemplate;
+use App\Models\Scopes\TenantScope;
 use App\Services\SchoolService;
 use App\Http\Requests\School\CreateSchoolRequest;
 use App\Http\Requests\School\UpdateSchoolRequest;
@@ -20,6 +21,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Auth\Access\AuthorizationException;
 
 class SchoolController extends Controller
 {
@@ -30,17 +32,6 @@ class SchoolController extends Controller
         $this->schoolService = $schoolService;
     }
 
-    /**
-     * Health check endpoint
-     */
-    public function health(): JsonResponse
-    {
-        return response()->json([
-            'success' => true,
-            'message' => 'School API is healthy',
-            'timestamp' => now()->toISOString()
-        ]);
-    }
 
     /**
      * Display a listing of schools with filters
@@ -48,29 +39,46 @@ class SchoolController extends Controller
     public function index(Request $request): JsonResponse
     {
         try {
+            // Check authorization
+            $this->authorize('viewAny', School::class);
+
             $filters = $request->only(['status', 'school_type', 'state_province', 'country_code', 'search']);
             $perPage = $request->get('per_page', 15);
 
-            // Create cache key based on filters and user
+            // Create cache key based on filters, user, and role (super_admin needs separate cache)
             $user = Auth::user();
-            $cacheKey = 'schools_' . md5(serialize($filters) . $perPage . ($user ? $user->id : 'guest'));
+            $isSuperAdmin = $user && method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin();
+            $cacheKey = 'schools_' . md5(serialize($filters) . $perPage . ($user ? $user->id : 'guest') . ($isSuperAdmin ? '_superadmin' : ''));
 
-            // Track cache keys for invalidation
-            $cacheKeys = Cache::get('schools_cache_keys', []);
-            if (!in_array($cacheKey, $cacheKeys)) {
-                $cacheKeys[] = $cacheKey;
-                Cache::put('schools_cache_keys', $cacheKeys, 3600); // Store for 1 hour
+            // For super_admin, don't use cache or use shorter cache to ensure fresh data
+            if ($isSuperAdmin) {
+                // Clear any existing cache for super_admin to ensure fresh data
+                Cache::forget($cacheKey);
+                $schools = $this->schoolService->getSchools($filters, $perPage);
+            } else {
+                // Track cache keys for invalidation
+                $cacheKeys = Cache::get('schools_cache_keys', []);
+                if (!in_array($cacheKey, $cacheKeys)) {
+                    $cacheKeys[] = $cacheKey;
+                    Cache::put('schools_cache_keys', $cacheKeys, 3600); // Store for 1 hour
+                }
+
+                // Try to get from cache first
+                $schools = Cache::remember($cacheKey, 300, function () use ($filters, $perPage) {
+                    return $this->schoolService->getSchools($filters, $perPage);
+                });
             }
-
-            // Try to get from cache first
-            $schools = Cache::remember($cacheKey, 300, function () use ($filters, $perPage) {
-                return $this->schoolService->getSchools($filters, $perPage);
-            });
 
             return response()->json([
                 'success' => true,
                 'data' => $schools
             ]);
+        } catch (AuthorizationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'You do not have permission to view schools',
+                'error' => $e->getMessage()
+            ], 403);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
@@ -86,6 +94,10 @@ class SchoolController extends Controller
     public function store(CreateSchoolRequest $request): JsonResponse
     {
         try {
+            // Check authorization
+            $this->authorize('create', School::class);
+
+            // Tenant_id will be set automatically by Tenantable trait from authenticated user
             $result = $this->schoolService->createSchool($request->validated());
 
             return response()->json([
@@ -112,43 +124,74 @@ class SchoolController extends Controller
     public function show($id): JsonResponse
     {
         try {
-            // Set default tenant for development
-            if (config('app.env') !== 'production' && !session('tenant_id')) {
-                session(['tenant_id' => 1]);
-            }
-            
-            // Find school - try with tenant scope first, then without if not found
-            $school = School::find($id);
-            
-            if (!$school) {
-                // If not found with tenant scope, try without it
-                $school = School::withoutGlobalScope(\App\Models\Scopes\TenantScope::class)->findOrFail($id);
-            }
-            
-            $school->load([
-                'academicYears:id,name,start_date,end_date,status',
-                'currentAcademicYear:id,name,start_date,end_date',
-                'users:id,name,identifier',
-                'students:id,first_name,last_name,current_grade_level,enrollment_status'
-            ]);
+            $user = Auth::user();
+            $isSuperAdmin = $user && method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin();
 
-            // Get school statistics
-            $stats = [
-                'total_students' => $school->students()->count(),
-                'active_students' => $school->students()->where('enrollment_status', 'enrolled')->count(),
-                'by_grade_level' => $school->students()
-                    ->selectRaw('current_grade_level, COUNT(*) as count')
-                    ->groupBy('current_grade_level')
-                    ->get(),
-                'academic_years' => $school->academicYears()->count()
+            // Super admin can access any school, others are scoped by tenant
+            if ($isSuperAdmin) {
+                $school = School::withoutTenantScope()->findOrFail($id);
+            } else {
+                $school = School::findOrFail($id);
+            }
+
+            // Check authorization
+            $this->authorize('view', $school);
+
+            // Load relationships - for super_admin, load without tenant restrictions
+            if ($isSuperAdmin) {
+                $school->load([
+                    'academicYears' => function ($query) {
+                        $query->withoutTenantScope();
+                    },
+                    'currentAcademicYear' => function ($query) {
+                        $query->withoutTenantScope();
+                    },
+                    'users:id,name,identifier',
+                    'students' => function ($query) {
+                        $query->withoutTenantScope();
+                    }
+                ]);
+            } else {
+                $school->load([
+                    'academicYears:id,name,start_date,end_date,status',
+                    'currentAcademicYear:id,name,start_date,end_date',
+                    'users:id,name,identifier',
+                    'students:id,first_name,last_name,current_grade_level,enrollment_status'
+                ]);
+            }
+
+            // Get basic school info
+            $data = [
+                'school' => $school,
             ];
+
+            // Only include statistics if user has permission
+            /** @var \App\Models\User $user */
+            $hasStatisticsPermission = $user && $user->hasPermissionTo('schools.statistics', 'api');
+            if ($this->isAdministrativeRole($user) || $hasStatisticsPermission) {
+                // For super_admin, count without tenant restrictions
+                $studentsQuery = $isSuperAdmin
+                    ? $school->students()->withoutGlobalScope(TenantScope::class)
+                    : $school->students();
+
+                $academicYearsQuery = $isSuperAdmin
+                    ? $school->academicYears()->withoutGlobalScope(TenantScope::class)
+                    : $school->academicYears();
+
+                $data['statistics'] = [
+                    'total_students' => $studentsQuery->count(),
+                    'active_students' => $studentsQuery->where('enrollment_status', 'enrolled')->count(),
+                    'by_grade_level' => $studentsQuery
+                        ->selectRaw('current_grade_level, COUNT(*) as count')
+                        ->groupBy('current_grade_level')
+                        ->get(),
+                    'academic_years' => $academicYearsQuery->count()
+                ];
+            }
 
             return response()->json([
                 'success' => true,
-                'data' => [
-                    'school' => $school,
-                    'statistics' => $stats
-                ]
+                'data' => $data
             ]);
         } catch (\Exception $e) {
             return response()->json([
@@ -165,18 +208,17 @@ class SchoolController extends Controller
     public function update(UpdateSchoolRequest $request, $id): JsonResponse
     {
         try {
-            // Set default tenant for development
-            if (config('app.env') !== 'production' && !session('tenant_id')) {
-                session(['tenant_id' => 1]);
+            $user = Auth::user();
+
+            // Super admin can access any school, others are scoped by tenant
+            if ($user && $user->hasRole('super_admin')) {
+                $school = School::withoutTenantScope()->findOrFail($id);
+            } else {
+                $school = School::findOrFail($id);
             }
-            
-            // Find school - try with tenant scope first, then without if not found
-            $school = School::find($id);
-            
-            if (!$school) {
-                // If not found with tenant scope, try without it
-                $school = School::withoutGlobalScope(\App\Models\Scopes\TenantScope::class)->findOrFail($id);
-            }
+
+            // Check authorization
+            $this->authorize('update', $school);
 
             $updatedSchool = $this->schoolService->updateSchool($school, $request->validated());
 
@@ -200,18 +242,17 @@ class SchoolController extends Controller
     public function destroy($id): JsonResponse
     {
         try {
-            // Set default tenant for development
-            if (config('app.env') !== 'production' && !session('tenant_id')) {
-                session(['tenant_id' => 1]);
+            $user = Auth::user();
+
+            // Super admin can access any school, others are scoped by tenant
+            if ($user && $user->hasRole('super_admin')) {
+                $school = School::withoutTenantScope()->findOrFail($id);
+            } else {
+                $school = School::findOrFail($id);
             }
-            
-            // Find school - try with tenant scope first, then without if not found
-            $school = School::find($id);
-            
-            if (!$school) {
-                // If not found with tenant scope, try without it
-                $school = School::withoutGlobalScope(\App\Models\Scopes\TenantScope::class)->findOrFail($id);
-            }
+
+            // Check authorization
+            $this->authorize('delete', $school);
 
             $this->schoolService->deleteSchool($school);
 
@@ -231,30 +272,35 @@ class SchoolController extends Controller
     /**
      * Get school dashboard data
      */
-    public function getDashboard(School $school): JsonResponse
+    public function getDashboard($id): JsonResponse
     {
         try {
-            $dashboard = [
-                'school_info' => $school->only(['id', 'official_name', 'school_code', 'school_type', 'status']),
-                'enrollment_summary' => [
-                    'total_students' => $school->students()->count(),
-                    'active_students' => $school->students()->where('enrollment_status', 'enrolled')->count(),
-                    'new_enrollments' => $school->students()
-                        ->where('created_at', '>=', now()->subDays(30))
-                        ->count(),
-                    'transfers_in' => $school->students()
-                        ->where('enrollment_status', 'transferred')
-                        ->where('created_at', '>=', now()->subDays(30))
-                        ->count()
-                ],
-                'grade_distribution' => $school->students()
-                    ->selectRaw('grade_level, COUNT(*) as count')
-                    ->groupBy('grade_level')
-                    ->orderBy('grade_level')
-                    ->get(),
-                'recent_activities' => $this->getRecentActivities($school),
-                'upcoming_events' => $this->getUpcomingEvents($school)
-            ];
+            $user = Auth::user();
+            $isSuperAdmin = $user && method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin();
+
+            // Super admin can access any school, others are scoped by tenant
+            if ($isSuperAdmin) {
+                $school = School::withoutTenantScope()->findOrFail($id);
+            } else {
+                $school = School::findOrFail($id);
+            }
+
+            // Check authorization
+            $this->authorize('view', $school);
+
+            /** @var \App\Models\User $user */
+            $hasStatisticsPermission = $user && $user->hasPermissionTo('schools.statistics', 'api');
+            $canViewStatistics = $this->isAdministrativeRole($user) || $hasStatisticsPermission;
+
+            // Check if user can view statistics
+            if (!$canViewStatistics) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You do not have permission to view school dashboard statistics'
+                ], 403);
+            }
+
+            $dashboard = $this->schoolService->getSchoolDashboard($school, true, $isSuperAdmin);
 
             return response()->json([
                 'success' => true,
@@ -272,37 +318,24 @@ class SchoolController extends Controller
     /**
      * Get school statistics
      */
-    public function getStatistics(School $school): JsonResponse
+    public function getStatistics($id): JsonResponse
     {
         try {
-            $stats = [
-                'enrollment' => [
-                    'total' => $school->students()->count(),
-                    'by_status' => $school->students()
-                        ->selectRaw('enrollment_status, COUNT(*) as count')
-                        ->groupBy('enrollment_status')
-                        ->get(),
-                    'by_grade' => $school->students()
-                        ->selectRaw('current_grade_level, COUNT(*) as count')
-                        ->groupBy('current_grade_level')
-                        ->get(),
-                    'by_gender' => $school->students()
-                        ->selectRaw('gender, COUNT(*) as count')
-                        ->groupBy('gender')
-                        ->get()
-                ],
-                'academic' => [
-                    'academic_years' => $school->academicYears()->count(),
-                    'current_year' => $school->currentAcademicYear?->name,
-                    'terms' => $school->academicYears()
-                        ->withCount('terms')
-                        ->get()
-                ],
-                'demographics' => [
-                    'age_distribution' => $this->getAgeDistribution($school),
-                    'geographic_distribution' => $this->getGeographicDistribution($school)
-                ]
-            ];
+            $user = Auth::user();
+            $isSuperAdmin = $user && method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin();
+
+            // Super admin can access any school, others are scoped by tenant
+            if ($isSuperAdmin) {
+                $school = School::withoutTenantScope()->findOrFail($id);
+            } else {
+                $school = School::findOrFail($id);
+            }
+
+            // Check authorization
+            $this->authorize('view', $school);
+            $this->authorize('viewStatistics', $school);
+
+            $stats = $this->schoolService->getSchoolStatistics($school, true, $isSuperAdmin);
 
             return response()->json([
                 'success' => true,
@@ -320,10 +353,28 @@ class SchoolController extends Controller
     /**
      * Get students by school with filters
      */
-    public function getStudents(School $school, Request $request): JsonResponse
+    public function getStudents($id, Request $request): JsonResponse
     {
         try {
-            $query = $school->students()->with([
+            $user = Auth::user();
+            $isSuperAdmin = $user && method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin();
+
+            // Super admin can access any school, others are scoped by tenant
+            if ($isSuperAdmin) {
+                $school = School::withoutTenantScope()->findOrFail($id);
+            } else {
+                $school = School::findOrFail($id);
+            }
+
+            // Check authorization
+            $this->authorize('view', $school);
+
+            // For super_admin, query students without tenant restrictions
+            $query = $isSuperAdmin
+                ? $school->students()->withoutGlobalScope(TenantScope::class)
+                : $school->students();
+
+            $query->with([
                 'enrollments',
                 'familyRelationships',
                 'currentAcademicYear'
@@ -371,10 +422,28 @@ class SchoolController extends Controller
     /**
      * Get academic years for a school
      */
-    public function getAcademicYears(School $school): JsonResponse
+    public function getAcademicYears($id): JsonResponse
     {
         try {
-            $academicYears = $school->academicYears()
+            $user = Auth::user();
+            $isSuperAdmin = $user && method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin();
+
+            // Super admin can access any school, others are scoped by tenant
+            if ($isSuperAdmin) {
+                $school = School::withoutTenantScope()->findOrFail($id);
+            } else {
+                $school = School::findOrFail($id);
+            }
+
+            // Check authorization
+            $this->authorize('view', $school);
+
+            // For super_admin, query academic years without tenant restrictions
+            $query = $isSuperAdmin
+                ? $school->academicYears()->withoutGlobalScope(TenantScope::class)
+                : $school->academicYears();
+
+            $academicYears = $query
                 ->with(['terms:id,academic_year_id,name,start_date,end_date'])
                 ->orderBy('start_date', 'desc')
                 ->get();
@@ -395,7 +464,7 @@ class SchoolController extends Controller
     /**
      * Set current academic year for a school
      */
-    public function setCurrentAcademicYear(Request $request, School $school): JsonResponse
+    public function setCurrentAcademicYear(Request $request, $id): JsonResponse
     {
         $validator = Validator::make($request->all(), [
             'academic_year_id' => 'required|exists:academic_years,id',
@@ -410,6 +479,19 @@ class SchoolController extends Controller
         }
 
         try {
+            $user = Auth::user();
+            $isSuperAdmin = $user && method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin();
+
+            // Super admin can access any school, others are scoped by tenant
+            if ($isSuperAdmin) {
+                $school = School::withoutTenantScope()->findOrFail($id);
+            } else {
+                $school = School::findOrFail($id);
+            }
+
+            // Check authorization
+            $this->authorize('update', $school);
+
             DB::beginTransaction();
 
             // Update school's current academic year
@@ -417,10 +499,20 @@ class SchoolController extends Controller
 
             DB::commit();
 
+            // Load current academic year - for super_admin, load without tenant restrictions
+            $freshSchool = $school->fresh();
+            if ($isSuperAdmin) {
+                $freshSchool->load(['currentAcademicYear' => function ($query) {
+                    $query->withoutTenantScope();
+                }]);
+            } else {
+                $freshSchool->load(['currentAcademicYear:id,name,start_date,end_date']);
+            }
+
             return response()->json([
                 'success' => true,
                 'message' => 'Current academic year updated successfully',
-                'data' => $school->fresh()->load(['currentAcademicYear:id,name,start_date,end_date'])
+                'data' => $freshSchool
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
@@ -435,11 +527,25 @@ class SchoolController extends Controller
     /**
      * Get school performance metrics
      */
-    public function getPerformanceMetrics(School $school, Request $request): JsonResponse
+    public function getPerformanceMetrics($id, Request $request): JsonResponse
     {
         try {
+            $user = Auth::user();
+            $isSuperAdmin = $user && method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin();
+
+            // Super admin can access any school, others are scoped by tenant
+            if ($isSuperAdmin) {
+                $school = School::withoutTenantScope()->findOrFail($id);
+            } else {
+                $school = School::findOrFail($id);
+            }
+
+            // Check authorization
+            $this->authorize('view', $school);
+            $this->authorize('viewStatistics', $school);
+
             $year = $request->get('year', date('Y'));
-            $metrics = $this->schoolService->getSchoolPerformanceMetrics($school, $year);
+            $metrics = $this->schoolService->getSchoolPerformanceMetrics($school, $year, true, $isSuperAdmin);
 
             return response()->json([
                 'success' => true,
@@ -694,9 +800,22 @@ class SchoolController extends Controller
     /**
      * Process form submission through Form Engine
      */
-    public function processFormSubmission(ProcessFormSubmissionRequest $request, School $school): JsonResponse
+    public function processFormSubmission(ProcessFormSubmissionRequest $request, $id): JsonResponse
     {
         try {
+            $user = Auth::user();
+            $isSuperAdmin = $user && method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin();
+
+            // Super admin can access any school, others are scoped by tenant
+            if ($isSuperAdmin) {
+                $school = School::withoutTenantScope()->findOrFail($id);
+            } else {
+                $school = School::findOrFail($id);
+            }
+
+            // Check authorization
+            $this->authorize('view', $school);
+
             $result = $this->schoolService->processFormSubmission($school, $request->validated());
 
             return response()->json([
@@ -721,11 +840,28 @@ class SchoolController extends Controller
     /**
      * Get form instances for a school
      */
-    public function getFormInstances(School $school, Request $request): JsonResponse
+    public function getFormInstances($id, Request $request): JsonResponse
     {
         try {
-            $query = $school->formInstances()
-                ->with(['template:id,name,category', 'creator:id,name,identifier']);
+            $user = Auth::user();
+            $isSuperAdmin = $user && method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin();
+
+            // Super admin can access any school, others are scoped by tenant
+            if ($isSuperAdmin) {
+                $school = School::withoutTenantScope()->findOrFail($id);
+            } else {
+                $school = School::findOrFail($id);
+            }
+
+            // Check authorization
+            $this->authorize('view', $school);
+
+            // For super_admin, query form instances without tenant restrictions
+            $query = $isSuperAdmin
+                ? $school->formInstances()->withoutGlobalScope(TenantScope::class)
+                : $school->formInstances();
+
+            $query->with(['template:id,name,category', 'creator:id,name,identifier']);
 
             // Filter by status
             if ($request->has('status')) {
@@ -777,10 +913,28 @@ class SchoolController extends Controller
     /**
      * Get specific form instance details
      */
-    public function getFormInstance(School $school, $instanceId): JsonResponse
+    public function getFormInstance($id, $instanceId): JsonResponse
     {
         try {
-            $instance = $school->formInstances()
+            $user = Auth::user();
+            $isSuperAdmin = $user && method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin();
+
+            // Super admin can access any school, others are scoped by tenant
+            if ($isSuperAdmin) {
+                $school = School::withoutTenantScope()->findOrFail($id);
+            } else {
+                $school = School::findOrFail($id);
+            }
+
+            // Check authorization
+            $this->authorize('view', $school);
+
+            // For super_admin, query form instances without tenant restrictions
+            $query = $isSuperAdmin
+                ? $school->formInstances()->withoutGlobalScope(TenantScope::class)
+                : $school->formInstances();
+
+            $instance = $query
                 ->with(['template:id,name,category,form_configuration', 'creator:id,name,identifier'])
                 ->findOrFail($instanceId);
 
@@ -801,7 +955,7 @@ class SchoolController extends Controller
     /**
      * Update form instance status
      */
-    public function updateFormInstanceStatus(Request $request, School $school, $instanceId): JsonResponse
+    public function updateFormInstanceStatus(Request $request, $id, $instanceId): JsonResponse
     {
         $validator = Validator::make($request->all(), [
             'status' => 'required|in:draft,submitted,under_review,approved,rejected,completed',
@@ -818,7 +972,25 @@ class SchoolController extends Controller
         }
 
         try {
-            $instance = $school->formInstances()->findOrFail($instanceId);
+            $user = Auth::user();
+            $isSuperAdmin = $user && method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin();
+
+            // Super admin can access any school, others are scoped by tenant
+            if ($isSuperAdmin) {
+                $school = School::withoutTenantScope()->findOrFail($id);
+            } else {
+                $school = School::findOrFail($id);
+            }
+
+            // Check authorization
+            $this->authorize('view', $school);
+
+            // For super_admin, query form instances without tenant restrictions
+            $query = $isSuperAdmin
+                ? $school->formInstances()->withoutGlobalScope(TenantScope::class)
+                : $school->formInstances();
+
+            $instance = $query->findOrFail($instanceId);
 
             $instance->update([
                 'status' => $request->status,
@@ -856,32 +1028,50 @@ class SchoolController extends Controller
     /**
      * Get form analytics and insights
      */
-    public function getFormAnalytics(School $school, Request $request): JsonResponse
+    public function getFormAnalytics($id, Request $request): JsonResponse
     {
         try {
+            $user = Auth::user();
+            $isSuperAdmin = $user && method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin();
+
+            // Super admin can access any school, others are scoped by tenant
+            if ($isSuperAdmin) {
+                $school = School::withoutTenantScope()->findOrFail($id);
+            } else {
+                $school = School::findOrFail($id);
+            }
+
+            // Check authorization
+            $this->authorize('view', $school);
+
             $dateRange = $request->get('date_range', '30'); // days
             $startDate = now()->subDays($dateRange);
 
+            // For super_admin, query form instances without tenant restrictions
+            $formInstancesQuery = $isSuperAdmin
+                ? $school->formInstances()->withoutGlobalScope(TenantScope::class)
+                : $school->formInstances();
+
             $analytics = [
                 'submission_summary' => [
-                    'total_submissions' => $school->formInstances()->count(),
-                    'recent_submissions' => $school->formInstances()
+                    'total_submissions' => $formInstancesQuery->count(),
+                    'recent_submissions' => $formInstancesQuery
                         ->where('created_at', '>=', $startDate)
                         ->count(),
-                    'by_status' => $school->formInstances()
+                    'by_status' => $formInstancesQuery
                         ->selectRaw('status, COUNT(*) as count')
                         ->groupBy('status')
                         ->get()
                 ],
-                'template_usage' => $school->formInstances()
+                'template_usage' => $formInstancesQuery
                     ->with('template:id,name,category')
                     ->selectRaw('form_template_id, COUNT(*) as count')
                     ->groupBy('form_template_id')
                     ->orderBy('count', 'desc')
                     ->limit(10)
                     ->get(),
-                'completion_rates' => $this->calculateFormCompletionRates($school, $startDate),
-                'response_times' => $this->calculateFormResponseTimes($school, $startDate)
+                'completion_rates' => $this->calculateFormCompletionRates($school, $startDate, $isSuperAdmin),
+                'response_times' => $this->calculateFormResponseTimes($school, $startDate, $isSuperAdmin)
             ];
 
             return response()->json([
@@ -966,9 +1156,13 @@ class SchoolController extends Controller
     /**
      * Calculate form completion rates
      */
-    private function calculateFormCompletionRates(School $school, $startDate): array
+    private function calculateFormCompletionRates(School $school, $startDate, bool $isSuperAdmin = false): array
     {
-        $instances = $school->formInstances()
+        $query = $isSuperAdmin
+            ? $school->formInstances()->withoutGlobalScope(TenantScope::class)
+            : $school->formInstances();
+
+        $instances = $query
             ->where('created_at', '>=', $startDate)
             ->get();
 
@@ -987,9 +1181,13 @@ class SchoolController extends Controller
     /**
      * Calculate form response times
      */
-    private function calculateFormResponseTimes(School $school, $startDate): array
+    private function calculateFormResponseTimes(School $school, $startDate, bool $isSuperAdmin = false): array
     {
-        $instances = $school->formInstances()
+        $query = $isSuperAdmin
+            ? $school->formInstances()->withoutGlobalScope(TenantScope::class)
+            : $school->formInstances();
+
+        $instances = $query
             ->where('created_at', '>=', $startDate)
             ->whereNotNull('completed_at')
             ->get();
@@ -1011,6 +1209,18 @@ class SchoolController extends Controller
     // =====================================================
     // ADDITIONAL HELPER METHODS (TO BE IMPLEMENTED)
     // =====================================================
+
+    /**
+     * Check if user has an administrative role
+     */
+    private function isAdministrativeRole($user): bool
+    {
+        if (!$user) {
+            return false;
+        }
+
+        return $user->hasAnyRole(['super_admin', 'admin', 'tenant_admin', 'owner']);
+    }
 
     /**
      * Get recent activities for a school

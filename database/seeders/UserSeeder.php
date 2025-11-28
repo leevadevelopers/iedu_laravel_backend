@@ -13,24 +13,19 @@ class UserSeeder extends Seeder
      */
     public function run(): void
     {
-        $users = [
-            [
-                'name' => 'Leeva Superadmin',
-                'identifier' => 'noreply@leeva.digital',
-                'type' => 'email',
-                'password' => Hash::make('@Leeva@Ied_U2026'),
-                'verified_at' => now(),
-                'role_id' => 1,
-                'is_active' => true,
-                'profile_photo_path' => 'https://source.unsplash.com/128x128/?face,portrait,person&sig=1',
-                'settings' => json_encode(['theme' => 'dark', 'notifications' => true])
-            ],
-
+        $userData = [
+            'name' => 'Leeva Superadmin',
+            'identifier' => 'noreply@leeva.digital',
+            'type' => 'email',
+            'password' => Hash::make('@Leeva@Ied_U2026'),
+            'verified_at' => now(),
+            'role_id' => 1,
+            'is_active' => true,
+            'profile_photo_path' => 'https://source.unsplash.com/128x128/?face,portrait,person&sig=1',
+            'settings' => json_encode(['theme' => 'dark', 'notifications' => true])
         ];
 
-
-        foreach ($users as $userData) {
-            User::create($userData);
-        }
+        $user = User::create($userData);
+        $user->assignRole('super_admin');
     }
 }

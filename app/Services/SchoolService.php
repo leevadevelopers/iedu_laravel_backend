@@ -3,14 +3,18 @@
 namespace App\Services;
 
 use App\Models\V1\SIS\School\School;
+use App\Models\V1\SIS\School\SchoolUser;
 use App\Models\V1\SIS\School\AcademicYear;
 use App\Models\V1\SIS\Student\Student;
 use App\Models\Forms\FormTemplate;
+use App\Models\Scopes\TenantScope;
+use App\Models\User;
 use App\Services\FormEngineService;
 use App\Services\WorkflowService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Database\Eloquent\Collection;
 
@@ -30,16 +34,70 @@ class SchoolService
      */
     public function getSchools(array $filters, int $perPage = 15): LengthAwarePaginator
     {
-        $query = School::withoutTenantScope()->select([
-            'id', 'tenant_id', 'school_code', 'official_name', 'display_name',
-            'school_type', 'status', 'city', 'state_province', 'country_code',
-            'email', 'phone', 'website', 'current_enrollment', 'staff_count', 
-            'created_at', 'updated_at'
-        ])->with([
-            'academicYears:id,school_id,name,start_date,end_date',
-            'currentAcademicYear:id,school_id,name',
-            'users:id,school_id,name,identifier'
+        $user = Auth::user();
+
+        // Check super_admin using hasRoleBase method (as per plan)
+        $isSuperAdmin = false;
+        if ($user && method_exists($user, 'hasRoleBase')) {
+            $isSuperAdmin = $user->hasRoleBase('super_admin', 'api');
+        }
+
+        Log::info('SchoolService::getSchools - Super admin check', [
+            'user_id' => $user?->id,
+            'is_super_admin' => $isSuperAdmin,
         ]);
+
+        // Super admin can see all schools (cross-tenant)
+        if ($isSuperAdmin) {
+            // Use withoutTenantScope to get ALL schools regardless of tenant
+            $query = School::withoutTenantScope()->select([
+                'id', 'tenant_id', 'school_code', 'official_name', 'display_name',
+                'school_type', 'status', 'city', 'state_province', 'country_code',
+                'email', 'phone', 'website', 'current_enrollment', 'staff_count',
+                'created_at', 'updated_at'
+            ]);
+        } else {
+            // Regular users see only schools from their tenant (TenantScope applies automatically)
+            $query = School::select([
+                'id', 'tenant_id', 'school_code', 'official_name', 'display_name',
+                'school_type', 'status', 'city', 'state_province', 'country_code',
+                'email', 'phone', 'website', 'current_enrollment', 'staff_count',
+                'created_at', 'updated_at'
+            ]);
+        }
+
+        // Load relationships - for super_admin, relationships should also ignore tenant scope
+        if ($isSuperAdmin) {
+            $query->with([
+                'academicYears' => function ($q) {
+                    // AcademicYear may have TenantScope, so remove it if present
+                    try {
+                        $q->withoutTenantScope();
+                    } catch (\Exception $e) {
+                        // If withoutTenantScope doesn't exist, continue without it
+                    }
+                    $q->select('id', 'school_id', 'name', 'start_date', 'end_date');
+                },
+                'currentAcademicYear' => function ($q) {
+                    try {
+                        $q->withoutTenantScope();
+                    } catch (\Exception $e) {
+                        // If withoutTenantScope doesn't exist, continue without it
+                    }
+                    $q->select('id', 'school_id', 'name');
+                },
+                'users' => function ($q) {
+                    // Users relationship doesn't need tenant scope removal as it's a belongsToMany
+                    $q->select('users.id', 'users.name', 'users.identifier');
+                }
+            ]);
+        } else {
+            $query->with([
+                'academicYears:id,school_id,name,start_date,end_date',
+                'currentAcademicYear:id,school_id,name',
+                'users:id,name,identifier'
+            ]);
+        }
 
         // Apply filters
         if (isset($filters['status'])) {
@@ -146,6 +204,31 @@ class SchoolService
                 // Don't throw the exception, just log it and continue
             }
 
+            // Associate authenticated user to the school
+            $user = Auth::user();
+            if ($user) {
+                // Update user's school_id if it's empty
+                if (empty($user->school_id)) {
+                    $user->update(['school_id' => $school->id]);
+                }
+
+                // Create school_users relationship with admin role
+                // Check if relationship doesn't already exist
+                $existingSchoolUser = SchoolUser::where('school_id', $school->id)
+                    ->where('user_id', $user->id)
+                    ->first();
+
+                if (!$existingSchoolUser) {
+                    SchoolUser::create([
+                        'school_id' => $school->id,
+                        'user_id' => $user->id,
+                        'role' => 'admin',
+                        'status' => 'active',
+                        'start_date' => now(),
+                    ]);
+                }
+            }
+
             DB::commit();
 
             // Clear schools cache after creation
@@ -199,6 +282,9 @@ class SchoolService
                 throw new \Exception("Cannot delete school with {$activeStudents} active students");
             }
 
+            // Delete all school_users relationships for this school
+            SchoolUser::where('school_id', $school->id)->delete();
+
             // Soft delete school
             $school->update(['status' => 'archived']);
             $school->delete();
@@ -231,56 +317,88 @@ class SchoolService
     /**
      * Get school dashboard data
      */
-    public function getSchoolDashboard(School $school): array
+    public function getSchoolDashboard(School $school, bool $includeStatistics = false, bool $isSuperAdmin = false): array
     {
-        return [
+        $user = Auth::user();
+        $canViewStatistics = $includeStatistics && $this->canViewStatistics($user);
+
+        $dashboard = [
             'school_info' => $school->only(['id', 'official_name', 'school_code', 'school_type', 'status']),
-            'enrollment_summary' => [
-                'total_students' => $school->students()->count(),
-                'active_students' => $school->students()->where('status', 'active')->count(),
-                'new_enrollments' => $school->students()
+        ];
+
+        if ($canViewStatistics) {
+            // Base query for students - clone for each calculation to avoid query accumulation
+            $baseStudentsQuery = $isSuperAdmin
+                ? $school->students()->withoutGlobalScope(TenantScope::class)
+                : $school->students();
+
+            $dashboard['enrollment_summary'] = [
+                'total_students' => (clone $baseStudentsQuery)->count(),
+                'active_students' => (clone $baseStudentsQuery)->where('enrollment_status', 'enrolled')->count(),
+                'new_enrollments' => (clone $baseStudentsQuery)
                     ->where('created_at', '>=', now()->subDays(30))
                     ->count(),
-                'transfers_in' => $school->students()
-                    ->where('status', 'transferred')
+                'transfers_in' => (clone $baseStudentsQuery)
+                    ->where('enrollment_status', 'transferred')
                     ->where('created_at', '>=', now()->subDays(30))
                     ->count()
-            ],
-            'grade_distribution' => $school->students()
-                ->selectRaw('grade_level, COUNT(*) as count')
-                ->groupBy('grade_level')
-                ->orderBy('grade_level')
-                ->get(),
-            'recent_activities' => $this->getRecentActivities($school),
-            'upcoming_events' => $this->getUpcomingEvents($school)
-        ];
+            ];
+            $dashboard['grade_distribution'] = (clone $baseStudentsQuery)
+                ->selectRaw('current_grade_level, COUNT(*) as count')
+                ->groupBy('current_grade_level')
+                ->orderBy('current_grade_level')
+                ->get();
+            $dashboard['recent_activities'] = $this->getRecentActivities($school);
+            $dashboard['upcoming_events'] = $this->getUpcomingEvents($school);
+        }
+
+        return $dashboard;
     }
 
     /**
      * Get school statistics
      */
-    public function getSchoolStatistics(School $school): array
+    public function getSchoolStatistics(School $school, bool $includeFullStats = false, bool $isSuperAdmin = false): array
     {
+        $user = Auth::user();
+        $canViewStatistics = $includeFullStats && $this->canViewStatistics($user);
+
+        if (!$canViewStatistics) {
+            return [
+                'message' => 'You do not have permission to view school statistics',
+                'school_info' => $school->only(['id', 'official_name', 'school_code', 'school_type', 'status'])
+            ];
+        }
+
+        // For super_admin, query without tenant restrictions
+        $studentsQuery = $isSuperAdmin
+            ? $school->students()->withoutGlobalScope(TenantScope::class)
+            : $school->students();
+
+        $academicYearsQuery = $isSuperAdmin
+            ? $school->academicYears()->withoutGlobalScope(TenantScope::class)
+            : $school->academicYears();
+
         return [
             'enrollment' => [
-                'total' => $school->students()->count(),
-                'by_status' => $school->students()
-                    ->selectRaw('status, COUNT(*) as count')
-                    ->groupBy('status')
+                'total' => $studentsQuery->count(),
+                'by_status' => $studentsQuery
+                    ->selectRaw('enrollment_status, COUNT(*) as count')
+                    ->groupBy('enrollment_status')
                     ->get(),
-                'by_grade' => $school->students()
-                    ->selectRaw('grade_level, COUNT(*) as count')
-                    ->groupBy('grade_level')
+                'by_grade' => $studentsQuery
+                    ->selectRaw('current_grade_level, COUNT(*) as count')
+                    ->groupBy('current_grade_level')
                     ->get(),
-                'by_gender' => $school->students()
+                'by_gender' => $studentsQuery
                     ->selectRaw('gender, COUNT(*) as count')
                     ->groupBy('gender')
                     ->get()
             ],
             'academic' => [
-                'academic_years' => $school->academicYears()->count(),
+                'academic_years' => $academicYearsQuery->count(),
                 'current_year' => $school->currentAcademicYear?->name,
-                'terms' => $school->academicYears()
+                'terms' => $academicYearsQuery
                     ->withCount('terms')
                     ->get()
             ],
@@ -308,7 +426,7 @@ class SchoolService
         }
 
         if (isset($filters['grade_level'])) {
-            $query->where('grade_level', $filters['grade_level']);
+            $query->where('current_grade_level', $filters['grade_level']);
         }
 
         if (isset($filters['academic_year_id'])) {
@@ -362,15 +480,43 @@ class SchoolService
     /**
      * Get school performance metrics
      */
-    public function getSchoolPerformanceMetrics(School $school, int $year): array
+    public function getSchoolPerformanceMetrics(School $school, int $year, bool $includeFullMetrics = false, bool $isSuperAdmin = false): array
     {
+        $user = Auth::user();
+        $canViewStatistics = $includeFullMetrics && $this->canViewStatistics($user);
+
+        if (!$canViewStatistics) {
+            return [
+                'message' => 'You do not have permission to view performance metrics',
+                'school_info' => $school->only(['id', 'official_name', 'school_code', 'school_type', 'status'])
+            ];
+        }
+
         return [
-            'enrollment_growth' => $this->getEnrollmentGrowth($school, $year),
-            'retention_rate' => $this->getRetentionRate($school, $year),
-            'graduation_rate' => $this->getGraduationRate($school, $year),
-            'attendance_rate' => $this->getAttendanceRate($school, $year),
-            'academic_progress' => $this->getAcademicProgress($school, $year)
+            'enrollment_growth' => $this->getEnrollmentGrowth($school, $year, $isSuperAdmin),
+            'retention_rate' => $this->getRetentionRate($school, $year, $isSuperAdmin),
+            'graduation_rate' => $this->getGraduationRate($school, $year, $isSuperAdmin),
+            'attendance_rate' => $this->getAttendanceRate($school, $year, $isSuperAdmin),
+            'academic_progress' => $this->getAcademicProgress($school, $year, $isSuperAdmin)
         ];
+    }
+
+    /**
+     * Check if user can view statistics
+     */
+    private function canViewStatistics(?User $user): bool
+    {
+        if (!$user) {
+            return false;
+        }
+
+        // Check if user has administrative role
+        if ($user->hasAnyRole(['super_admin', 'admin', 'tenant_admin', 'owner'])) {
+            return true;
+        }
+
+        // Check if user has statistics permission
+        return $user->hasPermissionTo('schools.statistics', 'api');
     }
 
     /**
@@ -738,7 +884,7 @@ class SchoolService
     /**
      * Get enrollment growth metrics
      */
-    private function getEnrollmentGrowth(School $school, $year): array
+    private function getEnrollmentGrowth(School $school, $year, bool $isSuperAdmin = false): array
     {
         // TODO: Implement enrollment growth calculation
         return [];
@@ -747,7 +893,7 @@ class SchoolService
     /**
      * Get retention rate metrics
      */
-    private function getRetentionRate(School $school, $year): array
+    private function getRetentionRate(School $school, $year, bool $isSuperAdmin = false): array
     {
         // TODO: Implement retention rate calculation
         return [];
@@ -756,7 +902,7 @@ class SchoolService
     /**
      * Get graduation rate metrics
      */
-    private function getGraduationRate(School $school, $year): array
+    private function getGraduationRate(School $school, $year, bool $isSuperAdmin = false): array
     {
         // TODO: Implement graduation rate calculation
         return [];
@@ -765,7 +911,7 @@ class SchoolService
     /**
      * Get attendance rate metrics
      */
-    private function getAttendanceRate(School $school, $year): array
+    private function getAttendanceRate(School $school, $year, bool $isSuperAdmin = false): array
     {
         // TODO: Implement attendance rate calculation
         return [];
@@ -774,7 +920,7 @@ class SchoolService
     /**
      * Get academic progress metrics
      */
-    private function getAcademicProgress(School $school, $year): array
+    private function getAcademicProgress(School $school, $year, bool $isSuperAdmin = false): array
     {
         // TODO: Implement academic progress calculation
         return [];

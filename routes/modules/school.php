@@ -12,24 +12,21 @@ use Illuminate\Support\Facades\Route;
     */
 
     Route::middleware(['auth:api'])->prefix('schools')->group(function () {
-        // Health check
-        Route::get('/health', [SchoolController::class, 'health']);
-
         // Basic CRUD operations
         Route::get('/', [SchoolController::class, 'index']);
         Route::post('/', [SchoolController::class, 'store']);
         // Route::post('/test', action: [SchoolController::class, 'testStore']); // Test route for simplified creation
-        Route::get('/{school}', [SchoolController::class, 'show']);
+        Route::get('/{id}', [SchoolController::class, 'show']);
         Route::put('/{id}', [SchoolController::class, 'update']);
         Route::delete('/{id}', [SchoolController::class, 'destroy']);
 
         // School-specific operations
-        Route::get('/{school}/dashboard', [SchoolController::class, 'getDashboard']);
-        Route::get('/{school}/statistics', [SchoolController::class, 'getStatistics']);
-        Route::get('/{school}/students', [SchoolController::class, 'getStudents']);
-        Route::get('/{school}/academic-years', [SchoolController::class, 'getAcademicYears']);
-        Route::post('/{school}/set-current-academic-year', [SchoolController::class, 'setCurrentAcademicYear']);
-        Route::get('/{school}/performance-metrics', [SchoolController::class, 'getPerformanceMetrics']);
+        Route::get('/{id}/dashboard', [SchoolController::class, 'getDashboard']);
+        Route::get('/{id}/statistics', [SchoolController::class, 'getStatistics']);
+        Route::get('/{id}/students', [SchoolController::class, 'getStudents']);
+        Route::get('/{id}/academic-years', [SchoolController::class, 'getAcademicYears']);
+        Route::post('/{id}/set-current-academic-year', [SchoolController::class, 'setCurrentAcademicYear']);
+        Route::get('/{id}/performance-metrics', [SchoolController::class, 'getPerformanceMetrics']);
 
         // Form Template Management
         Route::get('/form-templates', [SchoolController::class, 'getFormTemplates']);
@@ -40,11 +37,11 @@ use Illuminate\Support\Facades\Route;
         Route::post('/form-templates/{template}/duplicate', [SchoolController::class, 'duplicateFormTemplate']);
 
         // Form Engine Operations
-        Route::post('/{school}/forms/submit', [SchoolController::class, 'processFormSubmission']);
-        Route::get('/{school}/forms', [SchoolController::class, 'getFormInstances']);
-        Route::get('/{school}/forms/{instanceId}', [SchoolController::class, 'getFormInstance']);
-        Route::put('/{school}/forms/{instanceId}/status', [SchoolController::class, 'updateFormInstanceStatus']);
-        Route::get('/{school}/forms/analytics', [SchoolController::class, 'getFormAnalytics']);
+        Route::post('/{id}/forms/submit', [SchoolController::class, 'processFormSubmission']);
+        Route::get('/{id}/forms', [SchoolController::class, 'getFormInstances']);
+        Route::get('/{id}/forms/{instanceId}', [SchoolController::class, 'getFormInstance']);
+        Route::put('/{id}/forms/{instanceId}/status', [SchoolController::class, 'updateFormInstanceStatus']);
+        Route::get('/{id}/forms/analytics', [SchoolController::class, 'getFormAnalytics']);
     });
 
     Route::prefix('schools')->group(function () {

@@ -143,6 +143,12 @@ trait TenantPermission
     public function hasPermissionTo($permission, $guardName = null): bool
     {
         // logger()->debug('TenantPermission::hasPermissionTo called', ['permission' => $permission, 'guardName' => $guardName]);
+
+        // Super admin has all permissions
+        if (method_exists($this, 'isSuperAdmin') && $this->isSuperAdmin()) {
+            return true;
+        }
+
         if ($this->getCurrentTenantId()) {
             return $this->hasTenantPermission($permission);
         }
@@ -153,7 +159,17 @@ trait TenantPermission
 
     public function hasRole($roles, string $guard = null): bool
     {
-        if ($this->getCurrentTenantId()) {
+        // Normalize roles to array
+        $rolesArray = is_array($roles) ? $roles : [$roles];
+
+        // First, check if user is super_admin using base Spatie method (cross-tenant)
+        if (in_array('super_admin', $rolesArray) && $this->hasRoleBase('super_admin', $guard ?? 'api')) {
+            return true;
+        }
+
+        // Then check tenant-specific roles
+        $tenantId = $this->getCurrentTenantId();
+        if ($tenantId) {
             return $this->hasTenantRole($roles);
         }
 
