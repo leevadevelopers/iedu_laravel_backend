@@ -47,8 +47,6 @@ Route::middleware(['auth:api'])->group(function () {
 
     Route::prefix('student-documents')->group(function () {
         // File operations
-        Route::post('upload-file', [\App\Http\Controllers\API\V1\Student\StudentDocumentController::class, 'uploadFile'])
-            ->name('student-documents.upload-file');
         Route::get('{document}/download', [\App\Http\Controllers\API\V1\Student\StudentDocumentController::class, 'download'])
             ->name('student-documents.download');
 

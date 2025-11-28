@@ -12,6 +12,7 @@ use App\Models\V1\SIS\School\School;
 use App\Models\V1\SIS\School\SchoolUser;
 use App\Models\V1\SIS\School\AcademicYear;
 use App\Models\V1\SIS\School\AcademicTerm;
+use App\Models\User;
 use App\Models\Forms\FormTemplate;
 use App\Services\FormEngineService;
 use App\Services\WorkflowService;
@@ -20,6 +21,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
+use Spatie\Permission\Models\Role;
 
 class StudentController extends Controller
 {
@@ -30,6 +32,260 @@ class StudentController extends Controller
     {
         $this->formEngineService = $formEngineService;
         $this->workflowService = $workflowService;
+    }
+
+    /**
+     * Get the current school ID from authenticated user
+     */
+    protected function getCurrentSchoolId(): ?int
+    {
+        $user = auth('api')->user();
+
+        if (!$user) {
+            return null;
+        }
+
+        // Try getCurrentSchool method first (preferred)
+        if (method_exists($user, 'getCurrentSchool')) {
+            $currentSchool = $user->getCurrentSchool();
+            if ($currentSchool) {
+                return $currentSchool->id;
+            }
+        }
+
+        // Fallback to school_id attribute
+        if (isset($user->school_id) && $user->school_id) {
+            return $user->school_id;
+        }
+
+        // Try activeSchools relationship
+        if (method_exists($user, 'activeSchools')) {
+            $activeSchools = $user->activeSchools();
+            if ($activeSchools && $activeSchools->count() > 0) {
+                $firstSchool = $activeSchools->first();
+                if ($firstSchool && isset($firstSchool->school_id)) {
+                    return $firstSchool->school_id;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Get the current tenant ID from authenticated user
+     */
+    protected function getCurrentTenantId(): ?int
+    {
+        $user = auth('api')->user();
+
+        if (!$user) {
+            return null;
+        }
+
+        // Try tenant_id attribute first
+        if (isset($user->tenant_id) && $user->tenant_id) {
+            return $user->tenant_id;
+        }
+
+        // Try getCurrentTenant method
+        if (method_exists($user, 'getCurrentTenant')) {
+            $currentTenant = $user->getCurrentTenant();
+            if ($currentTenant) {
+                return $currentTenant->id;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Verify that a school_id belongs to the user's tenant
+     */
+    protected function verifySchoolAccess(int $schoolId): bool
+    {
+        $tenantId = $this->getCurrentTenantId();
+        if (!$tenantId) {
+            return false;
+        }
+
+        // Check if school belongs to user's tenant
+        $school = School::where('id', $schoolId)
+            ->where('tenant_id', $tenantId)
+            ->exists();
+
+        return $school;
+    }
+
+    /**
+     * Ensure form template exists, create if it doesn't
+     */
+    protected function ensureFormTemplateExists(string $formType, int $tenantId, int $userId): FormTemplate
+    {
+        // Check if template already exists
+        $template = FormTemplate::where('category', $formType)
+            ->where('tenant_id', $tenantId)
+            ->where('is_active', true)
+            ->first();
+
+        if ($template) {
+            return $template;
+        }
+
+        // Create default template for student registration
+        return FormTemplate::create([
+            'tenant_id' => $tenantId,
+            'name' => 'Student Registration Form',
+            'description' => 'Default form template for student registration. You can customize this template later.',
+            'category' => $formType,
+            'version' => '1.0',
+            'estimated_completion_time' => '20 minutes',
+            'is_multi_step' => false,
+            'auto_save' => true,
+            'compliance_level' => 'standard',
+            'is_active' => true,
+            'is_default' => true,
+            'form_configuration' => [
+                'type' => 'student_registration',
+                'auto_approve' => false,
+                'require_comments' => false,
+                'allow_draft' => true
+            ],
+            'steps' => [
+                [
+                    'step_id' => 'step_1',
+                    'step_title' => 'Student Information',
+                    'step_number' => 1,
+                    'sections' => [
+                        [
+                            'section_id' => 'section_personal_info',
+                            'section_title' => 'Personal Information',
+                            'fields' => [
+                                [
+                                    'field_id' => 'first_name',
+                                    'field_type' => 'text',
+                                    'label' => 'First Name',
+                                    'placeholder' => 'Enter first name',
+                                    'required' => true,
+                                    'validation' => ['required', 'string', 'max:100']
+                                ],
+                                [
+                                    'field_id' => 'middle_name',
+                                    'field_type' => 'text',
+                                    'label' => 'Middle Name',
+                                    'placeholder' => 'Enter middle name',
+                                    'required' => false,
+                                    'validation' => ['nullable', 'string', 'max:100']
+                                ],
+                                [
+                                    'field_id' => 'last_name',
+                                    'field_type' => 'text',
+                                    'label' => 'Last Name',
+                                    'placeholder' => 'Enter last name',
+                                    'required' => true,
+                                    'validation' => ['required', 'string', 'max:100']
+                                ],
+                                [
+                                    'field_id' => 'date_of_birth',
+                                    'field_type' => 'date',
+                                    'label' => 'Date of Birth',
+                                    'required' => true,
+                                    'validation' => ['required', 'date', 'before:today']
+                                ],
+                                [
+                                    'field_id' => 'gender',
+                                    'field_type' => 'select',
+                                    'label' => 'Gender',
+                                    'required' => true,
+                                    'options' => [
+                                        ['value' => 'male', 'label' => 'Male'],
+                                        ['value' => 'female', 'label' => 'Female'],
+                                        ['value' => 'other', 'label' => 'Other']
+                                    ],
+                                    'validation' => ['required', 'in:male,female,other']
+                                ]
+                            ]
+                        ],
+                        [
+                            'section_id' => 'section_contact_info',
+                            'section_title' => 'Contact Information',
+                            'fields' => [
+                                [
+                                    'field_id' => 'email',
+                                    'field_type' => 'email',
+                                    'label' => 'Email',
+                                    'placeholder' => 'Enter email address',
+                                    'required' => false,
+                                    'validation' => ['nullable', 'email', 'max:255']
+                                ],
+                                [
+                                    'field_id' => 'phone',
+                                    'field_type' => 'tel',
+                                    'label' => 'Phone',
+                                    'placeholder' => 'Enter phone number',
+                                    'required' => false,
+                                    'validation' => ['nullable', 'string', 'max:20']
+                                ]
+                            ]
+                        ],
+                        [
+                            'section_id' => 'section_enrollment_info',
+                            'section_title' => 'Enrollment Information',
+                            'fields' => [
+                                [
+                                    'field_id' => 'current_grade_level',
+                                    'field_type' => 'text',
+                                    'label' => 'Grade Level',
+                                    'placeholder' => 'e.g., 5, 6, 7',
+                                    'required' => true,
+                                    'validation' => ['required', 'string', 'max:20']
+                                ],
+                                [
+                                    'field_id' => 'admission_date',
+                                    'field_type' => 'date',
+                                    'label' => 'Admission Date',
+                                    'required' => true,
+                                    'validation' => ['required', 'date']
+                                ],
+                                [
+                                    'field_id' => 'enrollment_status',
+                                    'field_type' => 'select',
+                                    'label' => 'Enrollment Status',
+                                    'required' => true,
+                                    'options' => [
+                                        ['value' => 'enrolled', 'label' => 'Enrolled'],
+                                        ['value' => 'transferred', 'label' => 'Transferred'],
+                                        ['value' => 'graduated', 'label' => 'Graduated'],
+                                        ['value' => 'withdrawn', 'label' => 'Withdrawn'],
+                                        ['value' => 'suspended', 'label' => 'Suspended']
+                                    ],
+                                    'validation' => ['required', 'in:enrolled,transferred,graduated,withdrawn,suspended']
+                                ]
+                            ]
+                        ]
+                    ]
+                ]
+            ],
+            'validation_rules' => [
+                'first_name' => 'required|string|max:100',
+                'last_name' => 'required|string|max:100',
+                'middle_name' => 'nullable|string|max:100',
+                'date_of_birth' => 'required|date|before:today',
+                'gender' => 'required|in:male,female,other',
+                'email' => 'nullable|email|max:255',
+                'phone' => 'nullable|string|max:20',
+                'current_grade_level' => 'required|string|max:20',
+                'admission_date' => 'required|date',
+                'enrollment_status' => 'required|in:enrolled,transferred,graduated,withdrawn,suspended'
+            ],
+            'workflow_configuration' => [],
+            'metadata' => [
+                'auto_created' => true,
+                'created_for' => 'student_registration',
+                'can_be_customized' => true
+            ],
+            'created_by' => $userId
+        ]);
     }
 
     /**
@@ -46,6 +302,31 @@ class StudentController extends Controller
                 'currentAcademicYear'
             ]);
 
+            // Apply school_id filter
+            // Always use user's school_id or verify requested school_id belongs to user's tenant
+            if ($request->has('school_id')) {
+                $requestedSchoolId = $request->school_id;
+                if ($this->verifySchoolAccess($requestedSchoolId)) {
+                    $query->where('school_id', $requestedSchoolId);
+                } else {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'You do not have access to this school'
+                    ], 403);
+                }
+            } else {
+                // Auto-filter by user's school_id
+                $userSchoolId = $this->getCurrentSchoolId();
+                if ($userSchoolId) {
+                    $query->where('school_id', $userSchoolId);
+                } else {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'User is not associated with any school'
+                    ], 403);
+                }
+            }
+
             // Apply filters
             if ($request->has('enrollment_status')) {
                 $query->where('enrollment_status', $request->enrollment_status);
@@ -53,10 +334,6 @@ class StudentController extends Controller
 
             if ($request->has('current_grade_level')) {
                 $query->where('current_grade_level', $request->current_grade_level);
-            }
-
-            if ($request->has('school_id')) {
-                $query->where('school_id', $request->school_id);
             }
 
             if ($request->has('current_academic_year_id')) {
@@ -72,6 +349,8 @@ class StudentController extends Controller
                       ->orWhere('email', 'like', "%{$search}%");
                 });
             }
+
+            // tenant_id is automatically filtered by Tenantable trait
 
             $students = $query->orderBy('last_name')
                 ->orderBy('first_name')
@@ -104,9 +383,50 @@ class StudentController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
+        $user = auth('api')->user();
+
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User not authenticated'
+            ], 401);
+        }
+
+        // Get tenant_id from user if not provided
+        $tenantId = $this->getCurrentTenantId();
+        if (!$tenantId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Tenant ID is required'
+            ], 422);
+        }
+
+        // Get school_id from user if not provided
+        $schoolId = $this->getCurrentSchoolId();
+        if (!$schoolId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User is not associated with any school'
+            ], 403);
+        }
+
+        // Verify school access if school_id is provided in request
+        if ($request->has('school_id')) {
+            if (!$this->verifySchoolAccess($request->school_id)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You do not have access to this school'
+                ], 403);
+            }
+            $schoolId = $request->school_id;
+        }
+
         $validator = Validator::make($request->all(), [
-            'tenant_id' => 'required|exists:tenants,id',
-            'user_id' => 'required|exists:users,id',
+            'user_id' => 'nullable|exists:users,id',
+            'user_data' => 'nullable|array', // For creating new user when user_id is provided
+            'user_data.name' => 'nullable|string|max:255',
+            'user_data.email' => 'nullable|email|max:255|unique:users,identifier',
+            'user_data.phone' => 'nullable|string|max:20|unique:users,identifier',
             'first_name' => 'required|string|max:100',
             'middle_name' => 'nullable|string|max:100',
             'last_name' => 'required|string|max:100',
@@ -117,7 +437,6 @@ class StudentController extends Controller
             'email' => 'nullable|email|max:255|unique:students,email',
             'phone' => 'nullable|string|max:20',
             'address_json' => 'nullable|array',
-            'school_id' => 'required|exists:schools,id',
             'current_academic_year_id' => 'required|exists:academic_years,id',
             'current_grade_level' => 'required|string|max:20',
             'admission_date' => 'required|date',
@@ -146,19 +465,67 @@ class StudentController extends Controller
         try {
             DB::beginTransaction();
 
-            // Create student
-            $studentData = $request->except(['form_data', 'family_relationships']);
-            $studentData['tenant_id'] = Auth::user()->tenant_id ?? $request->tenant_id;
+            $userId = null;
 
-            // Ensure tenant_id is not null
-            if (empty($studentData['tenant_id'])) {
+            // If user_id is provided, use existing user_id
+            if ($request->has('user_id') && $request->user_id) {
+                $userId = $request->user_id;
+            } else {
+                // If user_id is not provided, create new user automatically
+                // Use user_data if provided, otherwise use student data
+                $userData = $request->user_data ?? [];
+                $identifier = $userData['email'] ?? $userData['phone'] ?? $request->email ?? $request->phone;
+                $userType = isset($userData['email']) || isset($request->email) ? 'email' : 'phone';
+                $userName = $userData['name'] ?? "{$request->first_name} {$request->last_name}";
+
+                if (!$identifier) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Email or phone is required to create user account'
+                    ], 422);
+                }
+
+                // Check if user with this identifier already exists
+                $existingUser = User::where('identifier', $identifier)->first();
+                if ($existingUser) {
+                    $userId = $existingUser->id;
+                } else {
+                    // Create new user with default password
+                    $newUser = User::create([
+                        'name' => $userName,
+                        'identifier' => $identifier,
+                        'type' => $userType,
+                        'password' => bcrypt('@EstudanteIedu'),
+                        'must_change' => true,
+                        'tenant_id' => $tenantId,
+                        'is_active' => true,
+                    ]);
+
+                    $userId = $newUser->id;
+
+                    // Create TenantUser association
+                    $newUser->tenants()->attach($tenantId, [
+                        'status' => 'active',
+                        'joined_at' => now(),
+                        'role_id' => Role::where('name', 'student')->first()->id,
+                        'current_tenant' => true,
+                    ]);
+                }
+            }
+
+            // Ensure user_id is set
+            if (!$userId) {
                 return response()->json([
                     'success' => false,
-                    'message' => 'Tenant ID is required',
-                    'error' => 'No tenant ID available from user or request'
+                    'message' => 'Failed to create or retrieve user. Email or phone is required.'
                 ], 422);
             }
 
+            // Create student
+            $studentData = $request->except(['form_data', 'family_relationships', 'user_data']);
+            $studentData['tenant_id'] = $tenantId;
+            $studentData['school_id'] = $schoolId;
+            $studentData['user_id'] = $userId;
             $studentData['student_number'] = $this->generateStudentNumber();
 
             // Set default values
@@ -170,7 +537,7 @@ class StudentController extends Controller
             if ($student->user_id && $student->school_id) {
                 SchoolUser::updateOrCreate(
                     [
-                    'school_id' => $student->school_id,
+                        'school_id' => $student->school_id,
                         'user_id'   => $student->user_id,
                     ],
                     [
@@ -184,8 +551,11 @@ class StudentController extends Controller
 
             // Process form data through Form Engine if provided
             if ($request->has('form_data')) {
+                // Ensure form template exists, create if it doesn't
+                $this->ensureFormTemplateExists('student_registration', $tenantId, $user->id);
+
                 $processedData = $this->formEngineService->processFormData('student_registration', $request->form_data);
-                $this->formEngineService->createFormInstance('student_registration', $processedData, 'Student', $student->id, $studentData['tenant_id']);
+                $this->formEngineService->createFormInstance('student_registration', $processedData, 'Student', $student->id, $tenantId);
             }
 
             // Start enrollment workflow
@@ -206,7 +576,8 @@ class StudentController extends Controller
                 'data' => [
                     'student' => $student->load(['school', 'currentAcademicYear']),
                     'workflow_id' => $workflow->id,
-                    'student_number' => $student->student_number
+                    'student_number' => $student->student_number,
+                    'user_id' => $userId
                 ]
             ], 201);
 
@@ -226,6 +597,15 @@ class StudentController extends Controller
     public function show(Student $student): JsonResponse
     {
         try {
+            // Verify access: must belong to user's school
+            $userSchoolId = $this->getCurrentSchoolId();
+            if (!$userSchoolId || $student->school_id != $userSchoolId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You do not have access to this student'
+                ], 403);
+            }
+
             $student->load([
                 'enrollmentHistory',
                 'documents',
@@ -253,8 +633,26 @@ class StudentController extends Controller
      */
     public function update(Request $request, Student $student): JsonResponse
     {
+        // Verify access: must belong to user's school
+        $userSchoolId = $this->getCurrentSchoolId();
+        if (!$userSchoolId || $student->school_id != $userSchoolId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'You do not have access to this student'
+            ], 403);
+        }
+
+        // Verify school access if school_id is being changed
+        if ($request->has('school_id') && $request->school_id != $student->school_id) {
+            if (!$this->verifySchoolAccess($request->school_id)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You do not have access to this school'
+                ], 403);
+            }
+        }
+
         $validator = Validator::make($request->all(), [
-            'tenant_id' => 'required|exists:tenants,id',
             'user_id' => 'sometimes|exists:users,id',
             'first_name' => 'sometimes|required|string|max:100',
             'middle_name' => 'nullable|string|max:100',
@@ -294,18 +692,74 @@ class StudentController extends Controller
         try {
             DB::beginTransaction();
 
-            $student->update($request->all());
+            // Get only fillable fields from request, excluding tenant_id (should not be changed)
+            $allowedFields = [
+                'user_id',
+                'school_id',
+                'first_name',
+                'middle_name',
+                'last_name',
+                'date_of_birth',
+                'birth_place',
+                'gender',
+                'nationality',
+                'email',
+                'phone',
+                'address_json',
+                'admission_date',
+                'current_grade_level',
+                'current_academic_year_id',
+                'enrollment_status',
+                'expected_graduation_date',
+                'learning_profile_json',
+                'accommodation_needs_json',
+                'language_profile_json',
+                'medical_information_json',
+                'emergency_contacts_json',
+                'special_circumstances_json',
+                'current_gpa',
+                'attendance_rate',
+                'behavioral_points',
+            ];
+
+            // Only include fields that are present in the request
+            $updateData = [];
+            foreach ($allowedFields as $field) {
+                if ($request->has($field)) {
+                    $updateData[$field] = $request->input($field);
+                }
+            }
+
+            // Store original enrollment status before update
+            $originalEnrollmentStatus = $student->enrollment_status;
+
+            // Update student with filtered data (only if there's data to update)
+            if (!empty($updateData)) {
+                $student->update($updateData);
+            }
 
             // If enrollment status changed, create enrollment history
-            if ($request->has('enrollment_status') && $request->enrollment_status !== $student->getOriginal('enrollment_status')) {
-                StudentEnrollmentHistory::create([
-                    'student_id' => $student->id,
-                    'status' => $request->enrollment_status,
-                    'changed_by' => Auth::id(),
-                    'changed_at' => now(),
-                    'reason' => $request->get('status_change_reason'),
-                    'tenant_id' => $student->tenant_id
-                ]);
+            if ($request->has('enrollment_status') && $request->enrollment_status !== $originalEnrollmentStatus) {
+                // Get current academic year or use the one from request
+                $academicYearId = $request->current_academic_year_id ?? $student->current_academic_year_id;
+
+                if ($academicYearId) {
+                    StudentEnrollmentHistory::create([
+                        'school_id' => $student->school_id,
+                        'student_id' => $student->id,
+                        'academic_year_id' => $academicYearId,
+                        'enrollment_date' => $student->admission_date ?? now(),
+                        'grade_level_at_enrollment' => $student->current_grade_level,
+                        'enrollment_type' => $request->enrollment_status === 'enrolled' ? 're_enrollment' : 'new',
+                        'withdrawal_reason' => $request->get('status_change_reason'),
+                        'academic_records_json' => [
+                            'status_changed_by' => Auth::id(),
+                            'status_changed_at' => now()->toDateTimeString(),
+                            'previous_status' => $originalEnrollmentStatus,
+                            'new_status' => $request->enrollment_status
+                        ]
+                    ]);
+                }
             }
 
             DB::commit();
@@ -332,14 +786,34 @@ class StudentController extends Controller
     public function destroy(Student $student): JsonResponse
     {
         try {
+            // Verify access: must belong to user's school
+            $userSchoolId = $this->getCurrentSchoolId();
+            if (!$userSchoolId || $student->school_id != $userSchoolId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You do not have access to this student'
+                ], 403);
+            }
+
             DB::beginTransaction();
+
+            // Remove SchoolUser association
+            if ($student->user_id && $student->school_id) {
+                SchoolUser::where('user_id', $student->user_id)
+                    ->where('school_id', $student->school_id)
+                    ->delete();
+            }
+
+            // Remove TenantUser association
+            if ($student->user_id && $student->tenant_id) {
+                $student->user->tenants()->detach($student->tenant_id);
+            }
+
+            // Soft delete related documents
+            $student->documents()->delete();
 
             // Soft delete student
             $student->delete();
-
-            // Archive related records
-            $student->enrollmentHistory()->update(['status' => 'archived']);
-            $student->documents()->update(['status' => 'archived']);
 
             DB::commit();
 
@@ -364,6 +838,15 @@ class StudentController extends Controller
     public function academicSummary(Student $student): JsonResponse
     {
         try {
+            // Verify access: must belong to user's school
+            $userSchoolId = $this->getCurrentSchoolId();
+            if (!$userSchoolId || $student->school_id != $userSchoolId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You do not have access to this student'
+                ], 403);
+            }
+
             $summary = [
                 'student' => $student->only(['id', 'first_name', 'last_name', 'student_number', 'current_grade_level']),
                 'current_enrollment' => $student->enrollmentHistory()->latest()->first(),
@@ -392,6 +875,15 @@ class StudentController extends Controller
      */
     public function transfer(Request $request, Student $student): JsonResponse
     {
+        // Verify access: must belong to user's school
+        $userSchoolId = $this->getCurrentSchoolId();
+        if (!$userSchoolId || $student->school_id != $userSchoolId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'You do not have access to this student'
+            ], 403);
+        }
+
         $validator = Validator::make($request->all(), [
             'new_school_id' => 'required|exists:schools,id',
             'transfer_date' => 'required|date|after:today',
@@ -407,6 +899,14 @@ class StudentController extends Controller
             ], 422);
         }
 
+        // Verify access to new school
+        if (!$this->verifySchoolAccess($request->new_school_id)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'You do not have access to the target school'
+            ], 403);
+        }
+
         try {
             DB::beginTransaction();
 
@@ -416,15 +916,45 @@ class StudentController extends Controller
                 'enrollment_status' => 'transferred'
             ]);
 
-            // Create enrollment history
-            StudentEnrollmentHistory::create([
-                'student_id' => $student->id,
-                'status' => 'transferred',
-                'changed_by' => Auth::id(),
-                'changed_at' => now(),
-                'reason' => $request->reason,
-                'tenant_id' => $student->tenant_id
-            ]);
+            // Update SchoolUser association to new school
+            if ($student->user_id) {
+                // Remove old school association
+                SchoolUser::where('user_id', $student->user_id)
+                    ->where('school_id', $userSchoolId)
+                    ->delete();
+
+                // Create new school association
+                SchoolUser::create([
+                    'school_id' => $request->new_school_id,
+                    'user_id' => $student->user_id,
+                    'role' => 'student',
+                    'status' => 'active',
+                    'start_date' => now(),
+                    'permissions' => $this->getDefaultStudentPermissions(),
+                ]);
+            }
+
+            // Create enrollment history for transfer
+            $academicYearId = $student->current_academic_year_id ?? $request->current_academic_year_id;
+
+            if ($academicYearId) {
+                StudentEnrollmentHistory::create([
+                    'school_id' => $request->new_school_id,
+                    'student_id' => $student->id,
+                    'academic_year_id' => $academicYearId,
+                    'enrollment_date' => $request->transfer_date,
+                    'grade_level_at_enrollment' => $student->current_grade_level,
+                    'enrollment_type' => 'transfer_in',
+                    'previous_school' => School::find($userSchoolId)?->display_name ?? School::find($userSchoolId)?->official_name,
+                    'next_school' => School::find($request->new_school_id)?->display_name ?? School::find($request->new_school_id)?->official_name,
+                    'withdrawal_reason' => $request->reason,
+                    'academic_records_json' => [
+                        'transferred_by' => Auth::id(),
+                        'transferred_at' => now()->toDateTimeString(),
+                        'transfer_reason' => $request->reason
+                    ]
+                ]);
+            }
 
             // Start transfer workflow
             $workflow = $this->workflowService->startWorkflow($student, 'student_transfer', [
@@ -462,6 +992,14 @@ class StudentController extends Controller
      */
     public function bulkPromote(Request $request): JsonResponse
     {
+        $userSchoolId = $this->getCurrentSchoolId();
+        if (!$userSchoolId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User is not associated with any school'
+            ], 403);
+        }
+
         $validator = Validator::make($request->all(), [
             'student_ids' => 'required|array|min:1',
             'student_ids.*' => 'exists:students,id',
@@ -481,24 +1019,44 @@ class StudentController extends Controller
         try {
             DB::beginTransaction();
 
-            $students = Student::whereIn('id', $request->student_ids)->get();
+            // Filter students by user's school
+            $students = Student::whereIn('id', $request->student_ids)
+                ->where('school_id', $userSchoolId)
+                ->get();
+
+            if ($students->count() !== count($request->student_ids)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Some students do not belong to your school'
+                ], 403);
+            }
+
             $promotedCount = 0;
 
             foreach ($students as $student) {
+                // Store old grade level before update
+                $oldGradeLevel = $student->current_grade_level;
+
                 // Update grade level and academic year
                 $student->update([
                     'current_grade_level' => $request->new_grade_level,
                     'current_academic_year_id' => $request->current_academic_year_id
                 ]);
 
-                // Create enrollment history
+                // Create enrollment history for promotion
                 StudentEnrollmentHistory::create([
+                    'school_id' => $student->school_id,
                     'student_id' => $student->id,
-                    'status' => 'promoted',
-                    'changed_by' => Auth::id(),
-                    'changed_at' => now(),
-                    'reason' => "Promoted to {$request->new_grade_level}",
-                    'tenant_id' => $student->tenant_id
+                    'academic_year_id' => $request->current_academic_year_id,
+                    'enrollment_date' => $request->promotion_date,
+                    'grade_level_at_enrollment' => $request->new_grade_level,
+                    'enrollment_type' => 're_enrollment',
+                    'academic_records_json' => [
+                        'previous_grade_level' => $oldGradeLevel,
+                        'promotion_reason' => "Promoted to {$request->new_grade_level}",
+                        'promoted_by' => Auth::id(),
+                        'promoted_at' => now()->toDateTimeString()
+                    ]
                 ]);
 
                 $promotedCount++;
@@ -532,19 +1090,30 @@ class StudentController extends Controller
     public function enrollmentStats(Request $request): JsonResponse
     {
         try {
+            $userSchoolId = $this->getCurrentSchoolId();
+            if (!$userSchoolId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'User is not associated with any school'
+                ], 403);
+            }
+
+            // Filter by user's school
+            $query = Student::where('school_id', $userSchoolId);
+
             $stats = [
-                'total_students' => Student::count(),
-                'by_enrollment_status' => Student::selectRaw('enrollment_status, COUNT(*) as count')
+                'total_students' => (clone $query)->count(),
+                'by_enrollment_status' => (clone $query)->selectRaw('enrollment_status, COUNT(*) as count')
                     ->groupBy('enrollment_status')
                     ->get(),
-                'by_grade_level' => Student::selectRaw('current_grade_level, COUNT(*) as count')
+                'by_grade_level' => (clone $query)->selectRaw('current_grade_level, COUNT(*) as count')
                     ->groupBy('current_grade_level')
                     ->get(),
-                'by_school' => Student::selectRaw('school_id, COUNT(*) as count')
+                'by_school' => (clone $query)->selectRaw('school_id, COUNT(*) as count')
                     ->with('school:id,display_name')
                     ->groupBy('school_id')
                     ->get(),
-                'recent_enrollments' => Student::where('created_at', '>=', now()->subDays(30))
+                'recent_enrollments' => (clone $query)->where('created_at', '>=', now()->subDays(30))
                     ->count()
             ];
 
@@ -609,12 +1178,18 @@ class StudentController extends Controller
      */
     private function getDocumentsStatus(Student $student): array
     {
-        $documents = $student->documents()->select('document_type', 'status', 'expiry_date')->get();
+        $documents = $student->documents()->select('document_type', 'status', 'expiration_date')->get();
+
+        $expiredCount = $documents->filter(function($doc) {
+            return $doc->expiration_date && $doc->expiration_date->isPast();
+        })->count();
 
         return [
             'total_documents' => $documents->count(),
-            'valid_documents' => $documents->where('status', 'valid')->count(),
-            'expired_documents' => $documents->where('expiry_date', '<', now())->count(),
+            'approved_documents' => $documents->where('status', 'approved')->count(),
+            'pending_documents' => $documents->where('status', 'pending')->count(),
+            'rejected_documents' => $documents->where('status', 'rejected')->count(),
+            'expired_documents' => $expiredCount,
             'missing_documents' => $this->getMissingDocuments($student),
             'learning_profile' => $student->learning_profile_json,
             'accommodation_needs' => $student->accommodation_needs_json,
@@ -628,7 +1203,7 @@ class StudentController extends Controller
      */
     private function getMissingDocuments(Student $student): array
     {
-        $requiredDocuments = ['birth_certificate', 'immunization_record', 'parent_consent'];
+        $requiredDocuments = ['birth_certificate', 'vaccination_records', 'identification'];
         $existingDocuments = $student->documents()->pluck('document_type')->toArray();
 
         return array_diff($requiredDocuments, $existingDocuments);

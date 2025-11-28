@@ -14,6 +14,7 @@ use App\Models\V1\SIS\Student\StudentEnrollmentHistory;
 use App\Models\V1\SIS\School\School;
 use App\Models\V1\SIS\School\AcademicYear;
 use App\Models\V1\Transport\StudentTransportSubscription;
+use App\Models\Traits\Tenantable;
 use App\Models\User;
 use Illuminate\Support\Carbon;
 
@@ -57,7 +58,7 @@ use Illuminate\Support\Carbon;
  */
 class Student extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, Tenantable;
 
     /**
      * The attributes that are mass assignable.

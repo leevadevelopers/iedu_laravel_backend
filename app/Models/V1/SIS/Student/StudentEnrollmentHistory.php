@@ -5,6 +5,7 @@ namespace App\Models\V1\SIS\Student;
 use App\Models\V1\SIS\School\AcademicYear;
 use App\Models\V1\SIS\School\School;
 use App\Models\V1\SIS\Student\Student;
+use App\Models\Traits\Tenantable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -38,7 +39,7 @@ use Illuminate\Support\Carbon;
  */
 class StudentEnrollmentHistory extends Model
 {
-    use HasFactory;
+    use HasFactory, Tenantable;
 
     /**
      * The table associated with the model.
@@ -49,6 +50,7 @@ class StudentEnrollmentHistory extends Model
      * The attributes that are mass assignable.
      */
     protected $fillable = [
+        'tenant_id',
         'school_id',
         'student_id',
         'academic_year_id',

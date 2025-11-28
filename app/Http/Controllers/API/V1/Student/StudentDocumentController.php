@@ -6,6 +6,7 @@ use App\Enums\DocumentType;
 use App\Http\Controllers\Controller;
 use App\Models\V1\SIS\Student\StudentDocument;
 use App\Models\V1\SIS\Student\Student;
+use App\Models\V1\SIS\School\School;
 use App\Models\Forms\FormTemplate;
 use App\Services\FormEngineService;
 use App\Services\WorkflowService;
@@ -17,6 +18,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Schema;
+use Carbon\Carbon;
 
 class StudentDocumentController extends Controller
 {
@@ -30,6 +32,187 @@ class StudentDocumentController extends Controller
     }
 
     /**
+     * Get the current school ID from authenticated user
+     */
+    protected function getCurrentSchoolId(): ?int
+    {
+        $user = auth('api')->user();
+
+        if (!$user) {
+            return null;
+        }
+
+        // Try getCurrentSchool method first (preferred)
+        if (method_exists($user, 'getCurrentSchool')) {
+            $currentSchool = $user->getCurrentSchool();
+            if ($currentSchool) {
+                return $currentSchool->id;
+            }
+        }
+
+        // Fallback to school_id attribute
+        if (isset($user->school_id) && $user->school_id) {
+            return $user->school_id;
+        }
+
+        // Try activeSchools relationship
+        if (method_exists($user, 'activeSchools')) {
+            $activeSchools = $user->activeSchools();
+            if ($activeSchools && $activeSchools->count() > 0) {
+                $firstSchool = $activeSchools->first();
+                if ($firstSchool && isset($firstSchool->school_id)) {
+                    return $firstSchool->school_id;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Get the current tenant ID from authenticated user
+     */
+    protected function getCurrentTenantId(): ?int
+    {
+        $user = auth('api')->user();
+
+        if (!$user) {
+            return null;
+        }
+
+        // Try tenant_id attribute first
+        if (isset($user->tenant_id) && $user->tenant_id) {
+            return $user->tenant_id;
+        }
+
+        // Try getCurrentTenant method
+        if (method_exists($user, 'getCurrentTenant')) {
+            $currentTenant = $user->getCurrentTenant();
+            if ($currentTenant) {
+                return $currentTenant->id;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Verify that a school_id belongs to the user's tenant
+     */
+    protected function verifySchoolAccess(?int $schoolId): bool
+    {
+        // If school_id is null, deny access
+        if (!$schoolId) {
+            return false;
+        }
+
+        $tenantId = $this->getCurrentTenantId();
+        if (!$tenantId) {
+            return false;
+        }
+
+        // Check if school belongs to user's tenant
+        $school = School::where('id', $schoolId)
+            ->where('tenant_id', $tenantId)
+            ->exists();
+
+        return $school;
+    }
+
+    /**
+     * Verify that user has access to a document
+     */
+    protected function verifyDocumentAccess(StudentDocument $document): bool
+    {
+        // If document has no school_id (legacy document), allow access
+        // Tenant scope already ensures tenant match
+        if (!$document->school_id) {
+            return true;
+        }
+
+        // Get user's school ID
+        $userSchoolId = $this->getCurrentSchoolId();
+
+        // If user has no school_id, deny access (document has school_id but user doesn't)
+        if (!$userSchoolId) {
+            Log::warning('Document access denied: Document has school_id but user has no school_id', [
+                'user_id' => Auth::id(),
+                'document_id' => $document->id,
+                'document_school_id' => $document->school_id
+            ]);
+            return false;
+        }
+
+        // Check if document belongs to user's school
+        if ($document->school_id == $userSchoolId) {
+            return true;
+        }
+
+        // Check if user has access to document's school (same tenant)
+        if ($this->verifySchoolAccess($document->school_id)) {
+            return true;
+        }
+
+        // User doesn't have access to document's school
+        Log::warning('Document access denied: User does not have access to document school', [
+            'user_id' => Auth::id(),
+            'user_school_id' => $userSchoolId,
+            'document_id' => $document->id,
+            'document_school_id' => $document->school_id
+        ]);
+        return false;
+    }
+
+    /**
+     * Handle file upload and return file metadata
+     * Generates unique random filename to prevent conflicts
+     *
+     * @param \Illuminate\Http\UploadedFile $file
+     * @param int $studentId
+     * @param string $storageDisk
+     * @return array
+     * @throws \Exception
+     */
+    protected function handleFileUpload($file, int $studentId, string $storageDisk = 'private'): array
+    {
+        if (!$file || !$file->isValid()) {
+            throw new \Exception('Invalid file provided');
+        }
+
+        $originalName = $file->getClientOriginalName();
+        $extension = $file->getClientOriginalExtension() ?: 'bin';
+
+        // Generate unique random filename: timestamp + uniqid + random string
+        // Format: {timestamp}_{uniqid}_{random}.{extension}
+        $timestamp = time();
+        $uniqid = uniqid('', true); // More entropy
+        $random = bin2hex(random_bytes(4)); // 8 random hex characters
+        $fileName = "{$timestamp}_{$uniqid}_{$random}.{$extension}";
+
+        // Organize in folders: students/{student_id}/documents/{filename}
+        $directory = "students/{$studentId}/documents";
+
+        // Store file with unique name
+        $storedPath = $file->storeAs($directory, $fileName, $storageDisk);
+
+        if (!$storedPath) {
+            throw new \Exception('Failed to store file');
+        }
+
+        // Extract file type from extension (max 10 chars as per migration)
+        $fileType = strtoupper(substr($extension, 0, 10));
+
+        return [
+            'file_name' => $fileName,
+            'file_path' => $storedPath,
+            'file_type' => $fileType,
+            'file_size' => $file->getSize(),
+            'mime_type' => $file->getMimeType(),
+            'original_name' => $originalName,
+        ];
+    }
+
+    /**
      * Display a listing of student documents with filters
      */
     public function index(Request $request): JsonResponse
@@ -40,10 +223,35 @@ class StudentDocumentController extends Controller
                 'filters' => $request->all()
             ]);
 
-            $query = StudentDocument::withoutGlobalScopes()->with([
+            $query = StudentDocument::with([
                 'student:id,first_name,last_name,student_number',
                 'uploader:id,name'
             ]);
+
+            // Apply school_id filter
+            // Always use user's school_id or verify requested school_id belongs to user's tenant
+            if ($request->has('school_id')) {
+                $requestedSchoolId = (int)$request->school_id;
+                if ($requestedSchoolId && $this->verifySchoolAccess($requestedSchoolId)) {
+                    $query->where('school_id', $requestedSchoolId);
+                } else {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'You do not have access to this school'
+                    ], 403);
+                }
+            } else {
+                // Auto-filter by user's school_id
+                $userSchoolId = $this->getCurrentSchoolId();
+                if ($userSchoolId) {
+                    $query->where('school_id', $userSchoolId);
+                } else {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'User is not associated with any school'
+                    ], 403);
+                }
+            }
 
             // Apply filters
             if ($request->has('student_id')) {
@@ -74,6 +282,8 @@ class StudentDocumentController extends Controller
                       ->orWhere('verification_notes', 'like', "%{$search}%");
                 });
             }
+
+            // tenant_id is automatically filtered by Tenantable trait
 
             $documents = $query->orderBy('created_at', 'desc')
                 ->paginate($request->get('per_page', 15));
@@ -110,30 +320,45 @@ class StudentDocumentController extends Controller
     }
 
     /**
-     * Store a newly created student document with Form Engine processing
+     * Store a newly created student document with unified upload and creation
      */
     public function store(Request $request): JsonResponse
     {
+        $user = auth('api')->user();
+
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User not authenticated'
+            ], 401);
+        }
+
+        // Get tenant_id and school_id from authenticated user
+        $tenantId = $this->getCurrentTenantId();
+        if (!$tenantId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Tenant ID is required'
+            ], 422);
+        }
+
+        $schoolId = $this->getCurrentSchoolId();
+        if (!$schoolId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User is not associated with any school'
+            ], 403);
+        }
+
+        // Minimal validation - only essential fields
         $validator = Validator::make($request->all(), [
-            'tenant_id' => 'required|exists:tenants,id',
-            'school_id' => 'required|exists:schools,id',
-            'student_id' => 'required|exists:students,id',
+            'student_id' => 'required|integer|exists:students,id',
             'document_type' => 'required|in:' . implode(',', DocumentType::values()),
-            'document_name' => 'required|string|max:255',
+            'file' => 'required|file|max:10240|mimes:pdf,doc,docx,jpg,jpeg,png,gif,bmp,txt,csv,xls,xlsx',
+            'document_name' => 'nullable|string|max:255',
             'document_category' => 'nullable|string|max:100',
-            'file_name' => 'required|string|max:255',
-            'file_path' => 'required|string|max:500',
-            'file_type' => 'required|string|max:10',
-            'file_size' => 'required|integer|min:1',
-            'mime_type' => 'required|string|max:100',
-            'expiration_date' => 'nullable|date|after:today',
-            'status' => 'required|in:pending,approved,rejected,expired',
+            'expiration_date' => 'nullable|date',
             'required' => 'nullable|boolean',
-            'verified' => 'nullable|boolean',
-            'verification_notes' => 'nullable|string|max:1000',
-            'access_permissions_json' => 'nullable|array',
-            'ferpa_protected' => 'nullable|boolean',
-            'form_data' => 'nullable|array', // For Form Engine integration
         ]);
 
         if ($validator->fails()) {
@@ -144,12 +369,67 @@ class StudentDocumentController extends Controller
             ], 422);
         }
 
+        $studentId = $request->input('student_id');
+
+        // Verify student belongs to the school
+        $student = Student::find($studentId);
+        if (!$student || $student->school_id != $schoolId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Student does not belong to your school'
+            ], 403);
+        }
+
         try {
             DB::beginTransaction();
 
-            // Create document
-            $documentData = $request->except(['form_data']);
-            $documentData['uploaded_by'] = Auth::id();
+            // Handle file upload - generates unique random filename automatically
+            $file = $request->file('file');
+
+            if (!$file || !$file->isValid()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid file provided or file upload failed'
+                ], 422);
+            }
+
+            try {
+                $fileMetadata = $this->handleFileUpload($file, $studentId, 'private');
+            } catch (\Exception $e) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to upload file',
+                    'error' => $e->getMessage()
+                ], 500);
+            }
+
+            // Generate document_name: use provided name, or original file name without extension
+            $documentName = $request->input('document_name');
+            if (!$documentName && isset($fileMetadata['original_name'])) {
+                $documentName = pathinfo($fileMetadata['original_name'], PATHINFO_FILENAME);
+            } elseif (!$documentName) {
+                // Fallback: use document_type as name
+                $documentName = ucfirst(str_replace('_', ' ', $request->document_type));
+            }
+
+            // Prepare document data with defaults
+            $documentData = array_merge([
+                'tenant_id' => $tenantId,
+                'school_id' => $schoolId,
+                'student_id' => $studentId,
+                'document_name' => $documentName,
+                'document_type' => $request->document_type,
+                'document_category' => $request->input('document_category'),
+                'status' => 'pending', // Default status
+                'expiration_date' => $request->input('expiration_date'),
+                'required' => $request->input('required', false),
+                'verified' => false, // Default not verified
+                'verification_notes' => null,
+                'access_permissions_json' => null,
+                'ferpa_protected' => true, // Default protected
+                'uploaded_by' => Auth::id(),
+            ], $fileMetadata);
 
             $document = StudentDocument::create($documentData);
 
@@ -157,14 +437,6 @@ class StudentDocumentController extends Controller
             if ($request->has('form_data') && !empty($request->form_data)) {
                 try {
                     $processedData = $this->formEngineService->processFormData('document_upload', $request->form_data);
-
-                    // Get tenant_id from authenticated user or request
-                    $tenantId = $request->tenant_id ?? Auth::user()->tenant_id ?? Auth::user()->current_tenant_id;
-
-                    if (!$tenantId) {
-                        throw new \Exception('Tenant ID is required for form instance creation');
-                    }
-
                     $this->formEngineService->createFormInstance('document_upload', $processedData, 'StudentDocument', $document->id, $tenantId);
                 } catch (\Exception $e) {
                     // Log the error but don't fail the document creation
@@ -175,54 +447,72 @@ class StudentDocumentController extends Controller
                 }
             }
 
-            // Start document verification workflow using createWorkflow method
-            $workflow = $this->workflowService->createWorkflow([
-                'workflow_type' => 'document_verification',
-                'steps' => [
-                    [
-                        'step_number' => 1,
-                        'step_name' => 'Initial Review',
-                        'step_type' => 'review',
-                        'required_role' => 'teacher',
-                        'instructions' => 'Review document for completeness and basic requirements'
-                    ],
-                    [
-                        'step_number' => 2,
-                        'step_name' => 'Content Verification',
-                        'step_type' => 'verification',
-                        'required_role' => 'academic_coordinator',
-                        'instructions' => 'Verify document content and authenticity'
-                    ],
-                    [
-                        'step_number' => 3,
-                        'step_name' => 'Approval',
-                        'step_type' => 'approval',
-                        'required_role' => 'principal',
-                        'instructions' => 'Final approval of the document'
-                    ],
-                    [
-                        'step_number' => 4,
-                        'step_name' => 'Final Validation',
-                        'step_type' => 'validation',
-                        'required_role' => 'school_admin',
-                        'instructions' => 'Final validation and archival'
+            // Start document verification workflow
+            try {
+                $workflow = $this->workflowService->createWorkflow([
+                    'workflow_type' => 'document_verification',
+                    'steps' => [
+                        [
+                            'step_number' => 1,
+                            'step_name' => 'Initial Review',
+                            'step_type' => 'review',
+                            'required_role' => 'teacher',
+                            'instructions' => 'Review document for completeness and basic requirements'
+                        ],
+                        [
+                            'step_number' => 2,
+                            'step_name' => 'Content Verification',
+                            'step_type' => 'verification',
+                            'required_role' => 'academic_coordinator',
+                            'instructions' => 'Verify document content and authenticity'
+                        ],
+                        [
+                            'step_number' => 3,
+                            'step_name' => 'Approval',
+                            'step_type' => 'approval',
+                            'required_role' => 'principal',
+                            'instructions' => 'Final approval of the document'
+                        ],
+                        [
+                            'step_number' => 4,
+                            'step_name' => 'Final Validation',
+                            'step_type' => 'validation',
+                            'required_role' => 'school_admin',
+                            'instructions' => 'Final validation and archival'
+                        ]
                     ]
-                ]
-            ]);
+                ]);
+            } catch (\Exception $e) {
+                // Log workflow error but don't fail document creation
+                Log::warning('Workflow creation failed for document', [
+                    'document_id' => $document->id,
+                    'error' => $e->getMessage()
+                ]);
+                $workflow = null;
+            }
 
             DB::commit();
+
+            $responseData = [
+                'document' => $document->load(['student:id,first_name,last_name,student_number'])
+            ];
+
+            if ($workflow) {
+                $responseData['workflow_id'] = $workflow->id;
+            }
 
             return response()->json([
                 'success' => true,
                 'message' => 'Document uploaded successfully',
-                'data' => [
-                    'document' => $document->load(['student:id,first_name,last_name,student_number']),
-                    'workflow_id' => $workflow->id
-                ]
+                'data' => $responseData
             ], 201);
 
         } catch (\Exception $e) {
             DB::rollBack();
+            Log::error('Failed to create document', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to upload document',
@@ -237,15 +527,10 @@ class StudentDocumentController extends Controller
     public function show(Request $request, $id): JsonResponse
     {
         try {
-            // Debug: Log the request to understand what's happening
-            Log::info('Retrieving document', [
-                'document_id' => $id,
-                'user_id' => Auth::id(),
-                'request_data' => $request->all()
-            ]);
 
-            // Find the document directly by ID, bypassing any potential scopes
-            $document = StudentDocument::withoutGlobalScopes()->with([
+
+            // Find the document
+            $document = StudentDocument::with([
                 'student:id,first_name,last_name,student_number',
                 'uploader:id,name',
                 'verifier:id,name',
@@ -254,18 +539,19 @@ class StudentDocumentController extends Controller
 
             // Ensure we have the document data
             if (!$document) {
-                Log::warning('Document not found', ['document_id' => $id]);
                 return response()->json([
                     'success' => false,
                     'message' => 'Document not found'
                 ], 404);
             }
 
-            Log::info('Document found', [
-                'document_id' => $document->id,
-                'document_name' => $document->document_name,
-                'student_id' => $document->student_id
-            ]);
+            // Verify access to document
+            if (!$this->verifyDocumentAccess($document)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You do not have access to this document'
+                ], 403);
+            }
 
             // Return the document with all its data
             return response()->json([
@@ -302,12 +588,6 @@ class StudentDocumentController extends Controller
             ]);
 
         } catch (\Exception $e) {
-            Log::error('Failed to retrieve document', [
-                'document_id' => $document->id ?? 'unknown',
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to retrieve document',
@@ -319,8 +599,26 @@ class StudentDocumentController extends Controller
     /**
      * Update the specified document
      */
-    public function update(Request $request, StudentDocument $document): JsonResponse
+    public function update(Request $request, StudentDocument $student_document): JsonResponse
     {
+        // Capture document ID early to ensure we have it
+        $documentId = $student_document->id;
+
+        if (!$documentId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Invalid document'
+            ], 404);
+        }
+
+        // Verify access to document
+        if (!$this->verifyDocumentAccess($student_document)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'You do not have access to this document'
+            ], 403);
+        }
+
         $validator = Validator::make($request->all(), [
             'document_name' => 'sometimes|required|string|max:255',
             'document_category' => 'nullable|string|max:100',
@@ -344,28 +642,102 @@ class StudentDocumentController extends Controller
         try {
             DB::beginTransaction();
 
-            $updateData = $request->except([]);
+            // Get only allowed fields from request
+            $allowedFields = [
+                'document_name',
+                'document_category',
+                'expiration_date',
+                'status',
+                'required',
+                'verified',
+                'verification_notes',
+                'access_permissions_json',
+                'ferpa_protected',
+            ];
 
-            if ($request->status === 'approved') {
-                $updateData['verified'] = true;
-                $updateData['verified_by'] = Auth::id();
-                $updateData['verified_at'] = now();
+            // Only include fields that are present in the request
+            $updateData = [];
+            foreach ($allowedFields as $field) {
+                if ($request->has($field)) {
+                    $updateData[$field] = $request->input($field);
+                }
             }
 
-            if ($request->status === 'rejected') {
-                $updateData['verified'] = false;
-                $updateData['verified_by'] = Auth::id();
-                $updateData['verified_at'] = now();
+            if ($request->has('status')) {
+                if ($request->status === 'approved') {
+                    $updateData['verified'] = true;
+                    $updateData['verified_by'] = Auth::id();
+                    $updateData['verified_at'] = now();
+                }
+
+                if ($request->status === 'rejected') {
+                    $updateData['verified'] = false;
+                    $updateData['verified_by'] = Auth::id();
+                    $updateData['verified_at'] = now();
+                }
             }
 
-            $document->update($updateData);
+            // Convert expiration_date from ISO 8601 to MySQL format if present
+            if (isset($updateData['expiration_date']) && $updateData['expiration_date']) {
+                try {
+                    $date = Carbon::parse($updateData['expiration_date']);
+                    $updateData['expiration_date'] = $date->format('Y-m-d');
+                } catch (\Exception $e) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Invalid expiration_date format',
+                        'error' => $e->getMessage()
+                    ], 422);
+                }
+            }
+
+            // Update document with filtered data (only if there's data to update)
+            if (empty($updateData)) {
+                DB::commit();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'No data provided for update'
+                ], 422);
+            }
+
+            // Update using query builder to ensure it works with TenantScope
+            $updated = StudentDocument::withoutGlobalScope(\App\Models\Scopes\TenantScope::class)
+                ->where('id', $documentId)
+                ->update($updateData);
+
+            Log::info('Document update executed', [
+                'document_id' => $documentId,
+                'update_data' => $updateData,
+                'updated' => $updated
+            ]);
+
+            if ($updated === 0) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to update document or document not found'
+                ], 500);
+            }
 
             DB::commit();
+
+            // Reload document without TenantScope to ensure we get the updated data
+            $document = StudentDocument::withoutGlobalScope(\App\Models\Scopes\TenantScope::class)
+                ->with(['student:id,first_name,last_name,student_number'])
+                ->find($documentId);
+
+            if (!$document) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Document not found after update'
+                ], 404);
+            }
 
             return response()->json([
                 'success' => true,
                 'message' => 'Document updated successfully',
-                'data' => $document->fresh()->load(['student:id,first_name,last_name,student_number'])
+                'data' => $document
             ]);
 
         } catch (\Exception $e) {
@@ -381,18 +753,52 @@ class StudentDocumentController extends Controller
     /**
      * Remove the specified document
      */
-    public function destroy(StudentDocument $document): JsonResponse
+    public function destroy(StudentDocument $student_document): JsonResponse
     {
         try {
+            // Capture document ID and file path early
+            $documentId = $student_document->id;
+            $filePath = $student_document->file_path;
+
+            if (!$documentId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid document'
+                ], 404);
+            }
+
+            // Verify access to document
+            if (!$this->verifyDocumentAccess($student_document)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You do not have access to this document'
+                ], 403);
+            }
+
             DB::beginTransaction();
 
             // Delete physical file if exists
-            if ($document->file_path && Storage::exists($document->file_path)) {
-                Storage::delete($document->file_path);
+            if ($filePath && Storage::exists($filePath)) {
+                Storage::delete($filePath);
             }
 
-            // Soft delete document
-            $document->delete();
+            // Soft delete document - use withoutGlobalScope to ensure deletion works
+            $deleted = StudentDocument::withoutGlobalScope(\App\Models\Scopes\TenantScope::class)
+                ->where('id', $documentId)
+                ->delete();
+
+            Log::info('Document delete executed', [
+                'document_id' => $documentId,
+                'deleted' => $deleted
+            ]);
+
+            if ($deleted === 0) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Failed to delete document or document not found'
+                ], 500);
+            }
 
             DB::commit();
 
@@ -412,61 +818,19 @@ class StudentDocumentController extends Controller
     }
 
     /**
-     * Upload document file
-     */
-    public function uploadFile(Request $request): JsonResponse
-    {
-        $validator = Validator::make($request->all(), [
-            'file' => 'required|file|max:10240', // 10MB max
-            'document_type' => 'required|in:' . implode(',', DocumentType::values()),
-            'student_id' => 'required|exists:students,id',
-        ]);
-
-        if ($validator->fails()) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Validation failed',
-                'errors' => $validator->errors()
-            ], 422);
-        }
-
-        try {
-            $file = $request->file('file');
-            $student = Student::findOrFail($request->student_id);
-
-            // Generate file path
-            $fileName = time() . '_' . $file->getClientOriginalName();
-            $filePath = "students/{$student->id}/documents/{$fileName}";
-
-            // Store file
-            $file->storeAs("students/{$student->id}/documents", $fileName, 'private');
-
-            return response()->json([
-                'success' => true,
-                'message' => 'File uploaded successfully',
-                'data' => [
-                    'file_path' => $filePath,
-                    'file_size' => $file->getSize(),
-                    'file_type' => $file->getMimeType(),
-                    'original_name' => $file->getClientOriginalName()
-                ]
-            ]);
-
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to upload file',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
      * Download document file
      */
     public function download(StudentDocument $document): JsonResponse
     {
         try {
+            // Verify access to document
+            if (!$this->verifyDocumentAccess($document)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You do not have access to this document'
+                ], 403);
+            }
+
             if (!Storage::exists($document->file_path)) {
                 return response()->json([
                     'success' => false,
@@ -500,7 +864,25 @@ class StudentDocumentController extends Controller
     public function getByStudent(int $studentId): JsonResponse
     {
         try {
+            // Verify student belongs to user's school
+            $userSchoolId = $this->getCurrentSchoolId();
+            if (!$userSchoolId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'User is not associated with any school'
+                ], 403);
+            }
+
+            $student = Student::find($studentId);
+            if (!$student || $student->school_id != $userSchoolId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Student does not belong to your school'
+                ], 403);
+            }
+
             $documents = StudentDocument::where('student_id', $studentId)
+                ->where('school_id', $userSchoolId)
                 ->with(['uploader:id,name', 'verifier:id,name'])
                 ->orderBy('created_at', 'desc')
                 ->get();
@@ -525,7 +907,16 @@ class StudentDocumentController extends Controller
     public function getRequiringAttention(): JsonResponse
     {
         try {
-            $documents = StudentDocument::where(function($query) {
+            $userSchoolId = $this->getCurrentSchoolId();
+            if (!$userSchoolId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'User is not associated with any school'
+                ], 403);
+            }
+
+            $documents = StudentDocument::where('school_id', $userSchoolId)
+                ->where(function($query) {
                     $query->where('status', 'rejected')
                           ->orWhere('status', 'pending')
                           ->orWhere('expiration_date', '<=', now()->addDays(30));
@@ -554,6 +945,14 @@ class StudentDocumentController extends Controller
      */
     public function bulkUpdateStatus(Request $request): JsonResponse
     {
+        $userSchoolId = $this->getCurrentSchoolId();
+        if (!$userSchoolId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User is not associated with any school'
+            ], 403);
+        }
+
         $validator = Validator::make($request->all(), [
             'document_ids' => 'required|array|min:1',
             'document_ids.*' => 'exists:student_documents,id',
@@ -571,7 +970,17 @@ class StudentDocumentController extends Controller
         try {
             DB::beginTransaction();
 
-            $documents = StudentDocument::whereIn('id', $request->document_ids)->get();
+            // Filter documents by user's school
+            $documents = StudentDocument::whereIn('id', $request->document_ids)
+                ->where('school_id', $userSchoolId)
+                ->get();
+
+            if ($documents->count() !== count($request->document_ids)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Some documents do not belong to your school'
+                ], 403);
+            }
             $updatedCount = 0;
 
             foreach ($documents as $document) {

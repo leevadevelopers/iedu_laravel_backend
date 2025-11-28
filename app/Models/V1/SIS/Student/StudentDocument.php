@@ -3,6 +3,7 @@
 namespace App\Models\V1\SIS\Student;
 
 use App\Enums\DocumentType;
+use App\Models\Traits\Tenantable;
 use App\Models\V1\SIS\School\School;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -19,6 +20,7 @@ use Illuminate\Support\Facades\Storage;
  * medical records, and other educational documents.
  *
  * @property int $id
+ * @property int|null $tenant_id
  * @property int $school_id
  * @property int $student_id
  * @property string $document_name
@@ -45,7 +47,7 @@ use Illuminate\Support\Facades\Storage;
  */
 class StudentDocument extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, Tenantable;
 
     /**
      * The table associated with the model.
@@ -56,6 +58,7 @@ class StudentDocument extends Model
      * The attributes that are mass assignable.
      */
     protected $fillable = [
+        'tenant_id',
         'school_id',
         'student_id',
         'document_name',

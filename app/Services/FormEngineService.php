@@ -2,7 +2,7 @@
 
 namespace App\Services;
 
-use App\Models\FormTemplate;
+use App\Models\Forms\FormTemplate;
 use App\Models\Forms\FormInstance;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
@@ -13,10 +13,10 @@ class FormEngineService
     /**
      * Process form data through the form engine.
      */
-    public function processFormData(string $formType, array $data): array
+    public function processFormData(string $formType, array $data, ?int $tenantId = null): array
     {
         // Get the form template
-        $template = $this->getFormTemplate($formType);
+        $template = $this->getFormTemplate($formType, $tenantId);
 
         if (!$template) {
             throw new \Exception("Form template not found for type: {$formType}");
@@ -36,14 +36,14 @@ class FormEngineService
      */
     public function createFormInstance(string $formType, array $data, ?string $relatedEntityType = null, ?int $relatedEntityId = null, ?int $tenantId = null): FormInstance
     {
-        $template = $this->getFormTemplate($formType);
-
         // Ensure we have a valid tenant_id
-        $finalTenantId = $tenantId ?? Auth::user()->current_tenant_id ?? null;
+        $finalTenantId = $tenantId ?? Auth::user()->current_tenant_id ?? Auth::user()->tenant_id ?? null;
 
         if (!$finalTenantId) {
             throw new \Exception('Tenant ID is required to create form instance');
         }
+
+        $template = $this->getFormTemplate($formType, $finalTenantId);
 
         $instance = \App\Models\Forms\FormInstance::create([
             'tenant_id' => $finalTenantId,
@@ -64,11 +64,25 @@ class FormEngineService
     /**
      * Get form template by type.
      */
-    private function getFormTemplate(string $formType): ?FormTemplate
+    private function getFormTemplate(string $formType, ?int $tenantId = null): ?FormTemplate
     {
-        return FormTemplate::where('category', $formType)
-            ->where('is_active', true)
-            ->first();
+        $query = FormTemplate::where('category', $formType)
+            ->where('is_active', true);
+
+        if ($tenantId) {
+            $query->where('tenant_id', $tenantId);
+        } else {
+            // Try to get tenant_id from authenticated user
+            $user = Auth::user();
+            if ($user) {
+                $userTenantId = $user->current_tenant_id ?? $user->tenant_id ?? null;
+                if ($userTenantId) {
+                    $query->where('tenant_id', $userTenantId);
+                }
+            }
+        }
+
+        return $query->first();
     }
 
     /**
