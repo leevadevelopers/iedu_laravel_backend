@@ -106,9 +106,7 @@ class AssessmentServiceProvider extends ServiceProvider
             return Gradebook::findOrFail($value);
         });
 
-        Route::bind('assessmentSetting', function ($value) {
-            return AssessmentSettings::findOrFail($value);
-        });
+        // Note: assessmentSetting route model binding removed - using {id} in routes instead
     }
 }
 

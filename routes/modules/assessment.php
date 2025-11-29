@@ -29,7 +29,7 @@ Route::middleware(['auth:api', 'tenant'])->group(function () {
         Route::put('{gradeReview}', [GradeReviewController::class, 'update']);
         Route::delete('{gradeReview}', [GradeReviewController::class, 'destroy']);
     });
-    
+
     // Gradebook Routes (outside assessments group to avoid route binding conflicts)
     Route::prefix('gradebooks')->group(function () {
         Route::get('/', [GradebookController::class, 'index']);
@@ -41,9 +41,19 @@ Route::middleware(['auth:api', 'tenant'])->group(function () {
         Route::post('{gradebook}/reject', [GradebookController::class, 'reject']);
         Route::post('{gradebook}/generate', [GradebookController::class, 'generate']);
     });
-    
+
     Route::prefix('assessments')->group(function () {
-    
+
+    // Assessment Settings Routes - MUST come before apiResource to avoid route conflicts
+    Route::prefix('settings')->group(function () {
+        Route::get('/', [AssessmentSettingsController::class, 'index']);
+        Route::post('/', [AssessmentSettingsController::class, 'store']);
+        Route::get('term/{termId}', [AssessmentSettingsController::class, 'getByTerm']);
+        Route::get('{id}', [AssessmentSettingsController::class, 'show']);
+        Route::put('{id}', [AssessmentSettingsController::class, 'update']);
+        Route::delete('{id}', [AssessmentSettingsController::class, 'destroy']);
+    });
+
     // Assessment Term Routes
     Route::prefix('terms')->group(function () {
         Route::get('/', [AssessmentTermController::class, 'index']);
@@ -52,7 +62,7 @@ Route::middleware(['auth:api', 'tenant'])->group(function () {
         Route::get('{assessmentTerm}', [AssessmentTermController::class, 'show']);
         Route::put('{assessmentTerm}', [AssessmentTermController::class, 'update']);
         Route::delete('{assessmentTerm}', [AssessmentTermController::class, 'destroy']);
-        
+
         // Actions
         Route::post('{assessmentTerm}/publish', [AssessmentTermController::class, 'publish']);
         Route::post('{assessmentTerm}/unpublish', [AssessmentTermController::class, 'unpublish']);
@@ -61,7 +71,7 @@ Route::middleware(['auth:api', 'tenant'])->group(function () {
         Route::post('{assessmentTerm}/clone', [AssessmentTermController::class, 'clone']);
         Route::get('{assessmentTerm}/statistics', [AssessmentTermController::class, 'statistics']);
     });
-    
+
     // Assessment Type Routes
     Route::prefix('types')->group(function () {
         Route::get('/', [AssessmentTypeController::class, 'index']);
@@ -74,12 +84,12 @@ Route::middleware(['auth:api', 'tenant'])->group(function () {
         Route::post('{assessmentType}/activate', [AssessmentTypeController::class, 'activate']);
         Route::post('{assessmentType}/deactivate', [AssessmentTypeController::class, 'deactivate']);
     });
-    
-    // Assessment Routes
+
+    // Assessment Routes - apiResource must come after specific routes
     Route::apiResource('', AssessmentController::class)->parameters(['' => 'assessment']);
     Route::patch('{assessment}/status', [AssessmentController::class, 'updateStatus']);
     Route::post('{assessment}/lock', [AssessmentController::class, 'lock']);
-    
+
     // Grade Entry Routes
     Route::prefix('grades')->group(function () {
         Route::get('/', [GradeEntryController::class, 'index']);
@@ -87,17 +97,17 @@ Route::middleware(['auth:api', 'tenant'])->group(function () {
         Route::get('{gradeEntry}', [GradeEntryController::class, 'show']);
         Route::put('{gradeEntry}', [GradeEntryController::class, 'update']);
         Route::delete('{gradeEntry}', [GradeEntryController::class, 'destroy']);
-        
+
         // Student grades
         Route::get('student/{studentId}', [GradeEntryController::class, 'studentGrades']);
-        
+
         // Bulk operations
         Route::post('bulk-import', [GradeEntryController::class, 'bulkImport']);
     });
-    
+
     // Publish grades for an assessment
     Route::post('{assessment}/grades/publish', [GradeEntryController::class, 'publishGrades']);
-    
+
     // Grade Scale Routes
     Route::prefix('grade-scales')->group(function () {
         Route::get('/', [GradeScaleController::class, 'index']);
@@ -107,27 +117,17 @@ Route::middleware(['auth:api', 'tenant'])->group(function () {
         Route::get('{gradeScale}', [GradeScaleController::class, 'show']);
         Route::put('{gradeScale}', [GradeScaleController::class, 'update']);
         Route::delete('{gradeScale}', [GradeScaleController::class, 'destroy']);
-        
+
         // Range management
         Route::post('{gradeScale}/ranges', [GradeScaleController::class, 'updateRange']);
         Route::delete('ranges/{range}', [GradeScaleController::class, 'deleteRange']);
-        
+
         // Conversion utilities
         Route::post('{gradeScale}/convert', [GradeScaleController::class, 'convertScore']);
         Route::post('convert-between', [GradeScaleController::class, 'convertBetweenScales']);
         Route::post('{gradeScale}/calculate-gpa', [GradeScaleController::class, 'calculateGPA']);
     });
-    
-    // Assessment Settings Routes
-    Route::prefix('settings')->group(function () {
-        Route::get('/', [AssessmentSettingsController::class, 'index']);
-        Route::post('/', [AssessmentSettingsController::class, 'store']);
-        Route::get('term/{termId}', [AssessmentSettingsController::class, 'getByTerm']);
-        Route::get('{assessmentSetting}', [AssessmentSettingsController::class, 'show']);
-        Route::put('{assessmentSetting}', [AssessmentSettingsController::class, 'update']);
-        Route::delete('{assessmentSetting}', [AssessmentSettingsController::class, 'destroy']);
-    });
-    
+
     // Report Routes
     Route::prefix('reports')->group(function () {
         Route::get('class/{classId}/term/{termId}/grades-summary', [ReportController::class, 'classGradesSummary']);
