@@ -22,8 +22,11 @@ class AcademicClassService extends BaseAcademicService
     {
         $user = Auth::user();
 
-        $query = AcademicClass::where('tenant_id', $user->tenant_id)
-            ->where('school_id', $filters['school_id'] ?? $this->getCurrentSchoolId());
+        $schoolId = $this->getCurrentSchoolId();
+        $tenantId = $user->tenant_id;
+
+        $query = AcademicClass::tenantScope($tenantId)
+            ->where('school_id', $schoolId);
 
         // Apply filters
         if (isset($filters['search'])) {

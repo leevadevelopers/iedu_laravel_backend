@@ -163,7 +163,7 @@ class BulkOperationsService extends BaseAcademicService
             foreach ($grades as $index => $gradeData) {
                 try {
                     // Validate required relationships
-                    $class = AcademicClass::findOrFail($gradeData['academic_class_id']);
+                    $class = AcademicClass::findOrFail($gradeData['class_id']);
                     $this->validateSchoolOwnership($class);
 
                     $student = Student::findOrFail($gradeData['student_id']);
@@ -173,6 +173,7 @@ class BulkOperationsService extends BaseAcademicService
                     $this->validateSchoolOwnership($subject);
 
                     $gradeData['school_id'] = $this->getCurrentSchoolId();
+                    $gradeData['tenant_id'] = $this->getCurrentTenantId();
                     $gradeData['entered_by'] = Auth::id();
 
                     $gradeEntry = GradeEntry::create($gradeData);

@@ -28,7 +28,7 @@ class GradingSystemService extends BaseAcademicService
         if (!$schoolUser) {
             throw new \Exception('User is not associated with any school');
         }
-        
+
         $schoolId = $schoolUser->school_id;
         $query = GradingSystem::where('tenant_id', $user->tenant_id)
             ->where('school_id', $schoolId);
@@ -348,7 +348,7 @@ class GradingSystemService extends BaseAcademicService
     public function getMaxScore(): ?float
     {
         $primarySystem = $this->getPrimaryGradingSystem();
-        
+
         if (!$primarySystem) {
             return null;
         }
@@ -365,7 +365,7 @@ class GradingSystemService extends BaseAcademicService
 
         // Get the maximum value from all ranges
         $maxValue = $defaultScale->ranges()->max('max_value');
-        
+
         // If no ranges, check grade levels
         if (!$maxValue) {
             $maxValue = $defaultScale->gradeLevels()->max('percentage_max');

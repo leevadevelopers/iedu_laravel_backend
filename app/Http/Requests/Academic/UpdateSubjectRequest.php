@@ -20,13 +20,6 @@ class UpdateSubjectRequest extends BaseAcademicRequest
         return [
             'school_id' => 'sometimes|required|integer|exists:schools,id',
             'name' => 'sometimes|required|string|max:255',
-            'code' => [
-                'sometimes',
-                'required',
-                'string',
-                'max:50',
-                'unique:subjects,code,' . $subjectId . ',id,school_id,' . $this->input('school_id', $currentSchoolId)
-            ],
             'description' => 'nullable|string|max:1000',
             'subject_area' => [
                 'sometimes',

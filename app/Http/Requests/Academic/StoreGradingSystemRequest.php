@@ -15,7 +15,6 @@ class StoreGradingSystemRequest extends BaseAcademicRequest
     public function rules(): array
     {
         return [
-            'school_id' => 'required|integer|exists:schools,id',
             'name' => 'required|string|max:255',
             'system_type' => 'required|in:traditional_letter,percentage,points,standards_based,narrative',
             'applicable_grades' => 'nullable|array',

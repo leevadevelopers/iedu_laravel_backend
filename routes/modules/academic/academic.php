@@ -119,9 +119,6 @@ Route::middleware(['auth:api', 'tenant'])->group(function () {
         Route::get('/teacher-stats', [AnalyticsController::class, 'teacherStats'])->name('teacher-stats');
         Route::get('/class-stats/{class}', [AnalyticsController::class, 'classStats'])->name('class-stats');
         Route::get('/student-performance-trends', [AnalyticsController::class, 'studentPerformanceTrends'])->name('student-performance-trends');
-        Route::get('/attendance-analytics', [AnalyticsController::class, 'attendanceAnalytics'])->name('attendance-analytics');
-        Route::get('/comparative-analytics', [AnalyticsController::class, 'comparativeAnalytics'])->name('comparative-analytics');
-        Route::post('/export', [AnalyticsController::class, 'exportAnalytics'])->name('export');
     });
 
     // Bulk Operations

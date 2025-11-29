@@ -21,10 +21,12 @@ class SubjectService extends BaseAcademicService
     public function getSubjects(array $filters = []): LengthAwarePaginator
     {
         $user = Auth::user();
+        $schoolId = $this->getCurrentSchoolId();
+        $tenantId = $user->tenant_id;
 
-        $query = Subject::where('tenant_id', $user->tenant_id)
-            ->where('school_id', $filters['school_id'] ?? $this->getCurrentSchoolId());
-            
+        $query = Subject::tenantScope($tenantId)
+            ->where('school_id', $schoolId);
+
         // Filter by status - if no status filter, exclude archived by default
         if (isset($filters['status']) && $filters['status'] !== '') {
             $query->where('status', $filters['status']);
@@ -72,9 +74,15 @@ class SubjectService extends BaseAcademicService
 
         // Add tenant_id from authenticated user
         $data['tenant_id'] = $user->tenant_id;
+        $data['school_id'] = $this->getCurrentSchoolId();
 
-        // Validate subject code uniqueness
-        $this->validateSubjectCode($data['code'], $data['school_id']);
+        // Generate code automatically if not provided
+        if (empty($data['code'])) {
+            $data['code'] = $this->generateSubjectCode($data['subject_area'], $user->tenant_id, $data['school_id']);
+        } else {
+            // Validate subject code uniqueness if manually provided
+            $this->validateSubjectCode($data['code'], $data['school_id']);
+        }
 
         // Validate grade levels
         $this->validateGradeLevels($data['grade_levels'] ?? []);
@@ -94,10 +102,8 @@ class SubjectService extends BaseAcademicService
     {
         $this->validateTenantAndSchoolOwnership($subject);
 
-        // Validate subject code uniqueness if changed
-        if (isset($data['code']) && $data['code'] !== $subject->code) {
-            $this->validateSubjectCode($data['code'], $data['school_id'] ?? $subject->school_id);
-        }
+        // Remove code from data - it's auto-generated and cannot be updated
+        unset($data['code']);
 
         // Validate grade levels if changed
         if (isset($data['grade_levels'])) {
@@ -267,6 +273,45 @@ class SubjectService extends BaseAcademicService
         ];
 
         return $defaultCredits[$subjectArea] ?? 1.0;
+    }
+
+    /**
+     * Generate subject code automatically
+     * Format: {AreaAbbreviation}-code-T{TenantId}
+     * Example: Mat-code-T1, Sci-code-T2
+     */
+    private function generateSubjectCode(string $subjectArea, int $tenantId, int $schoolId): string
+    {
+        // Map subject areas to abbreviations
+        $areaAbbreviations = [
+            'mathematics' => 'Mat',
+            'science' => 'Sci',
+            'language_arts' => 'Lang',
+            'social_studies' => 'Soc',
+            'foreign_language' => 'For',
+            'arts' => 'Art',
+            'physical_education' => 'PE',
+            'technology' => 'Tech',
+            'vocational' => 'Voc',
+            'other' => 'Oth'
+        ];
+
+        $abbreviation = $areaAbbreviations[$subjectArea] ?? 'Sub';
+        $baseCode = strtoupper($abbreviation) . '-code-T' . $tenantId;
+
+        // Check if code already exists and append sequence number if needed
+        $code = $baseCode;
+        $counter = 1;
+
+        while (Subject::where('tenant_id', $tenantId)
+            ->where('school_id', $schoolId)
+            ->where('code', $code)
+            ->exists()) {
+            $code = $baseCode . '-' . $counter;
+            $counter++;
+        }
+
+        return $code;
     }
 
     /**

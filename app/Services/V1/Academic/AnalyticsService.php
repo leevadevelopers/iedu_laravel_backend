@@ -24,15 +24,6 @@ class AnalyticsService extends BaseAcademicService
         $totalClasses = AcademicClass::where('school_id', $schoolId)->count();
         $totalSubjects = Subject::where('school_id', $schoolId)->count();
 
-        // Get grade distribution
-        $gradeDistribution = $this->getGradeDistributionData($filters);
-
-        // Get recent activity
-        $recentActivity = $this->getRecentActivity($filters);
-
-        // Get performance metrics
-        $performanceMetrics = $this->getPerformanceMetrics($filters);
-
         return [
             'overview' => [
                 'total_students' => $totalStudents,
@@ -40,9 +31,6 @@ class AnalyticsService extends BaseAcademicService
                 'total_classes' => $totalClasses,
                 'total_subjects' => $totalSubjects,
             ],
-            'grade_distribution' => $gradeDistribution,
-            'recent_activity' => $recentActivity,
-            'performance_metrics' => $performanceMetrics,
         ];
     }
 
@@ -51,40 +39,47 @@ class AnalyticsService extends BaseAcademicService
      */
     public function getGradeDistribution(array $filters = []): array
     {
-        $query = GradeEntry::with(['gradeLevel', 'student', 'subject', 'academicClass'])
-            ->whereHas('academicClass', function ($q) {
+        $query = GradeEntry::with(['student', 'class.subject', 'academicTerm.academicYear'])
+            ->whereHas('class', function ($q) {
                 $q->where('school_id', $this->getCurrentSchoolId());
             });
 
         // Apply filters
         if (isset($filters['academic_year_id'])) {
-            $query->where('academic_year_id', $filters['academic_year_id']);
+            $query->whereHas('academicTerm', function ($q) use ($filters) {
+                $q->where('academic_year_id', $filters['academic_year_id']);
+            });
         }
 
         if (isset($filters['subject_id'])) {
-            $query->where('subject_id', $filters['subject_id']);
+            $query->whereHas('class', function ($q) use ($filters) {
+                $q->where('subject_id', $filters['subject_id']);
+            });
         }
 
         if (isset($filters['class_id'])) {
-            $query->where('academic_class_id', $filters['class_id']);
+            $query->where('class_id', $filters['class_id']);
         }
 
         if (isset($filters['term'])) {
-            $query->where('term', $filters['term']);
+            // Filter by term name or academic_term_id
+            if (is_numeric($filters['term'])) {
+                $query->where('academic_term_id', $filters['term']);
+            } else {
+                // If term is a string like 'first_term', we'd need to map it
+                // For now, we'll assume it's an academic_term_id
+            }
         }
 
         $gradeEntries = $query->get();
 
-        // Group by grade level
-        $distribution = $gradeEntries->groupBy('grade_level_id')->map(function ($entries, $gradeLevelId) {
-            $gradeLevel = $entries->first()->gradeLevel;
+        // Group by letter grade
+        $distribution = $gradeEntries->groupBy('letter_grade')->map(function ($entries, $letterGrade) {
+            $count = $entries->count();
             return [
-                'grade_level_id' => $gradeLevelId,
-                'grade_value' => $gradeLevel->grade_value,
-                'display_value' => $gradeLevel->display_value,
-                'count' => $entries->count(),
+                'letter_grade' => $letterGrade,
+                'count' => $count,
                 'percentage' => 0, // Will be calculated below
-                'color_code' => $gradeLevel->color_code,
             ];
         })->values();
 
@@ -107,44 +102,55 @@ class AnalyticsService extends BaseAcademicService
      */
     public function getSubjectPerformance(array $filters = []): array
     {
-        $query = GradeEntry::with(['subject', 'gradeLevel'])
-            ->whereHas('academicClass', function ($q) {
+        $query = GradeEntry::with(['class.subject', 'academicTerm.academicYear'])
+            ->whereHas('class', function ($q) {
                 $q->where('school_id', $this->getCurrentSchoolId());
             });
 
         // Apply filters
         if (isset($filters['academic_year_id'])) {
-            $query->where('academic_year_id', $filters['academic_year_id']);
+            $query->whereHas('academicTerm', function ($q) use ($filters) {
+                $q->where('academic_year_id', $filters['academic_year_id']);
+            });
         }
 
         if (isset($filters['grade_level'])) {
-            $query->whereHas('academicClass', function ($q) use ($filters) {
+            $query->whereHas('class', function ($q) use ($filters) {
                 $q->where('grade_level', $filters['grade_level']);
             });
         }
 
         if (isset($filters['term'])) {
-            $query->where('term', $filters['term']);
+            if (is_numeric($filters['term'])) {
+                $query->where('academic_term_id', $filters['term']);
+            }
         }
 
         $gradeEntries = $query->get();
 
         // Group by subject
-        $subjectPerformance = $gradeEntries->groupBy('subject_id')->map(function ($entries, $subjectId) {
-            $subject = $entries->first()->subject;
+        $subjectPerformance = $gradeEntries->groupBy(function ($entry) {
+            return $entry->class->subject_id;
+        })->map(function ($entries, $subjectId) {
+            $subject = $entries->first()->class->subject;
             $totalEntries = $entries->count();
-            $passingEntries = $entries->where('gradeLevel.is_passing', true)->count();
-            $averageGPA = $entries->avg('gpa_points') ?? 0;
+
+            // Calculate passing based on percentage_score >= 60
+            $passingEntries = $entries->filter(function ($entry) {
+                return $entry->percentage_score >= 60;
+            })->count();
+
+            $averagePercentage = $entries->avg('percentage_score') ?? 0;
 
             return [
                 'subject_id' => $subjectId,
-                'subject_name' => $subject->name,
-                'subject_code' => $subject->code,
+                'subject_name' => $subject->name ?? 'Unknown',
+                'subject_code' => $subject->code ?? '',
                 'total_entries' => $totalEntries,
                 'passing_count' => $passingEntries,
                 'failing_count' => $totalEntries - $passingEntries,
                 'pass_rate' => $totalEntries > 0 ? round(($passingEntries / $totalEntries) * 100, 2) : 0,
-                'average_gpa' => round($averageGPA, 2),
+                'average_percentage' => round($averagePercentage, 2),
             ];
         })->values();
 
@@ -181,12 +187,14 @@ class AnalyticsService extends BaseAcademicService
             $gradeEntriesQuery = GradeEntry::where('entered_by', $teacher->id);
 
             if (isset($filters['academic_year_id'])) {
-                $gradeEntriesQuery->where('academic_year_id', $filters['academic_year_id']);
+                $gradeEntriesQuery->whereHas('academicTerm', function ($q) use ($filters) {
+                    $q->where('academic_year_id', $filters['academic_year_id']);
+                });
             }
 
             $gradeEntries = $gradeEntriesQuery->get();
             $totalGrades = $gradeEntries->count();
-            $averageGPA = $gradeEntries->avg('gpa_points') ?? 0;
+            $averagePercentage = $gradeEntries->avg('percentage_score') ?? 0;
 
             return [
                 'teacher_id' => $teacher->id,
@@ -196,7 +204,7 @@ class AnalyticsService extends BaseAcademicService
                 'total_classes' => $classes->count(),
                 'total_students' => $totalStudents,
                 'total_grades_entered' => $totalGrades,
-                'average_gpa' => round($averageGPA, 2),
+                'average_percentage' => round($averagePercentage, 2),
                 'years_of_service' => $teacher->getYearsOfService(),
             ];
         });
@@ -212,36 +220,48 @@ class AnalyticsService extends BaseAcademicService
      */
     public function getClassStats(int $classId, array $filters = []): array
     {
+        $schoolId = $this->getCurrentSchoolId();
+        $tenantId = $this->getCurrentTenantId();
+
         $class = AcademicClass::with(['students', 'subject', 'primaryTeacher'])
             ->where('id', $classId)
-            ->where('school_id', $this->getCurrentSchoolId())
-            ->firstOrFail();
+            ->where('school_id', $schoolId)
+            ->where('tenant_id', $tenantId)
+            ->first();
+
+        if (!$class) {
+            throw new \Exception('Class not found or you do not have access to it');
+        }
 
         // Get grade entries for this class
-        $gradeEntriesQuery = GradeEntry::with(['gradeLevel', 'student'])
-            ->where('academic_class_id', $classId);
+        $gradeEntriesQuery = GradeEntry::with(['student', 'academicTerm'])
+            ->where('class_id', $classId);
 
         if (isset($filters['academic_year_id'])) {
-            $gradeEntriesQuery->where('academic_year_id', $filters['academic_year_id']);
+            $gradeEntriesQuery->whereHas('academicTerm', function ($q) use ($filters) {
+                $q->where('academic_year_id', $filters['academic_year_id']);
+            });
         }
 
         if (isset($filters['term'])) {
-            $gradeEntriesQuery->where('term', $filters['term']);
+            if (is_numeric($filters['term'])) {
+                $gradeEntriesQuery->where('academic_term_id', $filters['term']);
+            }
         }
 
         $gradeEntries = $gradeEntriesQuery->get();
 
         $totalStudents = $class->students->count();
         $totalGrades = $gradeEntries->count();
-        $passingGrades = $gradeEntries->where('gradeLevel.is_passing', true)->count();
-        $averageGPA = $gradeEntries->avg('gpa_points') ?? 0;
+        $passingGrades = $gradeEntries->filter(function ($entry) {
+            return $entry->percentage_score >= 60;
+        })->count();
+        $averagePercentage = $gradeEntries->avg('percentage_score') ?? 0;
 
-        // Grade distribution
-        $gradeDistribution = $gradeEntries->groupBy('grade_level_id')->map(function ($entries, $gradeLevelId) {
-            $gradeLevel = $entries->first()->gradeLevel;
+        // Grade distribution by letter grade
+        $gradeDistribution = $gradeEntries->groupBy('letter_grade')->map(function ($entries, $letterGrade) {
             return [
-                'grade_value' => $gradeLevel->grade_value,
-                'display_value' => $gradeLevel->display_value,
+                'letter_grade' => $letterGrade,
                 'count' => $entries->count(),
                 'percentage' => 0, // Will be calculated
             ];
@@ -257,8 +277,8 @@ class AnalyticsService extends BaseAcademicService
             'class_info' => [
                 'id' => $class->id,
                 'name' => $class->name,
-                'subject' => $class->subject->name,
-                'primary_teacher' => $class->primaryTeacher->full_name,
+                'subject' => $class->subject ? $class->subject->name : null,
+                'primary_teacher' => $class->primaryTeacher ? $class->primaryTeacher->full_name : null,
                 'grade_level' => $class->grade_level,
                 'current_enrollment' => $class->current_enrollment,
             ],
@@ -268,7 +288,7 @@ class AnalyticsService extends BaseAcademicService
                 'passing_grades' => $passingGrades,
                 'failing_grades' => $totalGrades - $passingGrades,
                 'pass_rate' => $totalGrades > 0 ? round(($passingGrades / $totalGrades) * 100, 2) : 0,
-                'average_gpa' => round($averageGPA, 2),
+                'average_percentage' => round($averagePercentage, 2),
             ],
             'grade_distribution' => $gradeDistribution,
             'filters_applied' => $filters,
@@ -282,31 +302,37 @@ class AnalyticsService extends BaseAcademicService
     {
         $studentId = $filters['student_id'];
 
-        $query = GradeEntry::with(['gradeLevel', 'subject', 'academicClass'])
+        $query = GradeEntry::with(['class.subject', 'academicTerm'])
             ->where('student_id', $studentId)
-            ->whereHas('academicClass', function ($q) {
+            ->whereHas('class', function ($q) {
                 $q->where('school_id', $this->getCurrentSchoolId());
             });
 
         if (isset($filters['academic_year_id'])) {
-            $query->where('academic_year_id', $filters['academic_year_id']);
+            $query->whereHas('academicTerm', function ($q) use ($filters) {
+                $q->where('academic_year_id', $filters['academic_year_id']);
+            });
         }
 
         if (isset($filters['subject_id'])) {
-            $query->where('subject_id', $filters['subject_id']);
+            $query->whereHas('class', function ($q) use ($filters) {
+                $q->where('subject_id', $filters['subject_id']);
+            });
         }
 
         $gradeEntries = $query->orderBy('created_at')->get();
 
         // Group by term or month
         $trends = $gradeEntries->groupBy(function ($entry) {
-            return $entry->term ?? $entry->created_at->format('Y-m');
+            return $entry->academicTerm ? $entry->academicTerm->name : $entry->created_at->format('Y-m');
         })->map(function ($entries, $period) {
             return [
                 'period' => $period,
-                'average_gpa' => round($entries->avg('gpa_points'), 2),
+                'average_percentage' => round($entries->avg('percentage_score'), 2),
                 'total_grades' => $entries->count(),
-                'passing_grades' => $entries->where('gradeLevel.is_passing', true)->count(),
+                'passing_grades' => $entries->filter(function ($entry) {
+                    return $entry->percentage_score >= 60;
+                })->count(),
             ];
         })->values();
 
@@ -317,111 +343,4 @@ class AnalyticsService extends BaseAcademicService
         ];
     }
 
-    /**
-     * Get attendance analytics
-     */
-    public function getAttendanceAnalytics(array $filters = []): array
-    {
-        // This would integrate with attendance system
-        // For now, return placeholder data
-        return [
-            'message' => 'Attendance analytics integration pending',
-            'filters_applied' => $filters,
-        ];
-    }
-
-    /**
-     * Get comparative analytics
-     */
-    public function getComparativeAnalytics(array $filters = []): array
-    {
-        $comparisonType = $filters['comparison_type'];
-        $entityIds = $filters['entity_ids'];
-
-        $comparison = [];
-
-        switch ($comparisonType) {
-            case 'classes':
-                $comparison = $this->compareClasses($entityIds, $filters);
-                break;
-            case 'subjects':
-                $comparison = $this->compareSubjects($entityIds, $filters);
-                break;
-            case 'teachers':
-                $comparison = $this->compareTeachers($entityIds, $filters);
-                break;
-            case 'academic_years':
-                $comparison = $this->compareAcademicYears($entityIds, $filters);
-                break;
-        }
-
-        return [
-            'comparison_type' => $comparisonType,
-            'entities' => $comparison,
-            'filters_applied' => $filters,
-        ];
-    }
-
-    /**
-     * Export analytics data
-     */
-    public function exportAnalytics(array $filters = []): array
-    {
-        $reportType = $filters['report_type'];
-        $format = $filters['format'];
-
-        // This would generate actual export files
-        // For now, return placeholder data
-        return [
-            'report_type' => $reportType,
-            'format' => $format,
-            'download_url' => null, // Would be actual download URL
-            'message' => 'Export functionality pending implementation',
-        ];
-    }
-
-    /**
-     * Helper methods for analytics
-     */
-    protected function getGradeDistributionData(array $filters = []): array
-    {
-        // Implementation for grade distribution data
-        return [];
-    }
-
-    protected function getRecentActivity(array $filters = []): array
-    {
-        // Implementation for recent activity
-        return [];
-    }
-
-    protected function getPerformanceMetrics(array $filters = []): array
-    {
-        // Implementation for performance metrics
-        return [];
-    }
-
-    protected function compareClasses(array $classIds, array $filters): array
-    {
-        // Implementation for class comparison
-        return [];
-    }
-
-    protected function compareSubjects(array $subjectIds, array $filters): array
-    {
-        // Implementation for subject comparison
-        return [];
-    }
-
-    protected function compareTeachers(array $teacherIds, array $filters): array
-    {
-        // Implementation for teacher comparison
-        return [];
-    }
-
-    protected function compareAcademicYears(array $yearIds, array $filters): array
-    {
-        // Implementation for academic year comparison
-        return [];
-    }
 }

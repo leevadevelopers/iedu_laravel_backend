@@ -5,6 +5,8 @@ namespace App\Http\Controllers\API\V1\Academic;
 use App\Http\Controllers\Controller;
 use App\Models\V1\Academic\Teacher;
 use App\Models\V1\SIS\School\SchoolUser;
+use App\Models\V1\SIS\School\School;
+use App\Models\User;
 use App\Http\Requests\Academic\StoreTeacherRequest;
 use App\Http\Requests\Academic\UpdateTeacherRequest;
 use App\Services\V1\Academic\TeacherService;
@@ -12,6 +14,8 @@ use App\Traits\ApiResponseTrait;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
+use Spatie\Permission\Models\Role;
 
 class TeacherController extends Controller
 {
@@ -21,6 +25,71 @@ class TeacherController extends Controller
     public function __construct(TeacherService $teacherService)
     {
         $this->teacherService = $teacherService;
+    }
+
+    /**
+     * Get the current school ID from authenticated user
+     */
+    protected function getCurrentSchoolId(): ?int
+    {
+        $user = auth('api')->user();
+
+        if (!$user) {
+            return null;
+        }
+
+        // Try getCurrentSchool method first (preferred)
+        if (method_exists($user, 'getCurrentSchool')) {
+            $currentSchool = $user->getCurrentSchool();
+            if ($currentSchool) {
+                return $currentSchool->id;
+            }
+        }
+
+        // Fallback to school_id attribute
+        if (isset($user->school_id) && $user->school_id) {
+            return $user->school_id;
+        }
+
+        // Try activeSchools relationship
+        if (method_exists($user, 'activeSchools')) {
+            $activeSchools = $user->activeSchools();
+            if ($activeSchools && $activeSchools->count() > 0) {
+                $firstSchool = $activeSchools->first();
+                if ($firstSchool && isset($firstSchool->school_id)) {
+                    return $firstSchool->school_id;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Get the current tenant ID from authenticated user
+     */
+    protected function getCurrentTenantId(): ?int
+    {
+        $user = auth('api')->user();
+
+        if (!$user) {
+            return null;
+        }
+
+        // Try tenant_id attribute first
+        if (isset($user->tenant_id) && $user->tenant_id) {
+            return $user->tenant_id;
+        }
+
+        // Try getCurrentTenant method
+        if (method_exists($user, 'getCurrentTenant')) {
+            $currentTenant = $user->getCurrentTenant();
+            if ($currentTenant) {
+                return $currentTenant->id;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -47,16 +116,107 @@ class TeacherController extends Controller
      */
     public function store(StoreTeacherRequest $request): JsonResponse
     {
+        $user = auth('api')->user();
+
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'User not authenticated'
+            ], 401);
+        }
+
+        // Get tenant_id from user if not provided
+        $tenantId = $this->getCurrentTenantId();
+        if (!$tenantId) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Tenant ID is required'
+            ], 422);
+        }
+
+        // Get school_id from user if not provided
+        $schoolId = $this->getCurrentSchoolId();
+        if (!$schoolId) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'User is not associated with any school'
+            ], 403);
+        }
+
         try {
             DB::beginTransaction();
 
-            $teacher = $this->teacherService->createTeacher($request->validated());
+            $userId = null;
+
+            // If user_id is provided, use existing user_id
+            if ($request->has('user_id') && $request->user_id) {
+                $userId = $request->user_id;
+            } else {
+                // If user_id is not provided, create new user automatically
+                // Use user_data if provided, otherwise use teacher data
+                $userData = $request->user_data ?? [];
+                $identifier = $userData['email'] ?? $userData['phone'] ?? $request->email ?? $request->phone;
+                $userType = isset($userData['email']) || isset($request->email) ? 'email' : 'phone';
+                $userName = $userData['name'] ?? "{$request->first_name} {$request->last_name}";
+
+                if (!$identifier) {
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => 'Email or phone is required to create user account'
+                    ], 422);
+                }
+
+                // Check if user with this identifier already exists
+                $existingUser = User::where('identifier', $identifier)->first();
+                if ($existingUser) {
+                    $userId = $existingUser->id;
+                } else {
+                    // Create new user with default password
+                    $newUser = User::create([
+                        'name' => $userName,
+                        'identifier' => $identifier,
+                        'type' => $userType,
+                        'password' => bcrypt('@ProfessorIedu'),
+                        'must_change' => true,
+                        'tenant_id' => $tenantId,
+                        'school_id' => $schoolId,
+                        'is_active' => true,
+                        'user_type' => 'teacher',
+                    ]);
+
+                    $userId = $newUser->id;
+
+                    // Create TenantUser association
+                    $newUser->tenants()->attach($tenantId, [
+                        'status' => 'active',
+                        'joined_at' => now(),
+                        'role_id' => Role::where('name', 'teacher')->first()?->id,
+                        'current_tenant' => true,
+                    ]);
+                }
+            }
+
+            // Ensure user_id is set
+            if (!$userId) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Failed to create or retrieve user. Email or phone is required.'
+                ], 422);
+            }
+
+            // Create teacher
+            $teacherData = $request->validated();
+            $teacherData['tenant_id'] = $tenantId;
+            $teacherData['school_id'] = $schoolId;
+            $teacherData['user_id'] = $userId;
+
+            $teacher = $this->teacherService->createTeacher($teacherData);
 
             // Create or update SchoolUser association (idempotent)
             if ($teacher->user_id && $teacher->school_id) {
                 SchoolUser::updateOrCreate(
                     [
-                    'school_id' => $teacher->school_id,
+                        'school_id' => $teacher->school_id,
                         'user_id'   => $teacher->user_id,
                     ],
                     [
@@ -97,6 +257,15 @@ class TeacherController extends Controller
                 ], 404);
             }
 
+            // Verify tenant access
+            $tenantId = $this->getCurrentTenantId();
+            if (!$tenantId || $teacher->tenant_id != $tenantId) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'You do not have access to this teacher'
+                ], 403);
+            }
+
             return response()->json([
                 'status' => 'success',
                 'data' => $teacher->load(['user', 'classes.subject', 'classes.academicYear'])
@@ -125,6 +294,15 @@ class TeacherController extends Controller
                 ], 404);
             }
 
+            // Verify tenant access
+            $tenantId = $this->getCurrentTenantId();
+            if (!$tenantId || $teacher->tenant_id != $tenantId) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'You do not have access to this teacher'
+                ], 403);
+            }
+
             $updatedTeacher = $this->teacherService->updateTeacher($teacher, $request->validated());
 
             return response()->json([
@@ -147,22 +325,38 @@ class TeacherController extends Controller
     public function destroy($id): JsonResponse
     {
         try {
+            DB::beginTransaction();
+
             $teacher = $this->teacherService->getTeacherById($id);
 
             if (!$teacher) {
+                DB::rollBack();
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Teacher not found'
                 ], 404);
             }
 
+            // Verify tenant access
+            $tenantId = $this->getCurrentTenantId();
+            if (!$tenantId || $teacher->tenant_id != $tenantId) {
+                DB::rollBack();
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'You do not have access to this teacher'
+                ], 403);
+            }
+
             $this->teacherService->deleteTeacher($teacher);
+
+            DB::commit();
 
             return response()->json([
                 'status' => 'success',
                 'message' => 'Teacher terminated successfully'
             ]);
         } catch (\Exception $e) {
+            DB::rollBack();
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to terminate teacher',

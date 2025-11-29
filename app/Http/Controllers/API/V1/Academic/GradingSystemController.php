@@ -11,6 +11,7 @@ use App\Traits\ApiResponseTrait;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class GradingSystemController extends Controller
 {
@@ -20,6 +21,71 @@ class GradingSystemController extends Controller
     public function __construct(GradingSystemService $gradingSystemService)
     {
         $this->gradingSystemService = $gradingSystemService;
+    }
+
+    /**
+     * Get the current school ID from authenticated user
+     */
+    protected function getCurrentSchoolId(): ?int
+    {
+        $user = auth('api')->user();
+
+        if (!$user) {
+            return null;
+        }
+
+        // Try getCurrentSchool method first (preferred)
+        if (method_exists($user, 'getCurrentSchool')) {
+            $currentSchool = $user->getCurrentSchool();
+            if ($currentSchool) {
+                return $currentSchool->id;
+            }
+        }
+
+        // Fallback to school_id attribute
+        if (isset($user->school_id) && $user->school_id) {
+            return $user->school_id;
+        }
+
+        // Try activeSchools relationship
+        if (method_exists($user, 'activeSchools')) {
+            $activeSchools = $user->activeSchools();
+            if ($activeSchools && $activeSchools->count() > 0) {
+                $firstSchool = $activeSchools->first();
+                if ($firstSchool && isset($firstSchool->school_id)) {
+                    return $firstSchool->school_id;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Get the current tenant ID from authenticated user
+     */
+    protected function getCurrentTenantId(): ?int
+    {
+        $user = auth('api')->user();
+
+        if (!$user) {
+            return null;
+        }
+
+        // Try tenant_id attribute first
+        if (isset($user->tenant_id) && $user->tenant_id) {
+            return $user->tenant_id;
+        }
+
+        // Try getCurrentTenant method
+        if (method_exists($user, 'getCurrentTenant')) {
+            $currentTenant = $user->getCurrentTenant();
+            if ($currentTenant) {
+                return $currentTenant->id;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -37,11 +103,38 @@ class GradingSystemController extends Controller
      */
     public function store(StoreGradingSystemRequest $request): JsonResponse
     {
+        $user = auth('api')->user();
+
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'User not authenticated'
+            ], 401);
+        }
+
+        // Get tenant_id from user if not provided
+        $tenantId = $this->getCurrentTenantId();
+        if (!$tenantId) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Tenant ID is required'
+            ], 422);
+        }
+
         try {
-            $gradingSystem = $this->gradingSystemService->createGradingSystem($request->validated());
+            DB::beginTransaction();
+
+            $data = $request->validated();
+            $data['tenant_id'] = $tenantId;
+            $data['school_id'] = $this->getCurrentSchoolId();
+
+            $gradingSystem = $this->gradingSystemService->createGradingSystem($data);
+
+            DB::commit();
 
             return $this->successResponse($gradingSystem, 'Grading system created successfully', 201);
         } catch (\Exception $e) {
+            DB::rollBack();
             return $this->errorResponse('Failed to create grading system', null, 'CREATE_ERROR', 422);
         }
     }
@@ -51,30 +144,24 @@ class GradingSystemController extends Controller
      */
     public function show($id): JsonResponse
     {
-        // Debug: Check if the grading system exists without tenant scope
-        $debugGradingSystem = GradingSystem::withoutGlobalScope('tenant')->find($id);
+        try {
+            // Find grading system - TenantScope will automatically filter by tenant
+            $gradingSystem = GradingSystem::find($id);
 
-        if (!$debugGradingSystem) {
-            return $this->errorResponse('Grading system not found', null, 'NOT_FOUND', 404);
+            if (!$gradingSystem) {
+                return $this->errorResponse('Grading system not found', null, 'NOT_FOUND', 404);
+            }
+
+            // Verify tenant access explicitly
+            $tenantId = $this->getCurrentTenantId();
+            if (!$tenantId || $gradingSystem->tenant_id != $tenantId) {
+                return $this->errorResponse('You do not have access to this grading system', null, 'ACCESS_DENIED', 403);
+            }
+
+            return $this->successResponse($gradingSystem->load('gradeScales.gradeLevels'));
+        } catch (\Exception $e) {
+            return $this->errorResponse('Failed to retrieve grading system', null, 'RETRIEVE_ERROR', 500);
         }
-
-        // Check tenant context
-        $user = Auth::user();
-        $currentTenantId = session('tenant_id') ?? $user->tenant_id ?? $user->current_tenant_id;
-
-        if ($debugGradingSystem->tenant_id !== $currentTenantId) {
-            return $this->errorResponse('Grading system not found in current tenant context', [
-                'grading_system_tenant_id' => $debugGradingSystem->tenant_id,
-                'current_tenant_id' => $currentTenantId,
-                'debug_info' => [
-                    'session_tenant_id' => session('tenant_id'),
-                    'user_tenant_id' => $user->tenant_id ?? 'null',
-                    'user_current_tenant_id' => $user->current_tenant_id ?? 'null'
-                ]
-            ], 'TENANT_MISMATCH', 404);
-        }
-
-        return $this->successResponse($debugGradingSystem->load('gradeScales.gradeLevels'));
     }
 
     /**
@@ -83,11 +170,31 @@ class GradingSystemController extends Controller
     public function update(UpdateGradingSystemRequest $request, $id): JsonResponse
     {
         try {
-            $gradingSystem = GradingSystem::withoutGlobalScope('tenant')->findOrFail($id);
-            $updatedGradingSystem = $this->gradingSystemService->updateGradingSystem($gradingSystem, $request->validated());
+            // Find grading system - TenantScope will automatically filter by tenant
+            $gradingSystem = GradingSystem::find($id);
+
+            if (!$gradingSystem) {
+                return $this->errorResponse('Grading system not found', null, 'NOT_FOUND', 404);
+            }
+
+            // Verify tenant access explicitly
+            $tenantId = $this->getCurrentTenantId();
+            if (!$tenantId || $gradingSystem->tenant_id != $tenantId) {
+                return $this->errorResponse('You do not have access to this grading system', null, 'ACCESS_DENIED', 403);
+            }
+
+            DB::beginTransaction();
+
+            $data = $request->validated();
+            $data['tenant_id'] = $tenantId;
+            $data['school_id'] = $this->getCurrentSchoolId();
+            $updatedGradingSystem = $this->gradingSystemService->updateGradingSystem($gradingSystem, $data);
+
+            DB::commit();
 
             return $this->successResponse($updatedGradingSystem, 'Grading system updated successfully');
         } catch (\Exception $e) {
+            DB::rollBack();
             return $this->errorResponse('Failed to update grading system', null, 'UPDATE_ERROR', 422);
         }
     }
@@ -98,10 +205,26 @@ class GradingSystemController extends Controller
     public function destroy($id): JsonResponse
     {
         try {
-            $gradingSystem = GradingSystem::withoutGlobalScope('tenant')->findOrFail($id);
+            DB::beginTransaction();
+
+            // Find grading system - TenantScope will automatically filter by tenant
+            $gradingSystem = GradingSystem::find($id);
+
+            if (!$gradingSystem) {
+                DB::rollBack();
+                return $this->errorResponse('Grading system not found', null, 'NOT_FOUND', 404);
+            }
+
+            // Verify tenant access explicitly
+            $tenantId = $this->getCurrentTenantId();
+            if (!$tenantId || $gradingSystem->tenant_id != $tenantId) {
+                DB::rollBack();
+                return $this->errorResponse('You do not have access to this grading system', null, 'ACCESS_DENIED', 403);
+            }
 
             // Check if it's the primary system before attempting deletion
             if ($gradingSystem->is_primary) {
+                DB::rollBack();
                 return $this->errorResponse(
                     'Cannot delete primary grading system. Please set another system as primary first, then try again.',
                     null,
@@ -112,8 +235,11 @@ class GradingSystemController extends Controller
 
             $this->gradingSystemService->deleteGradingSystem($gradingSystem);
 
+            DB::commit();
+
             return $this->successResponse(null, 'Grading system deleted successfully');
         } catch (\Exception $e) {
+            DB::rollBack();
             // Check if it's a specific error about primary system
             if (str_contains($e->getMessage(), 'Cannot delete primary grading system')) {
                 return $this->errorResponse(
@@ -148,11 +274,30 @@ class GradingSystemController extends Controller
     public function setPrimary($id): JsonResponse
     {
         try {
-            $gradingSystem = GradingSystem::withoutGlobalScope('tenant')->findOrFail($id);
+            DB::beginTransaction();
+
+            // Find grading system - TenantScope will automatically filter by tenant
+            $gradingSystem = GradingSystem::find($id);
+
+            if (!$gradingSystem) {
+                DB::rollBack();
+                return $this->errorResponse('Grading system not found', null, 'NOT_FOUND', 404);
+            }
+
+            // Verify tenant access explicitly
+            $tenantId = $this->getCurrentTenantId();
+            if (!$tenantId || $gradingSystem->tenant_id != $tenantId) {
+                DB::rollBack();
+                return $this->errorResponse('You do not have access to this grading system', null, 'ACCESS_DENIED', 403);
+            }
+
             $this->gradingSystemService->setPrimaryGradingSystem($gradingSystem);
+
+            DB::commit();
 
             return $this->successResponse($gradingSystem, 'Grading system set as primary successfully');
         } catch (\Exception $e) {
+            DB::rollBack();
             return $this->errorResponse('Failed to set primary grading system', null, 'SET_PRIMARY_ERROR', 422);
         }
     }

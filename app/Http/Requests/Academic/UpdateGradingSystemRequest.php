@@ -15,7 +15,6 @@ class UpdateGradingSystemRequest extends BaseAcademicRequest
     public function rules(): array
     {
         return [
-            'school_id' => 'sometimes|required|integer|exists:schools,id',
             'name' => 'sometimes|required|string|max:255',
             'system_type' => 'sometimes|required|in:traditional_letter,percentage,points,standards_based,narrative',
             'applicable_grades' => 'nullable|array',

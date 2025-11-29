@@ -17,7 +17,7 @@ class UpdateGradeScaleRequest extends BaseAcademicRequest
         return [
             'grading_system_id' => 'nullable|exists:grading_systems,id',
             'name' => 'nullable|string|max:255',
-            'scale_type' => 'nullable|string|in:letter,numeric,percentage,pass_fail,custom',
+            'scale_type' => 'nullable|string|in:letter,percentage,points,standards',
             'is_default' => 'nullable|boolean',
         ];
     }

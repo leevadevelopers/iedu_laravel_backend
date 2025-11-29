@@ -17,7 +17,7 @@ class BulkImportGradesRequest extends BaseAcademicRequest
         return [
             'grades' => 'required|array|min:1|max:500',
             'grades.*.student_id' => 'required|exists:students,id',
-            'grades.*.academic_class_id' => 'required|exists:classes,id',
+            'grades.*.class_id' => 'required|exists:classes,id',
             'grades.*.subject_id' => 'required|exists:subjects,id',
             'grades.*.grade_level_id' => 'nullable|exists:grade_levels,id',
             'grades.*.percentage' => 'nullable|numeric|min:0|max:100',
@@ -50,10 +50,10 @@ class BulkImportGradesRequest extends BaseAcademicRequest
                     }
                 }
 
-                if (isset($grade['academic_class_id'])) {
-                    $class = \App\Models\V1\Academic\AcademicClass::find($grade['academic_class_id']);
+                if (isset($grade['class_id'])) {
+                    $class = \App\Models\V1\Academic\AcademicClass::find($grade['class_id']);
                     if (!$class || $class->school_id !== $this->getCurrentSchoolId()) {
-                        $validator->errors()->add("grades.{$index}.academic_class_id", 'Invalid class selected');
+                        $validator->errors()->add("grades.{$index}.class_id", 'Invalid class selected');
                     }
                 }
 
@@ -98,7 +98,7 @@ class BulkImportGradesRequest extends BaseAcademicRequest
             'grades.required' => 'At least one grade must be provided',
             'grades.max' => 'Cannot import more than 500 grades at once',
             'grades.*.student_id.required' => 'Student is required for each grade',
-            'grades.*.academic_class_id.required' => 'Class is required for each grade',
+            'grades.*.class_id.required' => 'Class is required for each grade',
             'grades.*.subject_id.required' => 'Subject is required for each grade',
             'grades.*.term.required' => 'Term is required for each grade',
             'grades.*.percentage.max' => 'Percentage cannot exceed 100',
@@ -115,7 +115,7 @@ class BulkImportGradesRequest extends BaseAcademicRequest
         return array_merge(parent::attributes(), [
             'grades' => 'grades list',
             'grades.*.student_id' => 'student',
-            'grades.*.academic_class_id' => 'class',
+            'grades.*.class_id' => 'class',
             'grades.*.subject_id' => 'subject',
             'grades.*.grade_level_id' => 'grade level',
             'grades.*.percentage' => 'percentage',

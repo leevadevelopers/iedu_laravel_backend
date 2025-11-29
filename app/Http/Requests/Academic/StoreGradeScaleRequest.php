@@ -17,7 +17,7 @@ class StoreGradeScaleRequest extends BaseAcademicRequest
         return [
             'grading_system_id' => 'required|exists:grading_systems,id',
             'name' => 'required|string|max:255',
-            'scale_type' => 'required|string|in:letter,numeric,percentage,pass_fail,custom',
+            'scale_type' => 'required|string|in:letter,percentage,points,standards',
             'is_default' => 'nullable|boolean',
         ];
     }

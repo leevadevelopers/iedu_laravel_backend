@@ -60,7 +60,7 @@ class GradingSystem extends BaseModel
     }
 
     // Methods
-    
+
     /**
      * Get the default scale for this system
      */

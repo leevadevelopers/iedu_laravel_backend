@@ -15,14 +15,7 @@ class StoreSubjectRequest extends BaseAcademicRequest
     public function rules(): array
     {
         return [
-            'school_id' => 'required|integer|exists:schools,id',
             'name' => 'required|string|max:255',
-            'code' => [
-                'required',
-                'string',
-                'max:50',
-                'unique:subjects,code,NULL,id,school_id,' . $this->input('school_id')
-            ],
             'description' => 'nullable|string|max:1000',
             'subject_area' => [
                 'required',

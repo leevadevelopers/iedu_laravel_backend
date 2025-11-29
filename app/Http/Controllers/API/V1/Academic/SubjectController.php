@@ -11,6 +11,7 @@ use App\Traits\ApiResponseTrait;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class SubjectController extends Controller
 {
@@ -27,14 +28,75 @@ class SubjectController extends Controller
     }
 
     /**
+     * Get the current school ID from authenticated user
+     */
+    protected function getCurrentSchoolId(): ?int
+    {
+        $user = auth('api')->user();
+
+        if (!$user) {
+            return null;
+        }
+
+        // Try getCurrentSchool method first (preferred)
+        if (method_exists($user, 'getCurrentSchool')) {
+            $currentSchool = $user->getCurrentSchool();
+            if ($currentSchool) {
+                return $currentSchool->id;
+            }
+        }
+
+        // Fallback to school_id attribute
+        if (isset($user->school_id) && $user->school_id) {
+            return $user->school_id;
+        }
+
+        // Try activeSchools relationship
+        if (method_exists($user, 'activeSchools')) {
+            $activeSchools = $user->activeSchools();
+            if ($activeSchools && $activeSchools->count() > 0) {
+                $firstSchool = $activeSchools->first();
+                if ($firstSchool && isset($firstSchool->school_id)) {
+                    return $firstSchool->school_id;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Get the current tenant ID from authenticated user
+     */
+    protected function getCurrentTenantId(): ?int
+    {
+        $user = auth('api')->user();
+
+        if (!$user) {
+            return null;
+        }
+
+        // Try tenant_id attribute first
+        if (isset($user->tenant_id) && $user->tenant_id) {
+            return $user->tenant_id;
+        }
+
+        // Try getCurrentTenant method
+        if (method_exists($user, 'getCurrentTenant')) {
+            $currentTenant = $user->getCurrentTenant();
+            if ($currentTenant) {
+                return $currentTenant->id;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Display a listing of subjects
      */
     public function index(Request $request): JsonResponse
     {
-        // Validate school_id is provided
-        $request->validate([
-            'school_id' => 'required|integer|exists:schools,id'
-        ]);
 
         $subjects = $this->subjectService->getSubjects($request->all());
 
@@ -46,8 +108,33 @@ class SubjectController extends Controller
      */
     public function store(StoreSubjectRequest $request): JsonResponse
     {
+        $user = auth('api')->user();
+
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'User not authenticated'
+            ], 401);
+        }
+
+        // Get tenant_id from user if not provided
+        $tenantId = $this->getCurrentTenantId();
+        if (!$tenantId) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Tenant ID is required'
+            ], 422);
+        }
+
         try {
-            $subject = $this->subjectService->createSubject($request->validated());
+            DB::beginTransaction();
+
+            $data = $request->validated();
+            $data['tenant_id'] = $tenantId;
+
+            $subject = $this->subjectService->createSubject($data);
+
+            DB::commit();
 
             return response()->json([
                 'status' => 'success',
@@ -55,6 +142,7 @@ class SubjectController extends Controller
                 'data' => $subject
             ], 201);
         } catch (\Exception $e) {
+            DB::rollBack();
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to create subject',
@@ -76,6 +164,15 @@ class SubjectController extends Controller
                     'status' => 'error',
                     'message' => 'Subject not found'
                 ], 404);
+            }
+
+            // Verify tenant access
+            $tenantId = $this->getCurrentTenantId();
+            if (!$tenantId || $subject->tenant_id != $tenantId) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'You do not have access to this subject'
+                ], 403);
             }
 
             return response()->json([
@@ -106,7 +203,20 @@ class SubjectController extends Controller
                 ], 404);
             }
 
+            // Verify tenant access
+            $tenantId = $this->getCurrentTenantId();
+            if (!$tenantId || $subject->tenant_id != $tenantId) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'You do not have access to this subject'
+                ], 403);
+            }
+
+            DB::beginTransaction();
+
             $updatedSubject = $this->subjectService->updateSubject($subject, $request->validated());
+
+            DB::commit();
 
             return response()->json([
                 'status' => 'success',
@@ -114,6 +224,7 @@ class SubjectController extends Controller
                 'data' => $updatedSubject
             ]);
         } catch (\Exception $e) {
+            DB::rollBack();
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to update subject',
@@ -128,22 +239,38 @@ class SubjectController extends Controller
     public function destroy($id): JsonResponse
     {
         try {
+            DB::beginTransaction();
+
             $subject = $this->findSubject($id);
 
             if (!$subject) {
+                DB::rollBack();
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Subject not found'
                 ], 404);
             }
 
+            // Verify tenant access
+            $tenantId = $this->getCurrentTenantId();
+            if (!$tenantId || $subject->tenant_id != $tenantId) {
+                DB::rollBack();
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'You do not have access to this subject'
+                ], 403);
+            }
+
             $this->subjectService->deleteSubject($subject);
+
+            DB::commit();
 
             return response()->json([
                 'status' => 'success',
                 'message' => 'Subject archived successfully'
             ]);
         } catch (\Exception $e) {
+            DB::rollBack();
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to archive subject',
@@ -157,11 +284,9 @@ class SubjectController extends Controller
      */
     public function byGradeLevel(Request $request, string $gradeLevel): JsonResponse
     {
-        $request->validate([
-            'school_id' => 'required|integer|exists:schools,id'
-        ]);
+        $schoolId = $this->getCurrentSchoolId();
 
-        $subjects = $this->subjectService->getSubjectsByGradeLevel($gradeLevel, $request->school_id);
+        $subjects = $this->subjectService->getSubjectsByGradeLevel($gradeLevel, $schoolId);
 
         return response()->json([
             'status' => 'success',
@@ -174,11 +299,9 @@ class SubjectController extends Controller
      */
     public function core(Request $request): JsonResponse
     {
-        $request->validate([
-            'school_id' => 'required|integer|exists:schools,id'
-        ]);
+        $schoolId = $this->getCurrentSchoolId();
 
-        $subjects = $this->subjectService->getCoreSubjects($request->school_id);
+        $subjects = $this->subjectService->getCoreSubjects($schoolId);
 
         return response()->json([
             'status' => 'success',
@@ -191,11 +314,9 @@ class SubjectController extends Controller
      */
     public function electives(Request $request): JsonResponse
     {
-        $request->validate([
-            'school_id' => 'required|integer|exists:schools,id'
-        ]);
+        $schoolId = $this->getCurrentSchoolId();
 
-        $subjects = $this->subjectService->getElectiveSubjects($request->school_id);
+        $subjects = $this->subjectService->getElectiveSubjects($schoolId);
 
         return response()->json([
             'status' => 'success',
@@ -210,7 +331,7 @@ class SubjectController extends Controller
     {
         // Simplified approach - find subject by ID and tenant_id only
         $user = Auth::user();
-        
+
         return Subject::where('id', $id)
             ->where('tenant_id', $user->tenant_id)
             ->first();

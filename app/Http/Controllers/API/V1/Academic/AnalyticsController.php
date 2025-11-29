@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Services\V1\Academic\AnalyticsService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Auth;
 
 class AnalyticsController extends Controller
 {
@@ -14,6 +15,71 @@ class AnalyticsController extends Controller
     public function __construct(AnalyticsService $analyticsService)
     {
         $this->analyticsService = $analyticsService;
+    }
+
+    /**
+     * Get the current school ID from authenticated user
+     */
+    protected function getCurrentSchoolId(): ?int
+    {
+        $user = auth('api')->user();
+
+        if (!$user) {
+            return null;
+        }
+
+        // Try getCurrentSchool method first (preferred)
+        if (method_exists($user, 'getCurrentSchool')) {
+            $currentSchool = $user->getCurrentSchool();
+            if ($currentSchool) {
+                return $currentSchool->id;
+            }
+        }
+
+        // Fallback to school_id attribute
+        if (isset($user->school_id) && $user->school_id) {
+            return $user->school_id;
+        }
+
+        // Try activeSchools relationship
+        if (method_exists($user, 'activeSchools')) {
+            $activeSchools = $user->activeSchools();
+            if ($activeSchools && $activeSchools->count() > 0) {
+                $firstSchool = $activeSchools->first();
+                if ($firstSchool && isset($firstSchool->school_id)) {
+                    return $firstSchool->school_id;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Get the current tenant ID from authenticated user
+     */
+    protected function getCurrentTenantId(): ?int
+    {
+        $user = auth('api')->user();
+
+        if (!$user) {
+            return null;
+        }
+
+        // Try tenant_id attribute first
+        if (isset($user->tenant_id) && $user->tenant_id) {
+            return $user->tenant_id;
+        }
+
+        // Try getCurrentTenant method
+        if (method_exists($user, 'getCurrentTenant')) {
+            $currentTenant = $user->getCurrentTenant();
+            if ($currentTenant) {
+                return $currentTenant->id;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -172,87 +238,4 @@ class AnalyticsController extends Controller
         }
     }
 
-    /**
-     * Get attendance analytics
-     */
-    public function attendanceAnalytics(Request $request): JsonResponse
-    {
-        $request->validate([
-            'academic_year_id' => 'nullable|exists:academic_years,id',
-            'class_id' => 'nullable|exists:classes,id',
-            'start_date' => 'nullable|date',
-            'end_date' => 'nullable|date|after_or_equal:start_date'
-        ]);
-
-        try {
-            $analytics = $this->analyticsService->getAttendanceAnalytics($request->all());
-
-            return response()->json([
-                'status' => 'success',
-                'data' => $analytics
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Failed to fetch attendance analytics',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Get comparative analytics
-     */
-    public function comparativeAnalytics(Request $request): JsonResponse
-    {
-        $request->validate([
-            'comparison_type' => 'required|in:classes,subjects,teachers,academic_years',
-            'entity_ids' => 'required|array|min:2|max:5',
-            'entity_ids.*' => 'integer',
-            'academic_year_id' => 'nullable|exists:academic_years,id',
-            'term' => 'nullable|string|in:first_term,second_term,third_term,annual'
-        ]);
-
-        try {
-            $comparison = $this->analyticsService->getComparativeAnalytics($request->all());
-
-            return response()->json([
-                'status' => 'success',
-                'data' => $comparison
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Failed to fetch comparative analytics',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
-
-    /**
-     * Export analytics data
-     */
-    public function exportAnalytics(Request $request): JsonResponse
-    {
-        $request->validate([
-            'report_type' => 'required|in:academic_overview,grade_distribution,subject_performance,teacher_stats,class_stats',
-            'format' => 'required|in:pdf,excel,csv',
-            'filters' => 'nullable|array'
-        ]);
-
-        try {
-            $exportData = $this->analyticsService->exportAnalytics($request->all());
-
-            return response()->json([
-                'status' => 'success',
-                'data' => $exportData
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Failed to export analytics data',
-                'error' => $e->getMessage()
-            ], 500);
-        }
-    }
 }

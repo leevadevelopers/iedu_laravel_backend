@@ -11,6 +11,8 @@ use App\Services\V1\Academic\GradeEntryService;
 use App\Traits\ApiResponseTrait;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class GradeEntryController extends Controller
 {
@@ -20,6 +22,71 @@ class GradeEntryController extends Controller
     public function __construct(GradeEntryService $gradeEntryService)
     {
         $this->gradeEntryService = $gradeEntryService;
+    }
+
+    /**
+     * Get the current school ID from authenticated user
+     */
+    protected function getCurrentSchoolId(): ?int
+    {
+        $user = auth('api')->user();
+
+        if (!$user) {
+            return null;
+        }
+
+        // Try getCurrentSchool method first (preferred)
+        if (method_exists($user, 'getCurrentSchool')) {
+            $currentSchool = $user->getCurrentSchool();
+            if ($currentSchool) {
+                return $currentSchool->id;
+            }
+        }
+
+        // Fallback to school_id attribute
+        if (isset($user->school_id) && $user->school_id) {
+            return $user->school_id;
+        }
+
+        // Try activeSchools relationship
+        if (method_exists($user, 'activeSchools')) {
+            $activeSchools = $user->activeSchools();
+            if ($activeSchools && $activeSchools->count() > 0) {
+                $firstSchool = $activeSchools->first();
+                if ($firstSchool && isset($firstSchool->school_id)) {
+                    return $firstSchool->school_id;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Get the current tenant ID from authenticated user
+     */
+    protected function getCurrentTenantId(): ?int
+    {
+        $user = auth('api')->user();
+
+        if (!$user) {
+            return null;
+        }
+
+        // Try tenant_id attribute first
+        if (isset($user->tenant_id) && $user->tenant_id) {
+            return $user->tenant_id;
+        }
+
+        // Try getCurrentTenant method
+        if (method_exists($user, 'getCurrentTenant')) {
+            $currentTenant = $user->getCurrentTenant();
+            if ($currentTenant) {
+                return $currentTenant->id;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -46,11 +113,37 @@ class GradeEntryController extends Controller
      */
     public function store(StoreGradeEntryRequest $request): JsonResponse
     {
+        $user = auth('api')->user();
+
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'User not authenticated'
+            ], 401);
+        }
+
+        // Get tenant_id from user if not provided
+        $tenantId = $this->getCurrentTenantId();
+        if (!$tenantId) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Tenant ID is required'
+            ], 422);
+        }
+
         try {
-            $gradeEntry = $this->gradeEntryService->createGradeEntry($request->validated());
+            DB::beginTransaction();
+
+            $data = $request->validated();
+            $data['tenant_id'] = $tenantId;
+
+            $gradeEntry = $this->gradeEntryService->createGradeEntry($data);
+
+            DB::commit();
 
             return $this->successResponse($gradeEntry, 'Grade entry created successfully', 201);
         } catch (\Exception $e) {
+            DB::rollBack();
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to create grade entry',
@@ -90,6 +183,15 @@ class GradeEntryController extends Controller
      */
     public function show(GradeEntry $gradeEntry): JsonResponse
     {
+        // Verify tenant access
+        $tenantId = $this->getCurrentTenantId();
+        if (!$tenantId || $gradeEntry->tenant_id != $tenantId) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'You do not have access to this grade entry'
+            ], 403);
+        }
+
         return response()->json([
             'status' => 'success',
             'data' => $gradeEntry->load([
@@ -104,7 +206,20 @@ class GradeEntryController extends Controller
     public function update(UpdateGradeEntryRequest $request, GradeEntry $gradeEntry): JsonResponse
     {
         try {
+            // Verify tenant access
+            $tenantId = $this->getCurrentTenantId();
+            if (!$tenantId || $gradeEntry->tenant_id != $tenantId) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'You do not have access to this grade entry'
+                ], 403);
+            }
+
+            DB::beginTransaction();
+
             $updatedGradeEntry = $this->gradeEntryService->updateGradeEntry($gradeEntry, $request->validated());
+
+            DB::commit();
 
             return response()->json([
                 'status' => 'success',
@@ -112,6 +227,7 @@ class GradeEntryController extends Controller
                 'data' => $updatedGradeEntry
             ]);
         } catch (\Exception $e) {
+            DB::rollBack();
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to update grade entry',
@@ -126,6 +242,15 @@ class GradeEntryController extends Controller
     public function destroy(GradeEntry $gradeEntry): JsonResponse
     {
         try {
+            // Verify tenant access
+            $tenantId = $this->getCurrentTenantId();
+            if (!$tenantId || $gradeEntry->tenant_id != $tenantId) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'You do not have access to this grade entry'
+                ], 403);
+            }
+
             $this->gradeEntryService->deleteGradeEntry($gradeEntry);
 
             return response()->json([

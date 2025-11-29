@@ -3,6 +3,7 @@
 namespace App\Services\V1\Academic;
 
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 
 abstract class BaseAcademicService
 {
@@ -23,7 +24,7 @@ abstract class BaseAcademicService
         if ($schoolUsers->isEmpty()) {
             // For development, return a default school ID
             // In production, this should throw an exception
-            \Log::warning('User not associated with any schools, using default school ID', [
+            Log::warning('User not associated with any schools, using default school ID', [
                 'user_id' => $user->id,
                 'tenant_id' => $user->tenant_id
             ]);
@@ -50,7 +51,7 @@ abstract class BaseAcademicService
         if ($schoolUsers->isEmpty()) {
             // For development, return a default school
             // In production, this should throw an exception
-            \Log::warning('User not associated with any schools, using default school', [
+            Log::warning('User not associated with any schools, using default school', [
                 'user_id' => $user->id,
                 'tenant_id' => $user->tenant_id
             ]);
@@ -66,25 +67,52 @@ abstract class BaseAcademicService
     protected function validateSchoolOwnership($model): void
     {
         $user = Auth::user();
-        
+
         // Check if user has access to the model's school
         $userSchools = $user->activeSchools()->pluck('school_id')->toArray();
-        
+
         if (!in_array($model->school_id, $userSchools)) {
             // For development, log a warning instead of throwing an exception
-            \Log::warning('User does not have access to resource school', [
+            Log::warning('User does not have access to resource school', [
                 'user_id' => $user->id,
                 'model_school_id' => $model->school_id,
                 'user_schools' => $userSchools,
                 'model_type' => get_class($model),
                 'model_id' => $model->id ?? 'new'
             ]);
-            
+
             // In development, allow access; in production, throw exception
             if (app()->environment('production')) {
                 throw new \Exception('Access denied: Resource does not belong to current school');
             }
         }
+    }
+
+    /**
+     * Get current tenant ID from authenticated user
+     */
+    protected function getCurrentTenantId(): ?int
+    {
+        $user = Auth::user();
+
+        if (!$user) {
+            return null;
+        }
+
+        // Try tenant_id attribute first
+        if (isset($user->tenant_id) && $user->tenant_id) {
+            return $user->tenant_id;
+        }
+
+        // Try getCurrentTenant method
+        if (method_exists($user, 'getCurrentTenant')) {
+            $currentTenant = $user->getCurrentTenant();
+            if ($currentTenant) {
+                return $currentTenant->id;
+            }
+        }
+
+        return null;
     }
 
     /**

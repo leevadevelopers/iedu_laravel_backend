@@ -3,12 +3,14 @@
 namespace App\Services\V1\Academic;
 
 use App\Models\V1\Academic\Teacher;
+use App\Models\V1\SIS\School\SchoolUser;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
+use Spatie\Permission\Models\Role;
 
 class TeacherService extends BaseAcademicService
 {
@@ -68,24 +70,42 @@ class TeacherService extends BaseAcademicService
      */
     public function createTeacher(array $data): Teacher
     {
-        $data['school_id'] = $this->getCurrentSchoolId();
+        // If school_id is not provided, get from current user
+        if (!isset($data['school_id'])) {
+            $data['school_id'] = $this->getCurrentSchoolId();
+        }
 
         // Validate email uniqueness
         if (isset($data['email'])) {
             $this->validateEmail($data['email']);
         }
 
-        // Create or find user account
-        $user = $this->createOrFindUser($data);
-        $data['user_id'] = $user->id;
+        // Get tenant_id for associations
+        $tenantId = $data['tenant_id'] ?? Auth::user()->tenant_id ?? null;
+        $schoolId = $data['school_id'];
+
+        // If user_id is not provided, create or find user account
+        if (!isset($data['user_id'])) {
+            $user = $this->createOrFindUser($data);
+            $data['user_id'] = $user->id;
+        } else {
+            // If user_id is provided, ensure associations are created
+            $user = User::find($data['user_id']);
+            if ($user) {
+                $this->associateUserToSchoolAndTenant($user, $tenantId, $schoolId);
+            }
+        }
+
+        // Ensure tenant_id is set
+        if (!isset($data['tenant_id'])) {
+            $user = Auth::user();
+            $data['tenant_id'] = $user->tenant_id;
+        }
 
         // Specializations are now free-form, no validation needed
 
         // Set default values
         $data = $this->setDefaultValues($data);
-
-        $user = Auth::user();
-        $data['tenant_id'] = $user->tenant_id;
 
         return Teacher::create($data);
     }
@@ -95,7 +115,11 @@ class TeacherService extends BaseAcademicService
      */
     public function getTeacherById(int $id): ?Teacher
     {
-        return Teacher::find($id);
+        $user = Auth::user();
+
+        return Teacher::where('id', $id)
+            ->where('tenant_id', $user->tenant_id)
+            ->first();
     }
 
     /**
@@ -133,8 +157,29 @@ class TeacherService extends BaseAcademicService
             throw new \Exception('Cannot delete teacher with grade entries');
         }
 
-        $teacher->update(['status' => 'terminated']);
-        return true;
+        DB::beginTransaction();
+        try {
+            // Remove SchoolUser association
+            if ($teacher->user_id && $teacher->school_id) {
+                SchoolUser::where('user_id', $teacher->user_id)
+                    ->where('school_id', $teacher->school_id)
+                    ->delete();
+            }
+
+            // Remove TenantUser association
+            if ($teacher->user_id && $teacher->tenant_id) {
+                $teacher->user->tenants()->detach($teacher->tenant_id);
+            }
+
+            // Update teacher status to terminated
+            $teacher->update(['status' => 'terminated']);
+
+            DB::commit();
+            return true;
+        } catch (\Exception $e) {
+            DB::rollBack();
+            throw $e;
+        }
     }
 
     /**
@@ -369,32 +414,105 @@ class TeacherService extends BaseAcademicService
     }
 
     /**
+     * Associate user to school and tenant without modifying users table
+     * Uses tenant_id and school_id from user if available, otherwise uses provided values
+     */
+    private function associateUserToSchoolAndTenant(User $user, ?int $tenantId = null, ?int $schoolId = null): void
+    {
+        // Get tenant_id from user if available, otherwise use provided value
+        $finalTenantId = $user->tenant_id ?? $tenantId;
+
+        // Get school_id from user if available, otherwise use provided value
+        $finalSchoolId = $user->school_id ?? $schoolId;
+
+        // Create or update TenantUser association if tenant_id is available
+        if ($finalTenantId) {
+            $role = Role::where('name', 'teacher')->first();
+
+            // Check if association already exists
+            if (!$user->tenants()->where('tenants.id', $finalTenantId)->exists()) {
+                $user->tenants()->attach($finalTenantId, [
+                    'status' => 'active',
+                    'joined_at' => now(),
+                    'role_id' => $role?->id,
+                    'current_tenant' => false, // Don't override current_tenant if user already has one
+                ]);
+            }
+        }
+
+        // Create or update SchoolUser association if school_id is available
+        if ($finalSchoolId) {
+            SchoolUser::updateOrCreate(
+                [
+                    'school_id' => $finalSchoolId,
+                    'user_id' => $user->id,
+                ],
+                [
+                    'role' => 'teacher',
+                    'status' => 'active',
+                    'start_date' => now(),
+                ]
+            );
+        }
+    }
+
+    /**
      * Create or find user account for teacher
      */
     private function createOrFindUser(array $data): User
     {
+        $user = Auth::user();
+        $tenantId = $user->tenant_id ?? null;
+        $schoolId = $data['school_id'] ?? $this->getCurrentSchoolId();
+
+        // Determine identifier (email or phone)
+        $identifier = $data['email'] ?? $data['phone'] ?? $data['employee_id'] ?? null;
+        $userType = isset($data['email']) ? 'email' : 'phone';
+
+        if (!$identifier) {
+            throw new \Exception('Email or phone is required to create user account');
+        }
+
         $userData = [
-            'name' => trim($data['first_name'] . ' ' . $data['last_name']),
-            'identifier' => $data['email'] ?? $data['employee_id'],
-            'type' => 'email',
+            'name' => trim(($data['first_name'] ?? '') . ' ' . ($data['last_name'] ?? '')),
+            'identifier' => $identifier,
+            'type' => $userType,
             'phone' => $data['phone'] ?? null,
             'profile_photo_path' => $data['profile_photo_path'] ?? null,
             'user_type' => 'teacher'
         ];
 
         // Check if user already exists
-        $user = User::where('identifier', $userData['identifier'])->first();
+        $existingUser = User::where('identifier', $identifier)->first();
 
-        if ($user) {
-            return $user;
+        if ($existingUser) {
+            // Associate existing user to school and tenant
+            $this->associateUserToSchoolAndTenant($existingUser, $tenantId, $schoolId);
+            return $existingUser;
         }
 
         // Create new user
         $employeeId = $data['employee_id'] ?? 'TEMP_' . uniqid();
-        $userData['password'] = Hash::make('temp_password_' . $employeeId);
+        $userData['password'] = Hash::make('@ProfessorIedu');
         $userData['must_change'] = true;
+        $userData['tenant_id'] = $tenantId;
+        $userData['school_id'] = $schoolId;
+        $userData['is_active'] = true;
 
-        return User::create($userData);
+        $newUser = User::create($userData);
+
+        // Create TenantUser association if tenant_id is available
+        if ($tenantId) {
+            $role = Role::where('name', 'teacher')->first();
+            $newUser->tenants()->attach($tenantId, [
+                'status' => 'active',
+                'joined_at' => now(),
+                'role_id' => $role?->id,
+                'current_tenant' => true,
+            ]);
+        }
+
+        return $newUser;
     }
 
 

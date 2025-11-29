@@ -12,6 +12,7 @@ use App\Http\Requests\Academic\BulkCreateSubjectsRequest;
 use App\Services\V1\Academic\BulkOperationsService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Auth;
 
 class BulkOperationsController extends Controller
 {
@@ -23,10 +24,84 @@ class BulkOperationsController extends Controller
     }
 
     /**
+     * Get the current school ID from authenticated user
+     */
+    protected function getCurrentSchoolId(): ?int
+    {
+        $user = auth('api')->user();
+
+        if (!$user) {
+            return null;
+        }
+
+        // Try getCurrentSchool method first (preferred)
+        if (method_exists($user, 'getCurrentSchool')) {
+            $currentSchool = $user->getCurrentSchool();
+            if ($currentSchool) {
+                return $currentSchool->id;
+            }
+        }
+
+        // Fallback to school_id attribute
+        if (isset($user->school_id) && $user->school_id) {
+            return $user->school_id;
+        }
+
+        // Try activeSchools relationship
+        if (method_exists($user, 'activeSchools')) {
+            $activeSchools = $user->activeSchools();
+            if ($activeSchools && $activeSchools->count() > 0) {
+                $firstSchool = $activeSchools->first();
+                if ($firstSchool && isset($firstSchool->school_id)) {
+                    return $firstSchool->school_id;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Get the current tenant ID from authenticated user
+     */
+    protected function getCurrentTenantId(): ?int
+    {
+        $user = auth('api')->user();
+
+        if (!$user) {
+            return null;
+        }
+
+        // Try tenant_id attribute first
+        if (isset($user->tenant_id) && $user->tenant_id) {
+            return $user->tenant_id;
+        }
+
+        // Try getCurrentTenant method
+        if (method_exists($user, 'getCurrentTenant')) {
+            $currentTenant = $user->getCurrentTenant();
+            if ($currentTenant) {
+                return $currentTenant->id;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Create multiple classes in bulk
      */
     public function createClasses(BulkCreateClassesRequest $request): JsonResponse
     {
+        // Verify tenant access
+        $tenantId = $this->getCurrentTenantId();
+        if (!$tenantId) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Tenant ID is required'
+            ], 422);
+        }
+
         try {
             $result = $this->bulkOperationsService->createClasses($request->validated());
 
@@ -51,6 +126,15 @@ class BulkOperationsController extends Controller
      */
     public function enrollStudents(BulkEnrollStudentsRequest $request): JsonResponse
     {
+        // Verify tenant access
+        $tenantId = $this->getCurrentTenantId();
+        if (!$tenantId) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Tenant ID is required'
+            ], 422);
+        }
+
         try {
             $result = $this->bulkOperationsService->enrollStudents($request->validated());
 
@@ -75,6 +159,15 @@ class BulkOperationsController extends Controller
      */
     public function importGrades(BulkImportGradesRequest $request): JsonResponse
     {
+        // Verify tenant access
+        $tenantId = $this->getCurrentTenantId();
+        if (!$tenantId) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Tenant ID is required'
+            ], 422);
+        }
+
         try {
             $result = $this->bulkOperationsService->importGrades($request->validated());
 
@@ -97,6 +190,15 @@ class BulkOperationsController extends Controller
      */
     public function generateReportCards(BulkGenerateReportCardsRequest $request): JsonResponse
     {
+        // Verify tenant access
+        $tenantId = $this->getCurrentTenantId();
+        if (!$tenantId) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Tenant ID is required'
+            ], 422);
+        }
+
         try {
             $result = $this->bulkOperationsService->generateReportCards($request->validated());
 
@@ -126,6 +228,15 @@ class BulkOperationsController extends Controller
             'update_type' => 'required|in:personal_info,academic_info,contact_info,all'
         ]);
 
+        // Verify tenant access
+        $tenantId = $this->getCurrentTenantId();
+        if (!$tenantId) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Tenant ID is required'
+            ], 422);
+        }
+
         try {
             $result = $this->bulkOperationsService->updateStudents($request->validated());
 
@@ -148,6 +259,15 @@ class BulkOperationsController extends Controller
      */
     public function createTeachers(BulkCreateTeachersRequest $request): JsonResponse
     {
+        // Verify tenant access
+        $tenantId = $this->getCurrentTenantId();
+        if (!$tenantId) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Tenant ID is required'
+            ], 422);
+        }
+
         try {
             $result = $this->bulkOperationsService->createTeachers($request->validated());
 
@@ -172,6 +292,15 @@ class BulkOperationsController extends Controller
      */
     public function createSubjects(BulkCreateSubjectsRequest $request): JsonResponse
     {
+        // Verify tenant access
+        $tenantId = $this->getCurrentTenantId();
+        if (!$tenantId) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Tenant ID is required'
+            ], 422);
+        }
+
         try {
             $result = $this->bulkOperationsService->createSubjects($request->validated());
 
@@ -204,6 +333,15 @@ class BulkOperationsController extends Controller
             'transfers.*.effective_date' => 'required|date|after_or_equal:today',
             'transfers.*.reason' => 'nullable|string|max:500'
         ]);
+
+        // Verify tenant access
+        $tenantId = $this->getCurrentTenantId();
+        if (!$tenantId) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Tenant ID is required'
+            ], 422);
+        }
 
         try {
             $result = $this->bulkOperationsService->transferStudents($request->validated());
