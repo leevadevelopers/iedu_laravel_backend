@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\API\V1\Library\BookController;
+use App\Http\Controllers\API\V1\Library\BookCopyController;
 use App\Http\Controllers\API\V1\Library\LoanController;
 use App\Http\Controllers\API\V1\Library\ReservationController;
 use App\Http\Controllers\API\V1\Library\IncidentController;
@@ -71,9 +72,9 @@ Route::prefix('library')->name('library.')->group(function () {
         Route::put('/{book}', [BookController::class, 'update'])->name('update');
         Route::delete('/{book}', [BookController::class, 'destroy'])->name('destroy');
 
-        // Book Copies
-        Route::get('/{book}/copies', [BookController::class, 'copies'])->name('copies');
-        Route::post('/{book}/copies', [BookController::class, 'addCopy'])->name('add-copy');
+        // Book Copies (nested under book)
+        // Route::get('/{book}/copies', [BookCopyController::class, 'index'])->name('copies');
+        // Route::post('/{book}/copies', [BookCopyController::class, 'store'])->name('add-copy');
 
         // Book Files
         // Route::post('/{book}/files', [BookFileController::class, 'store'])->name('files.store');
@@ -91,6 +92,17 @@ Route::prefix('library')->name('library.')->group(function () {
         Route::put('/{bookFile}', [BookFileController::class, 'update'])->name('update');
         Route::delete('/{bookFile}', [BookFileController::class, 'destroy'])->name('destroy');
         Route::get('/{bookFile}/download', [BookFileController::class, 'download'])->name('download');
+    });
+
+    // ========================================
+    // Book Copies (Standalone)
+    // ========================================
+    Route::prefix('book-copies')->name('book-copies.')->group(function () {
+        Route::get('/', [BookCopyController::class, 'index'])->name('index');
+        Route::post('/', [BookCopyController::class, 'store'])->name('store');
+        Route::get('/{bookCopy}', [BookCopyController::class, 'show'])->name('show');
+        Route::put('/{bookCopy}', [BookCopyController::class, 'update'])->name('update');
+        Route::delete('/{bookCopy}', [BookCopyController::class, 'destroy'])->name('destroy');
     });
 
      // ========================================

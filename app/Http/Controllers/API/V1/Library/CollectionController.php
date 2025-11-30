@@ -56,15 +56,8 @@ class CollectionController extends BaseController
      */
     public function store(StoreCollectionRequest $request): JsonResponse
     {
-        //tenant_id automatically
-        $user = auth()->user();
-
-        $tenant_id = $user->tenant_id;
-        $data = array_merge($request->validated(), [
-            'tenant_id' => $tenant_id,
-        ]);
-
-        $collection = Collection::create($data);
+        // tenant_id is automatically set by Tenantable trait
+        $collection = Collection::create($request->validated());
 
         return $this->successResponse(
             new CollectionResource($collection),
@@ -85,14 +78,7 @@ class CollectionController extends BaseController
 
     public function update(UpdateCollectionRequest $request, Collection $collection): JsonResponse
     {
-        $user = auth()->user();
-        $tenant_id = $user->tenant_id;
-
-        $data = array_merge($request->validated(), [
-            'tenant_id' => $tenant_id,
-        ]);
-
-        $collection->update($data);
+        $collection->update($request->validated());
 
         return $this->successResponse(
             new CollectionResource($collection),

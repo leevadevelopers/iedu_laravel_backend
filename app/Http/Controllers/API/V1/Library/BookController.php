@@ -15,7 +15,8 @@ class BookController extends BaseController
     public function __construct()
     {
         $this->middleware('auth:api');
-        // $this->authorizeResource(Book::class, 'book');
+        // Note: authorizeResource is enabled but we also have manual checks in methods
+        $this->authorizeResource(Book::class, 'book');
     }
 
     public function index(Request $request): JsonResponse
@@ -98,12 +99,22 @@ class BookController extends BaseController
     public function update(UpdateBookRequest $request, Book $book): JsonResponse
     {
         $user = auth()->user();
-        $tenant_id = $user->tenant_id;
 
+        // Get user tenant_id from session or user model
+        $userTenantId = session('tenant_id') ?? $user->tenant_id;
+
+        // Ensure user can only update books from their tenant
+        if ($book->tenant_id !== $userTenantId) {
+            return $this->errorResponse(
+                'You can only update books from your tenant.',
+                403
+            );
+        }
+
+        $tenant_id = $user->tenant_id;
         $data = array_merge($request->validated(), [
             'tenant_id' => $tenant_id,
         ]);
-
 
         $book->update($data);
 
@@ -121,6 +132,19 @@ class BookController extends BaseController
 
     public function destroy(Book $book): JsonResponse
     {
+        $user = auth()->user();
+
+        // Get user tenant_id from session or user model
+        $userTenantId = session('tenant_id') ?? $user->tenant_id;
+
+        // Ensure user can only delete books from their tenant
+        if ($book->tenant_id !== $userTenantId) {
+            return $this->errorResponse(
+                'You can only delete books from your tenant.',
+                403
+            );
+        }
+
         $book->delete();
 
         return $this->successResponse(

@@ -60,6 +60,7 @@ class BookFileController extends BaseController
 
     public function store(StoreBookFileRequest $request): JsonResponse
     {
+        // tenant_id is automatically set by the model's creating event
         $bookFile = BookFile::create($request->validated());
 
         $bookFile->load('book');
@@ -83,6 +84,17 @@ class BookFileController extends BaseController
 
     public function update(UpdateBookFileRequest $request, BookFile $bookFile): JsonResponse
     {
+        $user = auth()->user();
+        $userTenantId = session('tenant_id') ?? $user->tenant_id;
+
+        // Ensure user can only update files from their tenant (unless file is public)
+        if ($bookFile->access_policy !== 'public' && $bookFile->tenant_id !== $userTenantId) {
+            return $this->errorResponse(
+                'You can only update files from your tenant.',
+                403
+            );
+        }
+
         $bookFile->update($request->validated());
 
         $bookFile->load('book');
@@ -95,6 +107,17 @@ class BookFileController extends BaseController
 
     public function destroy(BookFile $bookFile): JsonResponse
     {
+        $user = auth()->user();
+        $userTenantId = session('tenant_id') ?? $user->tenant_id;
+
+        // Ensure user can only delete files from their tenant (unless file is public)
+        if ($bookFile->access_policy !== 'public' && $bookFile->tenant_id !== $userTenantId) {
+            return $this->errorResponse(
+                'You can only delete files from your tenant.',
+                403
+            );
+        }
+
         $bookFile->delete();
 
         return $this->successResponse(

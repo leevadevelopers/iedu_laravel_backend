@@ -157,6 +157,32 @@ trait TenantPermission
         return $this->hasRolePermissionTo($permission, $guardName);
     }
 
+    public function hasAnyPermission(array $permissions, $guardName = null): bool
+    {
+        // Super admin has all permissions
+        if (method_exists($this, 'isSuperAdmin') && $this->isSuperAdmin()) {
+            return true;
+        }
+
+        if ($this->getCurrentTenantId()) {
+            return $this->hasTenantPermission($permissions);
+        }
+
+        // Fallback to Spatie's hasAnyPermission method
+        if (method_exists($this, 'hasRoleAnyPermission')) {
+            return $this->hasRoleAnyPermission($permissions, $guardName);
+        }
+
+        // Last resort: check each permission individually
+        foreach ($permissions as $permission) {
+            if ($this->hasRolePermissionTo($permission, $guardName)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public function hasRole($roles, string $guard = null): bool
     {
         // Normalize roles to array

@@ -36,25 +36,74 @@ class BookPolicy
 
     public function create(User $user): bool
     {
-        return $user->hasAnyPermission(['library.books.create', 'library.manage']);
+        // Super admin has all permissions
+        if (method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin()) {
+            return true;
+        }
+
+        // Get tenant ID
+        $tenantId = session('tenant_id') ?? $user->tenant_id;
+
+        // Owners and super_admins of tenant have all permissions
+        if ($tenantId && method_exists($user, 'isTenantOwner')) {
+            if ($user->isTenantOwner($tenantId) || $user->hasTenantRole(['super_admin', 'owner'], $tenantId)) {
+                return true;
+            }
+        }
+
+        // Use hasTenantPermission which accepts arrays and handles tenant context
+        return $user->hasTenantPermission(['library.books.create', 'library.manage']);
     }
 
     public function update(User $user, Book $book): bool
     {
-        if (!$user->hasAnyPermission(['library.books.update', 'library.manage'])) {
+        // Super admin has all permissions
+        if (method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin()) {
+            return true;
+        }
+
+        // Get user tenant_id (from session or user model)
+        $userTenantId = session('tenant_id') ?? $user->tenant_id;
+
+        // Only the tenant that owns the book can update
+        if ($book->tenant_id !== $userTenantId) {
             return false;
         }
 
-        // Only the tenant that created can update
-        return $book->tenant_id === $user->tenant_id || $book->visibility === 'public';
+        // Owners and super_admins of tenant have all permissions
+        if ($userTenantId && method_exists($user, 'isTenantOwner')) {
+            if ($user->isTenantOwner($userTenantId) || $user->hasTenantRole(['super_admin', 'owner'], $userTenantId)) {
+                return true;
+            }
+        }
+
+        // Check permissions using hasTenantPermission (accepts arrays)
+        return $user->hasTenantPermission(['library.books.update', 'library.manage']);
     }
 
     public function delete(User $user, Book $book): bool
     {
-        if (!$user->hasAnyPermission(['library.books.delete', 'library.manage'])) {
+        // Super admin has all permissions
+        if (method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin()) {
+            return true;
+        }
+
+        // Get user tenant_id (from session or user model)
+        $userTenantId = session('tenant_id') ?? $user->tenant_id;
+
+        // Only the tenant that owns the book can delete
+        if ($book->tenant_id !== $userTenantId) {
             return false;
         }
 
-        return $book->tenant_id === $user->tenant_id;
+        // Owners and super_admins of tenant have all permissions
+        if ($userTenantId && method_exists($user, 'isTenantOwner')) {
+            if ($user->isTenantOwner($userTenantId) || $user->hasTenantRole(['super_admin', 'owner'], $userTenantId)) {
+                return true;
+            }
+        }
+
+        // Check permissions using hasTenantPermission (accepts arrays)
+        return $user->hasTenantPermission(['library.books.delete', 'library.manage']);
     }
 }

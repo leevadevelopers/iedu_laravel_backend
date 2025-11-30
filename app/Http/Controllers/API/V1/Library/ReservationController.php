@@ -94,12 +94,12 @@ class ReservationController extends BaseController
     {
         // $this->authorize('update', $reservation);
 
-        if ($reservation->status === 'ready') {
+        if ($reservation->status === 'ready_for_pickup') {
             return $this->errorResponse('Reservation already marked as ready', 422);
         }
 
         $reservation->update([
-            'status' => 'ready',
+            'status' => 'ready_for_pickup',
             'notified_at' => now(),
         ]);
 

@@ -2,7 +2,7 @@
 
 namespace App\Models\V1\Library;
 
-use App\Traits\HasTenantScope;
+use App\Models\Traits\Tenantable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -12,7 +12,7 @@ use Spatie\Activitylog\LogOptions;
 
 class Collection extends Model
 {
-    use HasFactory, SoftDeletes, HasTenantScope, LogsActivity;
+    use HasFactory, SoftDeletes, Tenantable, LogsActivity;
 
     protected $table = 'library_collections';
 

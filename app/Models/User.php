@@ -23,6 +23,8 @@ class User extends Authenticatable implements JWTSubject
         HasRoles::hasPermissionTo as hasRolePermissionTo;
         TenantPermission::hasRole insteadof HasRoles;
         HasRoles::hasRole as hasRoleBase;
+        TenantPermission::hasAnyPermission insteadof HasRoles;
+        HasRoles::hasAnyPermission as hasRoleAnyPermission;
     }
 
     protected $guard_name = 'api';

@@ -73,17 +73,20 @@ class Book extends Model
 
     public function collection(): BelongsTo
     {
-        return $this->belongsTo(Collection::class);
+        return $this->belongsTo(Collection::class)
+            ->withoutGlobalScope(\App\Models\Scopes\TenantScope::class);
     }
 
     public function publisher(): BelongsTo
     {
-        return $this->belongsTo(Publisher::class);
+        return $this->belongsTo(Publisher::class)
+            ->withoutGlobalScope(\App\Models\Scopes\TenantScope::class);
     }
 
     public function authors(): BelongsToMany
     {
         return $this->belongsToMany(Author::class, 'book_author')
+            ->withoutGlobalScope(\App\Models\Scopes\TenantScope::class)
             ->withPivot('order')
             ->orderByPivot('order');
     }
