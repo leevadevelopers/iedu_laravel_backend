@@ -9,6 +9,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 
 class UserController extends Controller
@@ -224,7 +225,7 @@ class UserController extends Controller
             // 1. Try to find the role in the roles table, or
             // 2. Don't save it (set as NULL) and let UserResource handle the mapping
             $roleId = $request->role_id ? $request->role_id : null;
-            
+
             // If role_id is a string role name, try to find it in roles table
             if ($roleId && !is_numeric($roleId)) {
                 try {
@@ -240,12 +241,22 @@ class UserController extends Controller
                 // If it's a numeric string (like '1'), convert to int
                 $roleId = (int)$roleId;
             }
-            
+
             $user->tenants()->attach($tenant->id, [
                 'status' => $request->status ?? 'active',
                 'role_id' => $roleId, // Will be null if string role name not found in DB
                 'joined_at' => now(),
             ]);
+
+            // Send welcome email
+            try {
+                app(\App\Services\Email\EmailService::class)->sendUserWelcomeEmail($user);
+            } catch (\Exception $e) {
+                Log::warning('Failed to send welcome email to user', [
+                    'user_id' => $user->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
 
             return response()->json([
                 'status' => 'success',
@@ -321,7 +332,7 @@ class UserController extends Controller
             // user_type is NOT in the pivot table, so we explicitly exclude it
             if ($user->tenants()->where('tenant_id', $tenant->id)->exists()) {
                 $pivotData = [];
-                
+
                 // Only add fields that exist in the pivot table
                 if ($request->has('status') && !empty($request->status)) {
                     $pivotData['status'] = $request->status;
@@ -330,7 +341,7 @@ class UserController extends Controller
                     // role_id column is INTEGER, so we can only store numeric IDs
                     // If frontend sends a string role name, try to find it in roles table
                     $roleId = $request->role_id;
-                    
+
                     if (is_numeric($roleId)) {
                         // If it's a numeric string (like '1'), convert to int
                         $pivotData['role_id'] = (int)$roleId;
@@ -350,9 +361,9 @@ class UserController extends Controller
                         }
                     }
                 }
-                
+
                 // Explicitly exclude user_type - it's not stored in the pivot table
-                
+
                 if (!empty($pivotData)) {
                     $user->tenants()->updateExistingPivot($tenant->id, $pivotData);
                 }
@@ -405,4 +416,4 @@ class UserController extends Controller
             ], 422);
         }
     }
-} 
+}

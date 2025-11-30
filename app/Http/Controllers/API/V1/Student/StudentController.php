@@ -21,6 +21,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Spatie\Permission\Models\Role;
 
 class StudentController extends Controller
@@ -569,6 +570,22 @@ class StudentController extends Controller
             ]);
 
             DB::commit();
+
+            // Send welcome emails
+            try {
+                $emailService = app(\App\Services\Email\EmailService::class);
+
+                // Send email to student if they have email
+                $emailService->sendStudentWelcomeEmail($student);
+
+                // Send emails to all parents/guardians
+                $emailService->sendParentNotificationEmails($student);
+            } catch (\Exception $e) {
+                Log::warning('Failed to send welcome emails for student', [
+                    'student_id' => $student->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
 
             return response()->json([
                 'success' => true,

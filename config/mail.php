@@ -70,6 +70,15 @@ return [
             'path' => env('MAIL_SENDMAIL_PATH', '/usr/sbin/sendmail -bs -i'),
         ],
 
+        'sendgrid' => [
+            'transport' => 'smtp',
+            'host' => 'smtp.sendgrid.net',
+            'port' => env('MAIL_PORT', 587),
+            'encryption' => env('MAIL_ENCRYPTION', 'tls'),
+            'username' => 'apikey',
+            'password' => env('SENDGRID_API_KEY'),
+        ],
+
         'log' => [
             'transport' => 'log',
             'channel' => env('MAIL_LOG_CHANNEL'),

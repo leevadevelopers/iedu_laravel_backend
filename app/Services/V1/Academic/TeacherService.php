@@ -10,6 +10,7 @@ use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 use Spatie\Permission\Models\Role;
 
 class TeacherService extends BaseAcademicService
@@ -107,7 +108,26 @@ class TeacherService extends BaseAcademicService
         // Set default values
         $data = $this->setDefaultValues($data);
 
-        return Teacher::create($data);
+        $teacher = Teacher::create($data);
+
+        // Send welcome email with credentials if user was just created
+        if (isset($user->temporary_password)) {
+            try {
+                app(\App\Services\Email\EmailService::class)->sendTeacherWelcomeEmail(
+                    $teacher,
+                    $user->temporary_password
+                );
+            } catch (\Exception $e) {
+                Log::warning('Failed to send welcome email to teacher', [
+                    'teacher_id' => $teacher->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+            // Clear temporary password from user object
+            unset($user->temporary_password);
+        }
+
+        return $teacher;
     }
 
     /**
@@ -493,7 +513,8 @@ class TeacherService extends BaseAcademicService
 
         // Create new user
         $employeeId = $data['employee_id'] ?? 'TEMP_' . uniqid();
-        $userData['password'] = Hash::make('@ProfessorIedu');
+        $temporaryPassword = '@ProfessorIedu';
+        $userData['password'] = Hash::make($temporaryPassword);
         $userData['must_change'] = true;
         $userData['tenant_id'] = $tenantId;
         $userData['school_id'] = $schoolId;
@@ -511,6 +532,11 @@ class TeacherService extends BaseAcademicService
                 'current_tenant' => true,
             ]);
         }
+
+        // Send welcome email with credentials
+        // Note: Email will be sent after teacher is created in createTeacher method
+        // Store password temporarily for email sending
+        $newUser->temporary_password = $temporaryPassword;
 
         return $newUser;
     }

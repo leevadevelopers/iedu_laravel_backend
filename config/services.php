@@ -38,6 +38,12 @@ return [
         'verify_service_sid' => env('TWILIO_VERIFY_SERVICE_SID'),
     ],
 
+    'sendgrid' => [
+        'api_key' => env('SENDGRID_API_KEY'),
+        'from_email' => env('MAIL_FROM_ADDRESS', 'noreply@iedu.com'),
+        'from_name' => env('MAIL_FROM_NAME', 'iEDU'),
+    ],
+
     'external_gps' => [
         'api_key' => env('EXTERNAL_GPS_API_KEY'),
         'base_url' => env('EXTERNAL_GPS_BASE_URL'),

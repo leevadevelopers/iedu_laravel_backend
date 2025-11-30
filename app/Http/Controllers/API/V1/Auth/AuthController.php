@@ -200,6 +200,16 @@ class AuthController extends Controller
 
             DB::commit();
 
+            // Send welcome email
+            try {
+                app(\App\Services\Email\EmailService::class)->sendUserWelcomeEmail($user);
+            } catch (\Exception $e) {
+                \Log::warning('Failed to send welcome email to user', [
+                    'user_id' => $user->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
             // Prepare response
             $userData = $user->toArray();
             $userData['current_tenant_context'] = $tenantContext;
