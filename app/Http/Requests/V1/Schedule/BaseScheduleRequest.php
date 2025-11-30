@@ -35,7 +35,49 @@ abstract class BaseScheduleRequest extends FormRequest
             throw new \Exception('User is not associated with any schools');
         }
 
-        return $school->id;
+        return $school->school_id;
+    }
+
+    /**
+     * Get the current tenant ID safely, returning null if not available
+     */
+    protected function getCurrentTenantIdOrNull(): ?int
+    {
+        try {
+            $user = auth()->user();
+            if (!$user) {
+                return null;
+            }
+
+            // Try tenant_id attribute first
+            if (isset($user->tenant_id) && $user->tenant_id) {
+                return $user->tenant_id;
+            }
+
+            // Try getCurrentTenant method
+            if (method_exists($user, 'getCurrentTenant')) {
+                $currentTenant = $user->getCurrentTenant();
+                if ($currentTenant) {
+                    return $currentTenant->id;
+                }
+            }
+
+            return null;
+        } catch (\Exception $e) {
+            return null;
+        }
+    }
+
+    /**
+     * Get the current school ID safely, returning null if not available
+     */
+    protected function getCurrentSchoolIdOrNull(): ?int
+    {
+        try {
+            return $this->getCurrentSchoolId();
+        } catch (\Exception $e) {
+            return null;
+        }
     }
 
     public function messages(): array

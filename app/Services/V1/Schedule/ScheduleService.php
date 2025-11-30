@@ -29,8 +29,14 @@ class ScheduleService extends BaseScheduleService
         }
 
         // Create schedule
+        $data['tenant_id'] = $this->getCurrentTenantId();
         $data['school_id'] = $this->getCurrentSchoolId();
         $data['created_by'] = auth('api')->id();
+
+        // Verify school access
+        if (!$this->verifySchoolAccess($data['school_id'])) {
+            throw new \Exception('Access denied: School does not belong to current tenant');
+        }
 
         DB::beginTransaction();
         try {
@@ -53,6 +59,24 @@ class ScheduleService extends BaseScheduleService
     {
         $this->validateSchoolOwnership($schedule);
 
+        // Remove tenant_id from data if present (should not be updated)
+        unset($data['tenant_id']);
+
+        // Remove computed/accessor fields that shouldn't be updated
+        unset($data['period_label'], $data['day_of_week_label'], $data['formatted_time'],
+              $data['duration_in_minutes'], $data['lessons_count']);
+
+        // Ensure school_id is not changed
+        if (isset($data['school_id']) && $data['school_id'] !== $schedule->school_id) {
+            // Verify new school belongs to tenant
+            if (!$this->verifySchoolAccess($data['school_id'])) {
+                throw new \Exception('Access denied: School does not belong to current tenant');
+            }
+        } else {
+            // Remove school_id from data to prevent accidental changes
+            unset($data['school_id']);
+        }
+
         // Check for conflicts (excluding current schedule)
         if (isset($data['teacher_id']) || isset($data['day_of_week']) ||
             isset($data['start_time']) || isset($data['end_time'])) {
@@ -63,7 +87,21 @@ class ScheduleService extends BaseScheduleService
         }
 
         $data['updated_by'] = auth('api')->id();
-        $schedule->update($data);
+
+        // Filter only fillable fields
+        $fillableFields = $schedule->getFillable();
+        $updateData = array_intersect_key($data, array_flip($fillableFields));
+
+        // Log for debugging
+        Log::debug('Updating schedule', [
+            'schedule_id' => $schedule->id,
+            'update_data' => $updateData,
+            'original_data' => $data
+        ]);
+
+        // Update the schedule
+        $schedule->update($updateData);
+
         return $schedule->fresh();
     }
 
@@ -86,7 +124,11 @@ class ScheduleService extends BaseScheduleService
 
     public function getTeacherSchedule(int $teacherId): Collection
     {
-        return Schedule::where('school_id', $this->getCurrentSchoolId())
+        $tenantId = $this->getCurrentTenantId();
+        $schoolId = $this->getCurrentSchoolId();
+
+        return Schedule::where('tenant_id', $tenantId)
+            ->where('school_id', $schoolId)
             ->byTeacher($teacherId)
             ->active()
             ->with(['subject', 'class', 'teacher'])
@@ -97,7 +139,11 @@ class ScheduleService extends BaseScheduleService
 
     public function getClassSchedule(int $classId): Collection
     {
-        return Schedule::where('school_id', $this->getCurrentSchoolId())
+        $tenantId = $this->getCurrentTenantId();
+        $schoolId = $this->getCurrentSchoolId();
+
+        return Schedule::where('tenant_id', $tenantId)
+            ->where('school_id', $schoolId)
             ->byClass($classId)
             ->active()
             ->with(['subject', 'class', 'teacher'])
@@ -108,7 +154,11 @@ class ScheduleService extends BaseScheduleService
 
     public function getWeeklySchedule(array $filters = []): Collection
     {
-        $query = Schedule::where('school_id', $this->getCurrentSchoolId())
+        $tenantId = $this->getCurrentTenantId();
+        $schoolId = $this->getCurrentSchoolId();
+
+        $query = Schedule::where('tenant_id', $tenantId)
+            ->where('school_id', $schoolId)
             ->active()
             ->with(['subject', 'class', 'teacher']);
 
@@ -142,13 +192,16 @@ class ScheduleService extends BaseScheduleService
     {
         $conflicts = [];
 
+        $tenantId = $this->getCurrentTenantId();
+        $schoolId = $this->getCurrentSchoolId();
         $teacherId = $scheduleData['teacher_id'];
         $dayOfWeek = $scheduleData['day_of_week'];
         $startTime = $scheduleData['start_time'];
         $endTime = $scheduleData['end_time'];
 
         // Check teacher conflicts
-        $teacherConflicts = Schedule::where('school_id', $this->getCurrentSchoolId())
+        $teacherConflicts = Schedule::where('tenant_id', $tenantId)
+            ->where('school_id', $schoolId)
             ->conflictsWith($teacherId, $dayOfWeek, $startTime, $endTime)
             ->with(['subject'])
             ->get();
@@ -192,7 +245,11 @@ class ScheduleService extends BaseScheduleService
 
     public function detectAllConflicts(): Collection
     {
-        $schedules = Schedule::where('school_id', $this->getCurrentSchoolId())
+        $tenantId = $this->getCurrentTenantId();
+        $schoolId = $this->getCurrentSchoolId();
+
+        $schedules = Schedule::where('tenant_id', $tenantId)
+            ->where('school_id', $schoolId)
             ->where('status', 'active')
             ->with(['teacher'])
             ->get();
@@ -200,7 +257,8 @@ class ScheduleService extends BaseScheduleService
         $conflicts = collect();
 
         foreach ($schedules as $schedule) {
-            $teacherConflicts = Schedule::where('school_id', $this->getCurrentSchoolId())
+            $teacherConflicts = Schedule::where('tenant_id', $tenantId)
+                ->where('school_id', $schoolId)
                 ->conflictsWith(
                     $schedule->teacher_id,
                     $schedule->day_of_week,
@@ -259,7 +317,11 @@ class ScheduleService extends BaseScheduleService
 
     private function checkClassroomConflicts(string $classroom, string $dayOfWeek, string $startTime, string $endTime, ?int $excludeId = null): Collection
     {
-        $query = Schedule::where('school_id', $this->getCurrentSchoolId())
+        $tenantId = $this->getCurrentTenantId();
+        $schoolId = $this->getCurrentSchoolId();
+
+        $query = Schedule::where('tenant_id', $tenantId)
+            ->where('school_id', $schoolId)
             ->where('classroom', $classroom)
             ->where('day_of_week', $dayOfWeek)
             ->where('status', 'active')
@@ -282,6 +344,7 @@ class ScheduleService extends BaseScheduleService
     private function createConflictRecord(string $type, string $description, array $scheduleIds, string $date, string $startTime, string $endTime): ScheduleConflict
     {
         return ScheduleConflict::create([
+            'tenant_id' => $this->getCurrentTenantId(),
             'school_id' => $this->getCurrentSchoolId(),
             'conflict_type' => $type,
             'conflict_description' => $description,
@@ -298,18 +361,19 @@ class ScheduleService extends BaseScheduleService
 
     public function getScheduleStats(): array
     {
+        $tenantId = $this->getCurrentTenantId();
         $schoolId = $this->getCurrentSchoolId();
 
         return [
-            'total_schedules' => Schedule::where('school_id', $schoolId)->count(),
-            'active_schedules' => Schedule::where('school_id', $schoolId)->active()->count(),
-            'total_lessons' => Lesson::where('school_id', $schoolId)->count(),
-            'completed_lessons' => Lesson::where('school_id', $schoolId)->completed()->count(),
-            'scheduled_lessons' => Lesson::where('school_id', $schoolId)->scheduled()->count(),
-            'today_lessons' => Lesson::where('school_id', $schoolId)->today()->count(),
-            'this_week_lessons' => Lesson::where('school_id', $schoolId)->thisWeek()->count(),
-            'online_schedules' => Schedule::where('school_id', $schoolId)->where('is_online', true)->count(),
-            'conflicts_detected' => ScheduleConflict::where('school_id', $schoolId)
+            'total_schedules' => Schedule::where('tenant_id', $tenantId)->where('school_id', $schoolId)->count(),
+            'active_schedules' => Schedule::where('tenant_id', $tenantId)->where('school_id', $schoolId)->active()->count(),
+            'total_lessons' => Lesson::where('tenant_id', $tenantId)->where('school_id', $schoolId)->count(),
+            'completed_lessons' => Lesson::where('tenant_id', $tenantId)->where('school_id', $schoolId)->completed()->count(),
+            'scheduled_lessons' => Lesson::where('tenant_id', $tenantId)->where('school_id', $schoolId)->scheduled()->count(),
+            'today_lessons' => Lesson::where('tenant_id', $tenantId)->where('school_id', $schoolId)->today()->count(),
+            'this_week_lessons' => Lesson::where('tenant_id', $tenantId)->where('school_id', $schoolId)->thisWeek()->count(),
+            'online_schedules' => Schedule::where('tenant_id', $tenantId)->where('school_id', $schoolId)->where('is_online', true)->count(),
+            'conflicts_detected' => ScheduleConflict::where('tenant_id', $tenantId)->where('school_id', $schoolId)
                 ->where('status', 'detected')
                 ->count()
         ];
@@ -317,7 +381,11 @@ class ScheduleService extends BaseScheduleService
 
     public function getWithFilters(array $filters)
     {
-        $query = Schedule::where('school_id', $this->getCurrentSchoolId())
+        $tenantId = $this->getCurrentTenantId();
+        $schoolId = $this->getCurrentSchoolId();
+
+        $query = Schedule::where('tenant_id', $tenantId)
+            ->where('school_id', $schoolId)
             ->with(['subject', 'class', 'teacher', 'academicYear']);
 
         // Apply filters

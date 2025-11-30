@@ -3,6 +3,7 @@
 namespace App\Models\V1\Schedule;
 
 use App\Models\BaseModel;
+use App\Models\Traits\Tenantable;
 use App\Models\V1\SIS\School\School;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -10,8 +11,10 @@ use Illuminate\Database\Eloquent\Builder;
 
 class ScheduleConflict extends BaseModel
 {
+    use Tenantable;
+
     protected $fillable = [
-        'school_id', 'conflict_type', 'conflict_description',
+        'tenant_id', 'school_id', 'conflict_type', 'conflict_description',
         'conflicting_schedule_ids', 'affected_entities',
         'conflict_date', 'conflict_start_time', 'conflict_end_time', 'severity',
         'status', 'resolution_notes', 'resolved_by', 'resolved_at',

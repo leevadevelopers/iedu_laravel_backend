@@ -3,6 +3,7 @@
 namespace App\Models\V1\Schedule;
 
 use App\Models\BaseModel;
+use App\Models\Traits\Tenantable;
 use App\Models\V1\SIS\School\School;
 use App\Models\User;
 use App\Models\V1\SIS\Student\Student;
@@ -17,8 +18,10 @@ use Carbon\Carbon;
 
 class Lesson extends BaseModel
 {
+    use Tenantable;
+
     protected $fillable = [
-        'school_id', 'schedule_id',
+        'tenant_id', 'school_id', 'schedule_id',
         'title', 'description', 'objectives',
         'subject_id', 'class_id', 'teacher_id', 'academic_term_id',
         'lesson_date', 'start_time', 'end_time', 'duration_minutes',

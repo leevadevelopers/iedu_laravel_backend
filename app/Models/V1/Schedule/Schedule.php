@@ -3,6 +3,7 @@
 namespace App\Models\V1\Schedule;
 
 use App\Models\BaseModel;
+use App\Models\Traits\Tenantable;
 use App\Models\V1\SIS\School\School;
 use App\Models\User;
 use App\Models\V1\Academic\Subject;
@@ -17,8 +18,10 @@ use Carbon\Carbon;
 
 class Schedule extends BaseModel
 {
+    use Tenantable;
+
     protected $fillable = [
-        'school_id', 'academic_year_id', 'academic_term_id',
+        'tenant_id', 'school_id', 'academic_year_id', 'academic_term_id',
         'name', 'description',
         'subject_id', 'class_id', 'teacher_id', 'classroom',
         'period', 'day_of_week', 'start_time', 'end_time',
@@ -179,6 +182,7 @@ class Schedule extends BaseModel
             if ($currentDate->dayOfWeek === $this->getDayOfWeekNumber()) {
                 $lessons[] = [
                     'schedule_id' => $this->id,
+                    'tenant_id' => $this->tenant_id,
                     'school_id' => $this->school_id,
                     'subject_id' => $this->subject_id,
                     'class_id' => $this->class_id,

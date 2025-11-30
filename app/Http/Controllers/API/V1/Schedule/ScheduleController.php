@@ -4,12 +4,14 @@ namespace App\Http\Controllers\API\V1\Schedule;
 
 use App\Http\Controllers\Controller;
 use App\Models\V1\Schedule\Schedule;
+use App\Models\V1\SIS\School\School;
 use App\Services\V1\Schedule\ScheduleService;
 use App\Http\Requests\V1\Schedule\StoreScheduleRequest;
 use App\Http\Requests\V1\Schedule\UpdateScheduleRequest;
 use App\Http\Resources\V1\Schedule\ScheduleResource;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Log;
 
 class ScheduleController extends Controller
 {
@@ -20,8 +22,137 @@ class ScheduleController extends Controller
         $this->scheduleService = $scheduleService;
     }
 
+    /**
+     * Get the current school ID from authenticated user
+     */
+    protected function getCurrentSchoolId(): ?int
+    {
+        $user = auth('api')->user();
+
+        if (!$user) {
+            return null;
+        }
+
+        // Try getCurrentSchool method first (preferred)
+        if (method_exists($user, 'getCurrentSchool')) {
+            $currentSchool = $user->getCurrentSchool();
+            if ($currentSchool) {
+                return $currentSchool->id;
+            }
+        }
+
+        // Fallback to school_id attribute
+        if (isset($user->school_id) && $user->school_id) {
+            return $user->school_id;
+        }
+
+        // Try activeSchools relationship
+        if (method_exists($user, 'activeSchools')) {
+            $activeSchools = $user->activeSchools();
+            if ($activeSchools && $activeSchools->count() > 0) {
+                $firstSchool = $activeSchools->first();
+                if ($firstSchool && isset($firstSchool->school_id)) {
+                    return $firstSchool->school_id;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Get the current tenant ID from authenticated user
+     */
+    protected function getCurrentTenantId(): ?int
+    {
+        $user = auth('api')->user();
+
+        if (!$user) {
+            return null;
+        }
+
+        // Try tenant_id attribute first
+        if (isset($user->tenant_id) && $user->tenant_id) {
+            return $user->tenant_id;
+        }
+
+        // Try getCurrentTenant method
+        if (method_exists($user, 'getCurrentTenant')) {
+            $currentTenant = $user->getCurrentTenant();
+            if ($currentTenant) {
+                return $currentTenant->id;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Verify that a school_id belongs to the user's tenant
+     */
+    protected function verifySchoolAccess(int $schoolId): bool
+    {
+        $tenantId = $this->getCurrentTenantId();
+        if (!$tenantId) {
+            return false;
+        }
+
+        // Check if school belongs to user's tenant
+        $school = School::where('id', $schoolId)
+            ->where('tenant_id', $tenantId)
+            ->exists();
+
+        return $school;
+    }
+
+    /**
+     * Verify schedule access (tenant and school)
+     */
+    protected function verifyScheduleAccess(Schedule $schedule): bool
+    {
+        $tenantId = $this->getCurrentTenantId();
+        $schoolId = $this->getCurrentSchoolId();
+
+        if (!$tenantId || !$schoolId) {
+            return false;
+        }
+
+        // Check tenant ownership
+        if (isset($schedule->tenant_id) && $schedule->tenant_id !== $tenantId) {
+            return false;
+        }
+
+        // Check school ownership
+        if ($schedule->school_id !== $schoolId) {
+            return false;
+        }
+
+        // Verify school belongs to tenant
+        return $this->verifySchoolAccess($schedule->school_id);
+    }
+
     public function index(Request $request): JsonResponse
     {
+        // Verify tenant and school access
+        $tenantId = $this->getCurrentTenantId();
+        $schoolId = $this->getCurrentSchoolId();
+
+        if (!$tenantId || !$schoolId) {
+            return response()->json([
+                'message' => 'User is not associated with any tenant or school'
+            ], 403);
+        }
+
+        // Verify school access if school_id is provided in request
+        if ($request->has('school_id')) {
+            $requestedSchoolId = $request->school_id;
+            if (!$this->verifySchoolAccess($requestedSchoolId)) {
+                return response()->json([
+                    'message' => 'You do not have access to this school'
+                ], 403);
+            }
+        }
+
         $filters = $request->only([
             'teacher_id', 'class_id', 'subject_id', 'period',
             'day_of_week', 'academic_year_id', 'is_online', 'status',
@@ -68,6 +199,13 @@ class ScheduleController extends Controller
 
     public function show(Schedule $schedule): JsonResponse
     {
+        // Verify schedule access
+        if (!$this->verifyScheduleAccess($schedule)) {
+            return response()->json([
+                'message' => 'Access denied. Schedule does not belong to your tenant or school.'
+            ], 403);
+        }
+
         return response()->json([
             'data' => new ScheduleResource($schedule->load([
                 'subject', 'class', 'teacher', 'academicYear', 'lessons'
@@ -77,8 +215,101 @@ class ScheduleController extends Controller
 
     public function update(UpdateScheduleRequest $request, Schedule $schedule): JsonResponse
     {
+        // Verify schedule access
+        if (!$this->verifyScheduleAccess($schedule)) {
+            return response()->json([
+                'message' => 'Access denied. Schedule does not belong to your tenant or school.'
+            ], 403);
+        }
+
         try {
-            $updatedSchedule = $this->scheduleService->updateSchedule($schedule, $request->validated());
+            // Get data from JSON request - try multiple methods
+            $allData = [];
+
+            // Method 1: Use Laravel's json() method (preferred)
+            if ($request->isJson()) {
+                try {
+                    $json = $request->json();
+                    if ($json) {
+                        $allData = $json->all();
+                    }
+                } catch (\Exception $e) {
+                    Log::warning('Failed to get JSON via json() method', ['error' => $e->getMessage()]);
+                }
+            }
+
+            // Method 2: Decode content manually (handle trailing comma)
+            if (empty($allData)) {
+                $content = $request->getContent();
+                if (!empty($content)) {
+                    // Remove trailing comma before closing brace
+                    $content = preg_replace('/,\s*}[\s\n]*$/', '}', $content);
+                    $content = preg_replace('/,\s*][\s\n]*$/', ']', $content);
+
+                    $decoded = json_decode($content, true);
+                    if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                        $allData = $decoded;
+                    } else {
+                        Log::warning('JSON decode failed', [
+                            'error' => json_last_error_msg(),
+                            'content_preview' => substr($content, 0, 200)
+                        ]);
+                    }
+                }
+            }
+
+            // Method 3: Try getAllData() from request
+            if (empty($allData) && method_exists($request, 'getAllData')) {
+                $allData = $request->getAllData();
+            }
+
+            // Method 4: Final fallback
+            if (empty($allData)) {
+                $allData = $request->all();
+            }
+
+            // Define allowed fields that can be updated
+            $allowedFields = [
+                'name', 'description', 'subject_id', 'class_id', 'teacher_id',
+                'academic_year_id', 'academic_term_id', 'classroom', 'period',
+                'day_of_week', 'start_time', 'end_time', 'start_date', 'end_date',
+                'recurrence_pattern', 'status', 'is_online', 'online_meeting_url',
+                'configuration_json'
+            ];
+
+            // Filter only allowed fields and remove null values and computed fields
+            $updateData = [];
+            foreach ($allowedFields as $field) {
+                if (isset($allData[$field]) && $allData[$field] !== null) {
+                    $updateData[$field] = $allData[$field];
+                }
+            }
+
+            // Remove computed/accessor fields that shouldn't be updated
+            unset($updateData['period_label'], $updateData['day_of_week_label']);
+
+            Log::debug('Schedule update request data', [
+                'all_data' => $allData,
+                'filtered_update_data' => $updateData,
+                'content_type' => $request->header('Content-Type'),
+                'is_json' => $request->isJson(),
+                'content' => substr($request->getContent(), 0, 500),
+                'method' => $request->method()
+            ]);
+
+            if (empty($updateData)) {
+                return response()->json([
+                    'message' => 'No valid data provided for update',
+                    'debug' => [
+                        'all_data' => $allData,
+                        'request_all' => $request->all(),
+                        'request_json' => $request->isJson() ? json_decode($request->getContent(), true) : null,
+                        'content' => substr($request->getContent(), 0, 500)
+                    ]
+                ], 422);
+            }
+
+            $updatedSchedule = $this->scheduleService->updateSchedule($schedule, $updateData);
 
             return response()->json([
                 'message' => 'Schedule updated successfully',
@@ -110,6 +341,16 @@ class ScheduleController extends Controller
 
     public function teacherSchedule(Request $request): JsonResponse
     {
+        // Verify tenant and school access
+        $tenantId = $this->getCurrentTenantId();
+        $schoolId = $this->getCurrentSchoolId();
+
+        if (!$tenantId || !$schoolId) {
+            return response()->json([
+                'message' => 'User is not associated with any tenant or school'
+            ], 403);
+        }
+
         $teacherId = $request->get('teacher_id', auth('api')->user()->teacher?->id);
 
         if (!$teacherId) {
@@ -125,6 +366,16 @@ class ScheduleController extends Controller
 
     public function classSchedule(Request $request): JsonResponse
     {
+        // Verify tenant and school access
+        $tenantId = $this->getCurrentTenantId();
+        $schoolId = $this->getCurrentSchoolId();
+
+        if (!$tenantId || !$schoolId) {
+            return response()->json([
+                'message' => 'User is not associated with any tenant or school'
+            ], 403);
+        }
+
         $classId = $request->get('class_id');
 
         if (!$classId) {
@@ -140,6 +391,13 @@ class ScheduleController extends Controller
 
     public function generateLessons(Schedule $schedule): JsonResponse
     {
+        // Verify schedule access
+        if (!$this->verifyScheduleAccess($schedule)) {
+            return response()->json([
+                'message' => 'Access denied. Schedule does not belong to your tenant or school.'
+            ], 403);
+        }
+
         try {
             $lessons = $this->scheduleService->generateLessonsForSchedule($schedule);
 
@@ -160,6 +418,16 @@ class ScheduleController extends Controller
 
     public function checkConflicts(Request $request): JsonResponse
     {
+        // Verify tenant and school access
+        $tenantId = $this->getCurrentTenantId();
+        $schoolId = $this->getCurrentSchoolId();
+
+        if (!$tenantId || !$schoolId) {
+            return response()->json([
+                'message' => 'User is not associated with any tenant or school'
+            ], 403);
+        }
+
         $request->validate([
             'teacher_id' => 'required|exists:teachers,id',
             'day_of_week' => 'required|in:monday,tuesday,wednesday,thursday,friday,saturday,sunday',
@@ -187,6 +455,16 @@ class ScheduleController extends Controller
 
     public function stats(): JsonResponse
     {
+        // Verify tenant and school access
+        $tenantId = $this->getCurrentTenantId();
+        $schoolId = $this->getCurrentSchoolId();
+
+        if (!$tenantId || !$schoolId) {
+            return response()->json([
+                'message' => 'User is not associated with any tenant or school'
+            ], 403);
+        }
+
         $stats = $this->scheduleService->getScheduleStats();
 
         return response()->json([
@@ -199,6 +477,16 @@ class ScheduleController extends Controller
      */
     public function teacherDashboard(): JsonResponse
     {
+        // Verify tenant and school access
+        $tenantId = $this->getCurrentTenantId();
+        $schoolId = $this->getCurrentSchoolId();
+
+        if (!$tenantId || !$schoolId) {
+            return response()->json([
+                'message' => 'User is not associated with any tenant or school'
+            ], 403);
+        }
+
         // Verificar se o usuário é um professor
         $user = auth('api')->user();
         if (!$user->hasRole('teacher') && !$user->teacher) {
@@ -220,6 +508,16 @@ class ScheduleController extends Controller
      */
     public function studentSchedule(): JsonResponse
     {
+        // Verify tenant and school access
+        $tenantId = $this->getCurrentTenantId();
+        $schoolId = $this->getCurrentSchoolId();
+
+        if (!$tenantId || !$schoolId) {
+            return response()->json([
+                'message' => 'User is not associated with any tenant or school'
+            ], 403);
+        }
+
         // Verificar se o usuário é um estudante
         $user = auth('api')->user();
         if (!$user->hasRole('student') && !$user->student) {
@@ -227,9 +525,11 @@ class ScheduleController extends Controller
         }
 
         $student = $user->student;
-        $schedules = Schedule::whereHas('class.students', function ($query) use ($student) {
-            $query->where('student_id', $student->id);
-        })->with(['subject', 'teacher'])->get();
+        $schedules = Schedule::where('tenant_id', $tenantId)
+            ->where('school_id', $schoolId)
+            ->whereHas('class.students', function ($query) use ($student) {
+                $query->where('student_id', $student->id);
+            })->with(['subject', 'teacher'])->get();
 
         return response()->json([
             'data' => ScheduleResource::collection($schedules)
@@ -241,6 +541,16 @@ class ScheduleController extends Controller
      */
     public function parentChildrenSchedule(): JsonResponse
     {
+        // Verify tenant and school access
+        $tenantId = $this->getCurrentTenantId();
+        $schoolId = $this->getCurrentSchoolId();
+
+        if (!$tenantId || !$schoolId) {
+            return response()->json([
+                'message' => 'User is not associated with any tenant or school'
+            ], 403);
+        }
+
         // Verificar se o usuário é um pai/mãe
         $user = auth('api')->user();
         if (!$user->hasRole('parent')) {
@@ -253,9 +563,11 @@ class ScheduleController extends Controller
             return response()->json(['message' => 'No children found'], 404);
         }
 
-        $schedules = Schedule::whereHas('class.students', function ($query) use ($children) {
-            $query->whereIn('student_id', $children->pluck('id'));
-        })->with(['subject', 'teacher', 'class'])->get();
+        $schedules = Schedule::where('tenant_id', $tenantId)
+            ->where('school_id', $schoolId)
+            ->whereHas('class.students', function ($query) use ($children) {
+                $query->whereIn('student_id', $children->pluck('id'));
+            })->with(['subject', 'teacher', 'class'])->get();
 
         return response()->json([
             'data' => ScheduleResource::collection($schedules)

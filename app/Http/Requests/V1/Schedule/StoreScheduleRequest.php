@@ -13,35 +13,88 @@ class StoreScheduleRequest extends BaseScheduleRequest
 
     public function rules(): array
     {
+        $tenantId = $this->getCurrentTenantIdOrNull();
+        $schoolId = $this->getCurrentSchoolIdOrNull();
+
         return [
             'name' => 'required|string|max:255',
             'description' => 'nullable|string|max:1000',
 
-            // Associations
+            // Associations - validate with tenant_id and school_id
             'subject_id' => [
                 'required',
                 'integer',
-                'exists:subjects,id,school_id,' . $this->getCurrentSchoolId()
+                function ($attribute, $value, $fail) use ($tenantId, $schoolId) {
+                    if ($tenantId && $schoolId) {
+                        $exists = \App\Models\V1\Academic\Subject::where('id', $value)
+                            ->where('tenant_id', $tenantId)
+                            ->where('school_id', $schoolId)
+                            ->exists();
+                        if (!$exists) {
+                            $fail('O disciplina selecionado é inválido.');
+                        }
+                    }
+                },
             ],
             'class_id' => [
                 'required',
                 'integer',
-                'exists:classes,id,school_id,' . $this->getCurrentSchoolId()
+                function ($attribute, $value, $fail) use ($tenantId, $schoolId) {
+                    if ($tenantId && $schoolId) {
+                        $exists = \App\Models\V1\Academic\AcademicClass::where('id', $value)
+                            ->where('tenant_id', $tenantId)
+                            ->where('school_id', $schoolId)
+                            ->exists();
+                        if (!$exists) {
+                            $fail('O turma selecionado é inválido.');
+                        }
+                    }
+                },
             ],
             'teacher_id' => [
                 'required',
                 'integer',
-                'exists:teachers,id,school_id,' . $this->getCurrentSchoolId()
+                function ($attribute, $value, $fail) use ($tenantId, $schoolId) {
+                    if ($tenantId && $schoolId) {
+                        $exists = \App\Models\V1\Academic\Teacher::where('id', $value)
+                            ->where('tenant_id', $tenantId)
+                            ->where('school_id', $schoolId)
+                            ->exists();
+                        if (!$exists) {
+                            $fail('O professor selecionado é inválido.');
+                        }
+                    }
+                },
             ],
             'academic_year_id' => [
                 'required',
                 'integer',
-                'exists:academic_years,id,school_id,' . $this->getCurrentSchoolId()
+                function ($attribute, $value, $fail) use ($tenantId, $schoolId) {
+                    if ($tenantId && $schoolId) {
+                        $exists = \App\Models\V1\SIS\School\AcademicYear::where('id', $value)
+                            ->where('tenant_id', $tenantId)
+                            ->where('school_id', $schoolId)
+                            ->exists();
+                        if (!$exists) {
+                            $fail('O ano letivo selecionado é inválido.');
+                        }
+                    }
+                },
             ],
             'academic_term_id' => [
                 'nullable',
                 'integer',
-                'exists:academic_terms,id,school_id,' . $this->getCurrentSchoolId()
+                function ($attribute, $value, $fail) use ($tenantId, $schoolId) {
+                    if ($value && $tenantId && $schoolId) {
+                        $exists = \App\Models\V1\SIS\School\AcademicTerm::where('id', $value)
+                            ->where('tenant_id', $tenantId)
+                            ->where('school_id', $schoolId)
+                            ->exists();
+                        if (!$exists) {
+                            $fail('O período letivo selecionado é inválido.');
+                        }
+                    }
+                },
             ],
             'classroom' => 'nullable|string|max:50',
 
