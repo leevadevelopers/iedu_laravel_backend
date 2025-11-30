@@ -15,7 +15,6 @@ class ExpenseController extends BaseController
     public function __construct()
     {
         $this->middleware('auth:api');
-        // $this->authorizeResource(Expense::class, 'expense');
     }
 
     public function index(Request $request): JsonResponse
@@ -74,7 +73,12 @@ class ExpenseController extends BaseController
 
     public function store(StoreExpenseRequest $request): JsonResponse
     {
-        $expense = Expense::create($request->validated());
+        $validated = $request->validated();
+
+        // Garantir que tenant_id e school_id não sejam definidos manualmente
+        unset($validated['tenant_id'], $validated['school_id']);
+
+        $expense = Expense::create($validated);
 
         $expense->load(['account', 'creator']);
 
@@ -97,7 +101,12 @@ class ExpenseController extends BaseController
 
     public function update(UpdateExpenseRequest $request, Expense $expense): JsonResponse
     {
-        $expense->update($request->validated());
+        $validated = $request->validated();
+
+        // Garantir que tenant_id e school_id não sejam atualizados manualmente
+        unset($validated['tenant_id'], $validated['school_id']);
+
+        $expense->update($validated);
 
         $expense->load(['account', 'creator']);
 

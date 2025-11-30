@@ -108,7 +108,8 @@ class PaymentController extends BaseController
             } elseif ($remaining < $invoice->total) {
                 $invoice->update(['status' => 'partially_paid', 'paid_at' => null]);
             } else {
-                $invoice->update(['status' => 'unpaid', 'paid_at' => null]);
+                // If fully unpaid after refund, set to 'issued' status
+                $invoice->update(['status' => 'issued', 'paid_at' => null]);
             }
         }
 

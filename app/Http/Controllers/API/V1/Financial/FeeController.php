@@ -20,7 +20,6 @@ class FeeController extends BaseController
     public function __construct()
     {
         $this->middleware('auth:api');
-        // $this->authorizeResource(Fee::class, 'fee');
     }
 
     public function index(Request $request): JsonResponse
@@ -41,7 +40,12 @@ class FeeController extends BaseController
 
     public function store(StoreFeeRequest $request): JsonResponse
     {
-        $fee = Fee::create($request->validated());
+        $validated = $request->validated();
+
+        // Garantir que tenant_id e school_id não sejam definidos manualmente
+        unset($validated['tenant_id'], $validated['school_id']);
+
+        $fee = Fee::create($validated);
 
         return $this->successResponse(
             new FeeResource($fee),
@@ -60,7 +64,12 @@ class FeeController extends BaseController
 
     public function update(UpdateFeeRequest $request, Fee $fee): JsonResponse
     {
-        $fee->update($request->validated());
+        $validated = $request->validated();
+
+        // Remover code se fornecido (não pode ser atualizado)
+        unset($validated['code']);
+
+        $fee->update($validated);
 
         return $this->successResponse(
             new FeeResource($fee),

@@ -3,7 +3,8 @@
 namespace App\Models\V1\Financial;
 
 use App\Models\User;
-use App\Traits\HasTenantScope;
+use App\Models\Traits\Tenantable;
+use App\Models\Traits\HasSchoolScope;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -12,10 +13,11 @@ use Spatie\Activitylog\LogOptions;
 
 class Expense extends Model
 {
-    use HasFactory, HasTenantScope, LogsActivity;
+    use HasFactory, Tenantable, HasSchoolScope, LogsActivity;
 
     protected $fillable = [
         'tenant_id',
+        'school_id',
         'account_id',
         'category',
         'amount',

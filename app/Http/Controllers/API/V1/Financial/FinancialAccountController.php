@@ -68,19 +68,24 @@ class FinancialAccountController extends BaseController
     public function store(StoreFinancialAccountRequest $request): JsonResponse
     {
         $validated = $request->validated();
-        
+
         // Mapear account_type para type se necessário
         if (isset($validated['account_type']) && !isset($validated['type'])) {
             $validated['type'] = $validated['account_type'];
             unset($validated['account_type']);
         }
-        
+
         // Mapear status para is_active se necessário
         if (isset($validated['status']) && !isset($validated['is_active'])) {
             $validated['is_active'] = ($validated['status'] === 'active');
             unset($validated['status']);
         }
-        
+
+        // Set default currency if not provided
+        if (!isset($validated['currency'])) {
+            $validated['currency'] = 'MZN';
+        }
+
         $account = FinancialAccount::create($validated);
 
         return $this->successResponse(
@@ -105,19 +110,22 @@ class FinancialAccountController extends BaseController
     {
         $account = FinancialAccount::findOrFail($id);
         $validated = $request->validated();
-        
+
+        // Remover code se fornecido (não pode ser atualizado)
+        unset($validated['code']);
+
         // Mapear account_type para type se necessário
         if (isset($validated['account_type']) && !isset($validated['type'])) {
             $validated['type'] = $validated['account_type'];
             unset($validated['account_type']);
         }
-        
+
         // Mapear status para is_active se necessário
         if (isset($validated['status']) && !isset($validated['is_active'])) {
             $validated['is_active'] = ($validated['status'] === 'active');
             unset($validated['status']);
         }
-        
+
         $account->update($validated);
 
         return $this->successResponse(
@@ -129,7 +137,7 @@ class FinancialAccountController extends BaseController
     public function destroy($id): JsonResponse
     {
         $account = FinancialAccount::findOrFail($id);
-        
+
         // Check if account has transactions or expenses
         if ($account->transactions()->count() > 0 || $account->expenses()->count() > 0) {
             return $this->errorResponse(

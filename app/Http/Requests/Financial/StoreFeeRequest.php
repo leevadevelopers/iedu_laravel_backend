@@ -15,7 +15,6 @@ class StoreFeeRequest extends FormRequest
     {
         return [
             'name' => 'required|string|max:255',
-            'code' => 'required|string|unique:fees,code',
             'description' => 'nullable|string',
             'amount' => 'required|numeric|min:0',
             'recurring' => 'boolean',

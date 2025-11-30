@@ -2,6 +2,8 @@
 
 namespace App\Http\Requests\Financial;
 
+use App\Models\V1\Financial\Invoice;
+use App\Services\SchoolContextService;
 use Illuminate\Foundation\Http\FormRequest;
 
 class StorePaymentRequest extends FormRequest
@@ -13,12 +15,66 @@ class StorePaymentRequest extends FormRequest
 
     public function rules(): array
     {
+        $tenantId = $this->getCurrentTenantId();
+        $schoolId = $this->getCurrentSchoolId();
+
         return [
-            'invoice_id' => 'required|exists:invoices,id',
+            'invoice_id' => [
+                'required',
+                'exists:invoices,id',
+                function ($attribute, $value, $fail) use ($tenantId, $schoolId) {
+                    if ($value && ($tenantId || $schoolId)) {
+                        $invoice = Invoice::where('id', $value)
+                            ->when($tenantId, fn($q) => $q->where('tenant_id', $tenantId))
+                            ->when($schoolId, fn($q) => $q->where('school_id', $schoolId))
+                            ->first();
+
+                        if (!$invoice) {
+                            $fail('The selected invoice does not belong to your tenant/school.');
+                        }
+                    }
+                },
+            ],
             'amount' => 'required|numeric|min:0.01',
             'method' => 'required|in:card,bank_transfer,cash,mpesa,other',
             'transaction_id' => 'nullable|string',
             'notes' => 'nullable|string',
         ];
+    }
+
+    protected function getCurrentTenantId(): ?int
+    {
+        try {
+            $user = auth('api')->user();
+            if (!$user) {
+                return null;
+            }
+
+            if (isset($user->tenant_id) && $user->tenant_id) {
+                return $user->tenant_id;
+            }
+
+            return session('tenant_id');
+        } catch (\Exception $e) {
+            return null;
+        }
+    }
+
+    protected function getCurrentSchoolId(): ?int
+    {
+        try {
+            $schoolContextService = app(SchoolContextService::class);
+            return $schoolContextService->getCurrentSchoolId();
+        } catch (\Exception $e) {
+            return null;
+        }
+    }
+
+    protected function prepareForValidation(): void
+    {
+        // Remover tenant_id e school_id se forem enviados (são definidos automaticamente)
+        $this->merge(array_filter($this->all(), function ($key) {
+            return !in_array($key, ['tenant_id', 'school_id']);
+        }, ARRAY_FILTER_USE_KEY));
     }
 }

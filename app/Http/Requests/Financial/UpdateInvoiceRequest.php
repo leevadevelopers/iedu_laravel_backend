@@ -23,4 +23,12 @@ class UpdateInvoiceRequest extends FormRequest
             'status' => 'sometimes|required|in:draft,issued,paid,partially_paid,overdue,cancelled',
         ];
     }
+
+    protected function prepareForValidation(): void
+    {
+        // Remover tenant_id e school_id se forem enviados (são definidos automaticamente)
+        $this->merge(array_filter($this->all(), function ($key) {
+            return !in_array($key, ['tenant_id', 'school_id']);
+        }, ARRAY_FILTER_USE_KEY));
+    }
 }

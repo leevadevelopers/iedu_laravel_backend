@@ -18,7 +18,6 @@ class UpdateFinancialAccountRequest extends FormRequest
 
         return [
             'name' => 'sometimes|required|string|max:255',
-            'code' => 'sometimes|required|string|max:50|unique:financial_accounts,code,' . ($accountId ?? 'NULL'),
             'type' => 'sometimes|in:asset,liability,equity,revenue,expense,bank,cash,credit,savings,investment,other',
             'account_type' => 'sometimes|in:bank,cash,credit,savings,investment,other,asset,liability,equity,revenue,expense',
             'account_number' => 'nullable|string|max:100',
@@ -32,14 +31,14 @@ class UpdateFinancialAccountRequest extends FormRequest
             'description' => 'nullable|string',
         ];
     }
-    
+
     protected function prepareForValidation(): void
     {
         // Mapear account_type para type se necessário
         if ($this->has('account_type') && !$this->has('type')) {
             $this->merge(['type' => $this->input('account_type')]);
         }
-        
+
         // Mapear status para is_active se necessário
         if ($this->has('status') && !$this->has('is_active')) {
             $this->merge(['is_active' => $this->input('status') === 'active']);
