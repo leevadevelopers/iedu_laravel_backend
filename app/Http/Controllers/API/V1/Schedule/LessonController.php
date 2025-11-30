@@ -219,6 +219,105 @@ class LessonController extends Controller
         }
     }
 
+    /**
+     * Get lesson attendance with summary
+     */
+    public function getAttendance(Lesson $lesson): JsonResponse
+    {
+        try {
+            $attendances = $lesson->attendances()->with(['student'])->get();
+
+            $students = $lesson->class->students()->wherePivot('status', 'active')->get();
+
+            $attendanceMap = $attendances->keyBy('student_id');
+
+            $studentsData = $students->map(function ($student) use ($attendanceMap) {
+                $attendance = $attendanceMap->get($student->id);
+                return [
+                    'id' => $student->id,
+                    'name' => $student->first_name . ' ' . $student->last_name,
+                    'photo_url' => null, // TODO: Add photo URL when implemented
+                    'status' => $attendance ? $attendance->status : 'absent',
+                    'arrival_time' => $attendance?->arrival_time?->format('H:i'),
+                    'notes' => $attendance?->notes,
+                ];
+            });
+
+            $summary = [
+                'present' => $attendances->whereIn('status', ['present', 'late', 'online_present'])->count(),
+                'absent' => $attendances->where('status', 'absent')->count(),
+                'late' => $attendances->where('status', 'late')->count(),
+                'total' => $students->count(),
+            ];
+
+            return response()->json([
+                'message' => 'Lesson attendance retrieved successfully',
+                'data' => [
+                    'lesson' => new LessonResource($lesson->load(['class', 'schedule'])),
+                    'students' => $studentsData,
+                    'summary' => $summary,
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Failed to retrieve lesson attendance',
+                'error' => $e->getMessage()
+            ], 422);
+        }
+    }
+
+    /**
+     * Quick mark all present except specified students
+     */
+    public function quickMarkAll(Request $request, Lesson $lesson): JsonResponse
+    {
+        $request->validate([
+            'status' => 'required|in:present,absent',
+            'except' => 'nullable|array',
+            'except.*' => 'exists:students,id',
+        ]);
+
+        try {
+            $students = $lesson->class->students()->wherePivot('status', 'active')->get();
+            $exceptIds = $request->except ?? [];
+
+            $attendanceData = [];
+            foreach ($students as $student) {
+                if (!in_array($student->id, $exceptIds)) {
+                    $attendanceData[] = [
+                        'student_id' => $student->id,
+                        'status' => $request->status,
+                    ];
+                } else {
+                    // Keep existing status for excepted students
+                    $existing = $lesson->attendances()->where('student_id', $student->id)->first();
+                    if ($existing) {
+                        $attendanceData[] = [
+                            'student_id' => $student->id,
+                            'status' => $existing->status,
+                        ];
+                    }
+                }
+            }
+
+            $attendances = $this->lessonService->markAttendance($lesson, $attendanceData);
+
+            return response()->json([
+                'message' => 'Quick mark completed successfully',
+                'data' => [
+                    'lesson' => new LessonResource($lesson->fresh()),
+                    'marked_count' => count($attendanceData),
+                    'excepted_count' => count($exceptIds),
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Failed to quick mark attendance',
+                'error' => $e->getMessage()
+            ], 422);
+        }
+    }
+
     public function generateQR(Lesson $lesson): JsonResponse
     {
         try {

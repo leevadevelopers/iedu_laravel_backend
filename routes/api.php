@@ -18,6 +18,15 @@ Route::prefix('v1')->group(function () {
     require __DIR__ . '/modules/library.php';
     require __DIR__ . '/modules/financial.php';
     require __DIR__ . '/modules/assessment.php';
+    // New
+    require __DIR__ . '/modules/communication.php';
+    require __DIR__ . '/modules/parent.php';
+    require __DIR__ . '/modules/student-portal.php';
+    require __DIR__ . '/modules/ai-tutor.php';
+    require __DIR__ . '/modules/documents.php';
+    require __DIR__ . '/modules/reception.php';
+    require __DIR__ . '/modules/director.php';
+    require __DIR__ . '/modules/teacher-portal.php';
 });
 
 // Transport Module Routes

@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\API\V1\Financial\InvoiceController;
 use App\Http\Controllers\API\V1\Financial\PaymentController;
+use App\Http\Controllers\API\V1\Financial\MobilePaymentController;
 use App\Http\Controllers\API\V1\Financial\FeeController;
 use App\Http\Controllers\API\V1\Financial\ExpenseController;
 use App\Http\Controllers\API\V1\Financial\FinancialAccountController;
@@ -64,6 +65,15 @@ Route::prefix('finance')->name('finance.')->group(function () {
     });
 
     // ========================================
+    // Mobile Payments
+    // ========================================
+    Route::prefix('payments/mobile')->name('mobile-payments.')->group(function () {
+        Route::post('/initiate', [MobilePaymentController::class, 'initiate'])->name('initiate');
+        Route::post('/callback/{provider}', [MobilePaymentController::class, 'callback'])->name('callback');
+        Route::get('/{payment_id}/status', [MobilePaymentController::class, 'checkStatus'])->name('status');
+    });
+
+    // ========================================
     // Fees
     // ========================================
     Route::prefix('fees')->name('fees.')->group(function () {
@@ -108,4 +118,13 @@ Route::prefix('finance')->name('finance.')->group(function () {
     // Financial Dashboard
     // ========================================
     Route::get('/dashboard', [FinancialReportController::class, 'dashboard'])->name('dashboard');
+
+    // ========================================
+    // Reconciliation
+    // ========================================
+    Route::prefix('reconciliation')->name('reconciliation.')->group(function () {
+        Route::post('/import', [\App\Http\Controllers\API\V1\Financial\ReconciliationController::class, 'import'])->name('import');
+        Route::get('/{import_id}/status', [\App\Http\Controllers\API\V1\Financial\ReconciliationController::class, 'getStatus'])->name('status');
+        Route::post('/{import_id}/confirm', [\App\Http\Controllers\API\V1\Financial\ReconciliationController::class, 'confirmMatches'])->name('confirm');
+    });
 });

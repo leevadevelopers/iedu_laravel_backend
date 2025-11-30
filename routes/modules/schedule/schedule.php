@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\API\V1\Schedule\ScheduleController;
 use App\Http\Controllers\API\V1\Schedule\LessonController;
+use App\Http\Controllers\API\V1\Schedule\AttendanceController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -69,8 +70,12 @@ Route::middleware(['auth:api'])->group(function () {
         Route::post('/{lesson}/cancel', [LessonController::class, 'cancel'])->name('cancel');
 
         // Attendance Management
+        Route::get('/{lesson}/attendance', [LessonController::class, 'getAttendance'])
+            ->name('get-attendance');
         Route::post('/{lesson}/attendance', [LessonController::class, 'markAttendance'])
             ->name('mark-attendance');
+        Route::post('/{lesson}/attendance/quick-mark-all', [LessonController::class, 'quickMarkAll'])
+            ->name('quick-mark-all');
         Route::get('/{lesson}/qr-code', [LessonController::class, 'generateQR'])
             ->name('generate-qr');
         Route::post('/{lesson}/check-in-qr', [LessonController::class, 'checkInQR'])
@@ -97,6 +102,17 @@ Route::middleware(['auth:api'])->group(function () {
 
     Route::prefix('lesson-contents')->name('lesson-contents.')->group(function () {
         Route::get('/{lessonContent}/download', [LessonController::class, 'downloadContent'])->name('download');
+    });
+
+    /*
+    |--------------------------------------------------------------------------
+    | Attendance Routes
+    |--------------------------------------------------------------------------
+    */
+
+    Route::prefix('attendance')->name('attendance.')->group(function () {
+        Route::post('/bulk-mark', [AttendanceController::class, 'bulkMark'])->name('bulk-mark');
+        Route::get('/class/{classId}/summary', [AttendanceController::class, 'classSummary'])->name('class-summary');
     });
 
     /*
