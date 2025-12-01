@@ -47,7 +47,10 @@ return new class extends Migration
             $table->json('match_details')->nullable();
             $table->timestamps();
 
-            $table->index(['reconciliation_import_id', 'match_status']);
+            $table->index(
+                ['reconciliation_import_id', 'match_status'],
+                'recon_tx_import_match_idx'
+            );
             $table->index('transaction_id');
             $table->index('phone');
             $table->index('transaction_date');
