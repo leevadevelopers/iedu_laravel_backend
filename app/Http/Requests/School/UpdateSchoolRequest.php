@@ -16,6 +16,17 @@ class UpdateSchoolRequest extends FormRequest
     }
 
     /**
+     * Prepare the data for validation.
+     */
+    protected function prepareForValidation(): void
+    {
+        // Convert empty strings to null for date fields
+        if ($this->has('established_date') && $this->established_date === '') {
+            $this->merge(['established_date' => null]);
+        }
+    }
+
+    /**
      * Get the validation rules that apply to the request.
      */
     public function rules(): array
@@ -33,7 +44,8 @@ class UpdateSchoolRequest extends FormRequest
                 'max:50',
                 Rule::unique('schools', 'school_code')->ignore($schoolId)
             ],
-            'school_type' => 'sometimes|required|in:public,private,charter,magnet,international,vocational,special_needs,alternative',
+            // School types - Contexto Moçambicano
+            'school_type' => 'sometimes|required|in:pre_primary,primary,secondary_general,technical_professional,institute_medio,higher_education,teacher_training,adult_education,special_needs',
             'educational_levels' => 'sometimes|required|array',
             'grade_range_min' => 'sometimes|required|string|max:10',
             'grade_range_max' => 'sometimes|required|string|max:10',

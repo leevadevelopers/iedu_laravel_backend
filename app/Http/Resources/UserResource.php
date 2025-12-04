@@ -8,36 +8,92 @@ class UserResource extends JsonResource
 {
     public function toArray($request): array
     {
-        // Get the current tenant from the user making the request
-        $currentUser = $request->user();
-        $tenantId = $currentUser ? $currentUser->getCurrentTenant()?->id : null;
+        // Check if this user (the one being displayed) is super_admin
+        $isSuperAdmin = method_exists($this->resource, 'isSuperAdmin') && $this->resource->isSuperAdmin();
 
-        // Get tenant pivot data for the current tenant
-        $currentTenant = null;
+        // Get tenant pivot data
+        // For super_admin: no tenant pivot needed
+        // For regular users: get from their first tenant or current tenant context
+        $currentUser = $request->user();
         $pivotData = null;
-        if ($tenantId && $this->tenants) {
-            $currentTenant = $this->tenants->firstWhere('id', $tenantId);
-            if ($currentTenant) {
-                $pivotData = $currentTenant->pivot;
+        $tenantId = null;
+
+        if (!$isSuperAdmin) {
+            // For regular users, try to get tenant context
+            // First, try from request header (if viewing specific tenant)
+            if ($request->hasHeader('X-Tenant-ID')) {
+                $headerTenantId = (int) $request->header('X-Tenant-ID');
+                if ($this->tenants) {
+                    $tenant = $this->tenants->firstWhere('id', $headerTenantId);
+                    if ($tenant) {
+                        $pivotData = $tenant->pivot;
+                        $tenantId = $headerTenantId;
+                    }
+                }
+            }
+            
+            // If no header tenant, try current user's tenant context
+            if (!$pivotData && $currentUser) {
+                $currentUserTenantId = $currentUser->getCurrentTenant()?->id;
+                if ($currentUserTenantId && $this->tenants) {
+                    $tenant = $this->tenants->firstWhere('id', $currentUserTenantId);
+                    if ($tenant) {
+                        $pivotData = $tenant->pivot;
+                        $tenantId = $currentUserTenantId;
+                    }
+                }
+            }
+            
+            // Fallback to first tenant if available
+            if (!$pivotData && $this->tenants && $this->tenants->isNotEmpty()) {
+                $firstTenant = $this->tenants->first();
+                if ($firstTenant) {
+                    $pivotData = $firstTenant->pivot;
+                    $tenantId = $firstTenant->id;
+                }
             }
         }
 
-        // Get role information from pivot
-        // Note: role_id can be either a string (like 'admin', 'teacher') or an integer ID
-        $roleId = $pivotData->role_id ?? null;
+        // Get role information
+        $roleId = null;
         $roleName = null;
 
-        if ($roleId) {
-            // Try to get role from Spatie Permission roles table
+        // For super_admin, get role directly from Spatie Permission (not from pivot)
+        if ($isSuperAdmin) {
             try {
-                // Use DB facade to query roles table directly
-                $role = \Illuminate\Support\Facades\DB::table('roles')
-                    ->where('id', $roleId)
-                    ->first();
+                $roles = $this->resource->getRoleNames();
+                if ($roles->isNotEmpty()) {
+                    $roleName = $roles->first();
+                    // Try to get role ID and display_name from roles table
+                    $role = \Spatie\Permission\Models\Role::where('name', $roleName)->first();
+                    if ($role) {
+                        $roleId = $role->id;
+                        $roleName = $role->display_name ?? $role->name ?? $roleName;
+                    }
+                }
+            } catch (\Exception $e) {
+                // Fallback if roles not available
+            }
+        } else {
+            // For regular users, get role from pivot
+            $roleId = $pivotData->role_id ?? null;
+        }
 
+        // If we have role_id but no roleName, try to get it from database
+        if ($roleId && !$roleName) {
+            try {
+                // Try Spatie Permission model first
+                $role = \Spatie\Permission\Models\Role::find($roleId);
                 if ($role) {
-                    // Use display_name if available, otherwise use name
                     $roleName = $role->display_name ?? $role->name ?? null;
+                } else {
+                    // Fallback to DB facade
+                    $role = \Illuminate\Support\Facades\DB::table('roles')
+                        ->where('id', $roleId)
+                        ->first();
+                    if ($role) {
+                        $roleName = $role->display_name ?? $role->name ?? null;
+                    }
                 }
             } catch (\Exception $e) {
                 // If roles table doesn't exist or query fails, fall back to mapping
@@ -51,6 +107,11 @@ class UserResource extends JsonResource
                     'student' => 'Student',
                     'parent' => 'Parent',
                     'staff' => 'Staff',
+                    'super_admin' => 'Super Administrador',
+                    'school_owner' => 'Dono da Escola',
+                    'school_admin' => 'Director/Administrador',
+                    'accountant' => 'Contabilista',
+                    'secretary' => 'Secretária',
                 ];
 
                 // If role_id is a string key, use the map
@@ -59,9 +120,6 @@ class UserResource extends JsonResource
                 } elseif (is_string($roleId)) {
                     // If it's a string but not in map, capitalize it
                     $roleName = ucfirst($roleId);
-                } elseif (is_numeric($roleId)) {
-                    // If it's a number and we couldn't find in DB, use a generic label
-                    $roleName = null; // Frontend will handle mapping
                 }
             }
         }

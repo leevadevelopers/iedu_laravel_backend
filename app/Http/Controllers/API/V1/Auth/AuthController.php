@@ -261,7 +261,11 @@ class AuthController extends Controller
         // Autenticar e gerar token JWT Tymon\JWTAuth\Facades\JWTAuth
         $token = \Tymon\JWTAuth\Facades\JWTAuth::fromUser($user);
 
-        // Handle tenant context
+        // Check if user is super admin (cross-tenant role)
+        $isSuperAdmin = method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin();
+
+        // Handle tenant context (skip for super_admin)
+        if (!$isSuperAdmin) {
         if ($request->has('tenant_id') && $request->get('tenant_id') !== null) {
             $tenantId = (int) $request->get('tenant_id');
             if (!$user->belongsToTenant($tenantId)) {
@@ -275,6 +279,7 @@ class AuthController extends Controller
             $firstTenant = $user->activeTenants()->first();
             if ($firstTenant) {
                 session(['tenant_id' => $firstTenant->id]);
+                }
             }
         }
 
@@ -282,13 +287,36 @@ class AuthController extends Controller
 
         $this->activityLogService->logUserAction('user_logged_in', $user);
 
+        // Get tenant context (handles super_admin case)
+        $currentTenant = $user->getCurrentTenant();
+        $tenantContext = null;
+
+        // Check if user is super admin (cross-tenant role)
+        $isSuperAdmin = method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin();
+        
+        if ($isSuperAdmin) {
+            // If super admin, create a special tenant context
+            $tenantContext = [
+                'tenant_id' => null,
+                'role' => 'super_admin',
+                'permissions' => ['*'], // Super admin has all permissions
+                'is_owner' => false,
+                'custom_permissions' => [
+                    'granted' => [],
+                    'denied' => [],
+                ],
+            ];
+        } elseif ($currentTenant) {
+            $tenantContext = $this->getTenantContext($user);
+        }
+
         return response()->json([
             'access_token' => $token,
             'token_type' => 'bearer',
             'expires_in' => \Tymon\JWTAuth\Facades\JWTAuth::factory()->getTTL() * 60,
             'user' => new UserResource($user),
-            'current_tenant' => $user->getCurrentTenant() ?
-                new TenantResource($user->getCurrentTenant()) : null,
+            'current_tenant' => $currentTenant ? new TenantResource($currentTenant) : null,
+            'tenant_context' => $tenantContext,
         ]);
     }
     public function me()
@@ -301,9 +329,26 @@ class AuthController extends Controller
 
         try {
             if ($user) {
+                // Check if user is super admin (cross-tenant role)
+                $isSuperAdmin = method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin();
+                
+                // If super admin, create a special tenant context
+                if ($isSuperAdmin) {
+                    $tenantContext = [
+                        'tenant_id' => null,
+                        'role' => 'super_admin',
+                        'permissions' => ['*'], // Super admin has all permissions
+                        'is_owner' => false,
+                        'custom_permissions' => [
+                            'granted' => [],
+                            'denied' => [],
+                        ],
+                    ];
+                } else {
                 $currentTenant = $user->getCurrentTenant();
                 if ($currentTenant) {
                     $tenantContext = $this->getTenantContext($user);
+                    }
                 }
             }
         } catch (\Exception $e) {
@@ -400,6 +445,27 @@ class AuthController extends Controller
     {
         $user = auth('api')->user();
 
+        // Check if user is super admin and create tenant context if needed
+        $tenantContext = null;
+        if ($user) {
+            $isSuperAdmin = method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin();
+            
+            if ($isSuperAdmin) {
+                $tenantContext = [
+                    'tenant_id' => null,
+                    'role' => 'super_admin',
+                    'permissions' => ['*'], // Super admin has all permissions
+                    'is_owner' => false,
+                    'custom_permissions' => [
+                        'granted' => [],
+                        'denied' => [],
+                    ],
+                ];
+            } else {
+                $tenantContext = $this->getTenantContext($user);
+            }
+        }
+
         return response()->json([
             'data' => [
                 'access_token' => $token,
@@ -407,7 +473,7 @@ class AuthController extends Controller
                 'expires_in' => 60 * 60 * 24, // 24 hours default
                 'user' => $user,
                 'current_tenant' => $user ? $user->getCurrentTenant() : null,
-                'tenant_context' => $user ? $this->getTenantContext($user) : null,
+                'tenant_context' => $tenantContext,
             ],
             'message' => 'Login successful'
         ]);
@@ -424,9 +490,17 @@ class AuthController extends Controller
             ->where('tenants.id', $currentTenant->id)
             ->first();
 
+        // Get role name from role_id
+        $role = null;
+        if ($tenantUser && $tenantUser->pivot->role_id) {
+            $roleModel = Role::find($tenantUser->pivot->role_id);
+            $role = $roleModel ? $roleModel->name : null;
+        }
+
         return [
-            'tenant_id' => $currentTenant->id,
-            'role_id' => $tenantUser->pivot->role_id,
+            'tenant_id' => (string) $currentTenant->id,
+            'role' => $role,
+            'role_id' => $tenantUser->pivot->role_id ?? null,
             'permissions' => json_decode($tenantUser->pivot->permissions, true) ?? [],
             'is_owner' => $tenantUser->pivot->role_id === 1, // Assuming role_id 1 is owner
             'custom_permissions' => [

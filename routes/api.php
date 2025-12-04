@@ -27,6 +27,7 @@ Route::prefix('v1')->group(function () {
     require __DIR__ . '/modules/reception.php';
     require __DIR__ . '/modules/director.php';
     require __DIR__ . '/modules/teacher-portal.php';
+    require __DIR__ . '/modules/super-admin.php';
 });
 
 // Transport Module Routes

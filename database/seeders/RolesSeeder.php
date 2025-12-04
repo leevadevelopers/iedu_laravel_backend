@@ -74,123 +74,43 @@ class RolesSeeder extends Seeder
     {
         return [
             'super_admin' => [
-                'display_name' => 'Super Administrator',
-                'description' => 'Has complete access to all system features',
+                'display_name' => 'Super Administrador',
+                'description' => 'Leeva/iEDU Team - Platform-wide access, manages all schools, system-wide analytics, billing/subscriptions, support, and global settings',
                 'is_system' => true,
             ],
-            'owner' => [
-                'display_name' => 'Organization Owner',
-                'description' => 'Owner of the organization with full access',
+            'school_owner' => [
+                'display_name' => 'Dono da Escola',
+                'description' => 'Full control of their school(s), manages subscriptions/billing, adds/removes staff, configures school settings, accesses all reports. Multi-school access if Premium',
                 'is_system' => true,
             ],
-            'admin' => [
-                'display_name' => 'Administrator',
-                'description' => 'Administrative access to most features',
-                'is_system' => false,
-            ],
-            'tenant_admin' => [
-                'display_name' => 'Tenant Administrator',
-                'description' => 'Administrative access within tenant scope',
-                'is_system' => false,
-            ],
-            'librarian' => [
-                'display_name' => 'Librarian',
-                'description' => 'Library management access',
-                'is_system' => false,
-            ],
-            'finance_manager' => [
-                'display_name' => 'Finance Manager',
-                'description' => 'Financial management access',
+            'school_admin' => [
+                'display_name' => 'Director/Administrador',
+                'description' => 'Manages students, teachers, staff. Configures academic year, classes, subjects. Manages fees/payments. Generates reports. Cannot change subscription or owner settings',
                 'is_system' => false,
             ],
             'teacher' => [
-                'display_name' => 'Teacher',
-                'description' => 'Teacher access to the system',
-                'is_system' => false,
-            ],
-            'student' => [
-                'display_name' => 'Student',
-                'description' => 'Student access to the system',
+                'display_name' => 'Professor',
+                'description' => 'Views assigned classes only, marks attendance, enters/edits grades for their subjects, views student info for their classes, communicates with parents',
                 'is_system' => false,
             ],
             'parent' => [
-                'display_name' => 'Parent',
-                'description' => 'Parent access to the system',
+                'display_name' => 'Encarregado de Educação',
+                'description' => 'Views only their children\'s data, sees grades, attendance, fees. Makes payments. Receives notifications. Communicates with teachers/school',
                 'is_system' => false,
             ],
-            'guest' => [
-                'display_name' => 'Guest',
-                'description' => 'Guest access to the system',
+            'student' => [
+                'display_name' => 'Aluno',
+                'description' => 'Views own grades/attendance, accesses learning materials, limited portal access',
                 'is_system' => false,
             ],
-            'form_designer' => [
-                'display_name' => 'Form Designer',
-                'description' => 'Can create and edit form templates',
+            'accountant' => [
+                'display_name' => 'Contabilista',
+                'description' => 'Manages fees/payments only, generates financial reports, views payment history. Cannot access academic data',
                 'is_system' => false,
             ],
-            'form_reviewer' => [
-                'display_name' => 'Form Reviewer',
-                'description' => 'Can review and approve form submissions',
-                'is_system' => false,
-            ],
-            'form_submitter' => [
-                'display_name' => 'Form Submitter',
-                'description' => 'Can submit forms and view own submissions',
-                'is_system' => false,
-            ],
-            'form_analyst' => [
-                'display_name' => 'Form Analyst',
-                'description' => 'Can view analytics and export data',
-                'is_system' => false,
-            ],
-            'project_manager' => [
-                'display_name' => 'Project Manager',
-                'description' => 'Manages projects and approvals',
-                'is_system' => false,
-            ],
-            'team_member' => [
-                'display_name' => 'Team Member',
-                'description' => 'Executes tasks within a project',
-                'is_system' => false,
-            ],
-            'viewer' => [
-                'display_name' => 'Viewer',
-                'description' => 'View-only access',
-                'is_system' => false,
-            ],
-            'Academic Administrator' => [
-                'display_name' => 'Academic Administrator',
-                'description' => 'Full access to academic module',
-                'is_system' => false,
-            ],
-            'Academic Coordinator' => [
-                'display_name' => 'Academic Coordinator',
-                'description' => 'Management access to academic module',
-                'is_system' => false,
-            ],
-            'Assessment Administrator' => [
-                'display_name' => 'Assessment Administrator',
-                'description' => 'Full access to assessment module',
-                'is_system' => false,
-            ],
-            'Transport Administrator' => [
-                'display_name' => 'Transport Administrator',
-                'description' => 'Full access to transport module',
-                'is_system' => false,
-            ],
-            'Transport Manager' => [
-                'display_name' => 'Transport Manager',
-                'description' => 'Management access to transport module',
-                'is_system' => false,
-            ],
-            'Transport Coordinator' => [
-                'display_name' => 'Transport Coordinator',
-                'description' => 'Coordination access to transport module',
-                'is_system' => false,
-            ],
-            'Transport Driver' => [
-                'display_name' => 'Transport Driver',
-                'description' => 'Driver access to transport module',
+            'secretary' => [
+                'display_name' => 'Secretária',
+                'description' => 'Registers students, updates contact info, basic attendance marking. Cannot manage fees or grades',
                 'is_system' => false,
             ],
         ];
@@ -200,29 +120,12 @@ class RolesSeeder extends Seeder
     {
         return [
             'super_admin' => self::ALL_PERMISSIONS,
-            'owner' => self::NON_ADMIN_PERMISSIONS,
-            'admin' => array_merge(
-                $this->libraryAdminPermissions(),
-                $this->financeAdminPermissions(),
-                $this->formAdminPermissions(),
-                $this->schoolPermissions()
-            ),
-            'tenant_admin' => array_merge(
-                $this->tenantAdminPermissions(),
-                $this->schoolPermissions()
-            ),
-            'librarian' => $this->librarianPermissions(),
-            'finance_manager' => $this->financeManagerPermissions(),
+            'school_owner' => $this->schoolOwnerPermissions(),
+            'school_admin' => $this->schoolAdminPermissions(),
             'teacher' => array_merge(
                 $this->teacherLibraryPermissions(),
                 $this->academicTeacherPermissions(),
                 $this->assessmentTeacherPermissions(),
-                $this->schoolViewPermissions()
-            ),
-            'student' => array_merge(
-                $this->studentLibraryPermissions(),
-                $this->academicStudentPermissions(),
-                $this->assessmentStudentPermissions(),
                 $this->schoolViewPermissions()
             ),
             'parent' => array_merge(
@@ -231,66 +134,14 @@ class RolesSeeder extends Seeder
                 $this->transportParentPermissions(),
                 $this->schoolViewPermissions()
             ),
-            'guest' => array_merge(
-                $this->guestLibraryPermissions(),
+            'student' => array_merge(
+                $this->studentLibraryPermissions(),
+                $this->academicStudentPermissions(),
+                $this->assessmentStudentPermissions(),
                 $this->schoolViewPermissions()
             ),
-            'form_designer' => array_merge(
-                $this->formDesignerPermissions(),
-                $this->schoolViewPermissions()
-            ),
-            'form_reviewer' => array_merge(
-                $this->formReviewerPermissions(),
-                $this->schoolViewPermissions()
-            ),
-            'form_submitter' => array_merge(
-                $this->formSubmitterPermissions(),
-                $this->schoolViewPermissions()
-            ),
-            'form_analyst' => array_merge(
-                $this->formAnalystPermissions(),
-                $this->schoolViewPermissions()
-            ),
-            'project_manager' => array_merge(
-                $this->projectManagerFormPermissions(),
-                $this->schoolViewPermissions()
-            ),
-            'team_member' => array_merge(
-                $this->teamMemberFormPermissions(),
-                $this->schoolViewPermissions()
-            ),
-            'viewer' => array_merge(
-                $this->viewerFormPermissions(),
-                $this->schoolViewPermissions()
-            ),
-            'Academic Administrator' => array_merge(
-                $this->academicAdministratorPermissions(),
-                $this->schoolViewPermissions()
-            ),
-            'Academic Coordinator' => array_merge(
-                $this->academicCoordinatorPermissions(),
-                $this->schoolViewPermissions()
-            ),
-            'Assessment Administrator' => array_merge(
-                $this->assessmentAdministratorPermissions(),
-                $this->schoolViewPermissions()
-            ),
-            'Transport Administrator' => array_merge(
-                $this->transportAdministratorPermissions(),
-                $this->schoolViewPermissions()
-            ),
-            'Transport Manager' => array_merge(
-                $this->transportManagerPermissions(),
-                $this->schoolViewPermissions()
-            ),
-            'Transport Coordinator' => array_merge(
-                $this->transportCoordinatorPermissions(),
-                $this->schoolViewPermissions()
-            ),
-            'Transport Driver' => array_merge(
-                $this->transportDriverPermissions(),
-                $this->schoolViewPermissions()
-            ),
+            'accountant' => $this->accountantPermissions(),
+            'secretary' => $this->secretaryPermissions(),
         ];
     }
 
@@ -473,6 +324,7 @@ class RolesSeeder extends Seeder
             'library.reservations.view',
             'finance.invoices.view',
             'finance.payments.view',
+            'finance.payments.create', // Parents can make payments for their children
         ];
     }
 
@@ -1037,6 +889,89 @@ class RolesSeeder extends Seeder
     private function schoolViewPermissions(): array
     {
         return [
+            'schools.view',
+        ];
+    }
+
+    private function schoolOwnerPermissions(): array
+    {
+        return array_merge(
+            $this->schoolPermissions(),
+            $this->schoolAdminPermissions(),
+            [
+                'tenants.manage_settings',
+                'tenants.view',
+                'schools.view_all',
+            ]
+        );
+    }
+
+    private function schoolAdminPermissions(): array
+    {
+        return array_merge(
+            $this->libraryAdminPermissions(),
+            $this->financeAdminPermissions(),
+            $this->formAdminPermissions(),
+            $this->academicAdministratorPermissions(),
+            $this->assessmentAdministratorPermissions(),
+            $this->transportAdministratorPermissions(),
+            $this->schoolPermissions(),
+            [
+                'users.view',
+                'users.manage',
+                'users.create',
+                'users.edit',
+                'users.delete',
+                'teams.view',
+                'teams.manage',
+                'teams.invite',
+                'teams.remove',
+            ]
+        );
+    }
+
+    private function accountantPermissions(): array
+    {
+        return [
+            'finance.manage',
+            'finance.accounts.view',
+            'finance.accounts.create',
+            'finance.accounts.update',
+            'finance.accounts.delete',
+            'finance.invoices.view',
+            'finance.invoices.create',
+            'finance.invoices.update',
+            'finance.invoices.delete',
+            'finance.invoices.issue',
+            'finance.payments.view',
+            'finance.payments.create',
+            'finance.fees.view',
+            'finance.fees.create',
+            'finance.fees.update',
+            'finance.fees.delete',
+            'finance.fees.apply',
+            'finance.expenses.view',
+            'finance.expenses.create',
+            'finance.expenses.update',
+            'finance.expenses.delete',
+            'finance.reports.view',
+            'schools.view',
+        ];
+    }
+
+    private function secretaryPermissions(): array
+    {
+        return [
+            'academic.classes.view',
+            'academic.classes.enroll',
+            'academic.teachers.view',
+            'academic.subjects.view',
+            'library.collections.view',
+            'library.authors.view',
+            'library.publishers.view',
+            'library.books.view',
+            'library.book-files.view',
+            'library.book-files.download',
             'schools.view',
         ];
     }

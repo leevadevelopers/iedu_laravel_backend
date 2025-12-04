@@ -91,7 +91,16 @@ class ActivityLogService
         array $filters = [],
         int $perPage = 20
     ): LengthAwarePaginator {
-        $tenantId = $tenantId ?? session('tenant_id');
+        // tenantId handling:
+        // - null: for super_admin to view all logs (don't filter by tenant) - keep as null
+        // - int: specific tenant ID to filter by - use that value
+        // - not provided (legacy): use session as fallback
+        // Since we always pass tenantId from controller now, only use session if not provided
+        if (func_num_args() === 0) {
+            // Legacy: not provided, use session fallback
+            $tenantId = session('tenant_id');
+        }
+        // If explicitly passed (even as null), use that value directly
 
         $query = Activity::forTenant($tenantId)
             ->with(['causer', 'subject'])

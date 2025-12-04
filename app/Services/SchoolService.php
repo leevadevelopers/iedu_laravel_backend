@@ -137,14 +137,79 @@ class SchoolService
         try {
             DB::beginTransaction();
 
-            // Prepare school data
+            // Ensure tenant_id is set - try multiple methods
+            $tenantId = $data['tenant_id'] ?? null;
+            
+            if (!$tenantId) {
+                // Try to get from authenticated user
+                $user = Auth::user();
+                if ($user) {
+                    // First: Try user's tenant_id field
+                    if ($user->tenant_id) {
+                        $tenantId = $user->tenant_id;
+                    }
+                    // Second: Try getCurrentTenant method
+                    if (!$tenantId) {
+                        $tenant = $user->getCurrentTenant();
+                        if ($tenant) {
+                            $tenantId = $tenant->id;
+                        }
+                    }
+                    // Third: Try user's tenant relationship
+                    if (!$tenantId) {
+                        $tenant = $user->tenants()->withoutGlobalScope(\App\Models\Scopes\TenantScope::class)
+                            ->wherePivot('current_tenant', true)->first();
+                        if ($tenant) {
+                            $tenantId = $tenant->id;
+                        } else {
+                            // Fallback to first tenant
+                            $tenant = $user->tenants()->withoutGlobalScope(\App\Models\Scopes\TenantScope::class)->first();
+                            if ($tenant) {
+                                $tenantId = $tenant->id;
+                            }
+                        }
+                    }
+                }
+                
+                // Fourth: Try session
+                if (!$tenantId) {
+                    $tenantId = session('tenant_id');
+                }
+                
+                // Fifth: Try header
+                if (!$tenantId && request()->hasHeader('X-Tenant-ID')) {
+                    $tenantId = (int) request()->header('X-Tenant-ID');
+                }
+            }
+
+            if (!$tenantId) {
+                throw new \Exception('Cannot create school without tenant context. Please ensure you are authenticated and have a tenant assigned.');
+            }
+
+            // Prepare school data with defaults for required fields
             $schoolData = array_merge($data, [
-                'status' => 'setup',
+                'tenant_id' => $tenantId, // Explicitly set tenant_id
+                'status' => $data['status'] ?? 'setup',
                 'current_enrollment' => 0,
                 'staff_count' => 0,
                 'feature_flags' => $data['feature_flags'] ?? [],
                 'integration_settings' => $data['integration_settings'] ?? [],
-                'branding_configuration' => $data['branding_configuration'] ?? []
+                'branding_configuration' => $data['branding_configuration'] ?? [],
+                // Set defaults for required fields that might be missing
+                'educational_levels' => $data['educational_levels'] ?? [],
+                'grade_range_min' => $data['grade_range_min'] ?? '1',
+                'grade_range_max' => $data['grade_range_max'] ?? '12',
+                'email' => $data['email'] ?? '',
+                'city' => $data['city'] ?? '',
+                'language_instruction' => $data['language_instruction'] ?? ['pt'], // Default to Portuguese for Mozambique context
+                // Set defaults for fields with database defaults (in case they're not set)
+                'timezone' => $data['timezone'] ?? 'UTC',
+                'accreditation_status' => $data['accreditation_status'] ?? 'candidate',
+                'academic_calendar_type' => $data['academic_calendar_type'] ?? 'semester',
+                'academic_year_start_month' => $data['academic_year_start_month'] ?? 8,
+                'grading_system' => $data['grading_system'] ?? 'traditional_letter',
+                'attendance_tracking_level' => $data['attendance_tracking_level'] ?? 'daily',
+                'subscription_plan' => $data['subscription_plan'] ?? 'basic'
             ]);
 
             $school = School::create($schoolData);
@@ -924,5 +989,78 @@ class SchoolService
     {
         // TODO: Implement academic progress calculation
         return [];
+    }
+
+    /**
+     * Get aggregate statistics for all schools
+     */
+    public function getAllSchoolsStatistics(bool $isSuperAdmin = false): array
+    {
+        // Get base query - respect tenant scope unless super admin
+        $query = $isSuperAdmin
+            ? School::withoutTenantScope()
+            : School::query();
+
+        // Get all schools for statistics
+        $schools = $query->get();
+
+        // Calculate statistics
+        $totalSchools = $schools->count();
+        $activeSchools = $schools->where('status', 'active')->count();
+        $inactiveSchools = $schools->where('status', 'inactive')->count();
+        $suspendedSchools = $schools->where('status', 'suspended')->count();
+        $closedSchools = $schools->where('status', 'closed')->count();
+        $setupSchools = $schools->where('status', 'setup')->count();
+        $trialSchools = $schools->where('status', 'trial')->count();
+
+        // Schools by type
+        $schoolsByType = $schools->groupBy('school_type')->map(function ($group) {
+            return $group->count();
+        })->toArray();
+
+        // Schools by status
+        $schoolsByStatus = $schools->groupBy('status')->map(function ($group) {
+            return $group->count();
+        })->toArray();
+
+        // Schools by country
+        $schoolsByCountry = $schools->groupBy('country_code')->map(function ($group) {
+            return $group->count();
+        })->toArray();
+
+        // Schools by state/province
+        $schoolsByState = $schools->whereNotNull('state_province')
+            ->groupBy('state_province')
+            ->map(function ($group) {
+                return $group->count();
+            })->toArray();
+
+        // Aggregate student and staff data
+        $totalStudents = $schools->sum('current_enrollment');
+        $totalStaff = $schools->sum('staff_count');
+        $totalCapacity = $schools->sum('student_capacity');
+        
+        // Calculate enrollment percentage
+        $enrollmentPercentage = $totalCapacity > 0 
+            ? round(($totalStudents / $totalCapacity) * 100, 2) 
+            : 0;
+
+        return [
+            'total_schools' => $totalSchools,
+            'active_schools' => $activeSchools,
+            'inactive_schools' => $inactiveSchools,
+            'suspended_schools' => $suspendedSchools,
+            'closed_schools' => $closedSchools,
+            'setup_schools' => $setupSchools,
+            'trial_schools' => $trialSchools,
+            'schools_by_type' => $schoolsByType,
+            'schools_by_status' => $schoolsByStatus,
+            'schools_by_country' => $schoolsByCountry,
+            'schools_by_state' => $schoolsByState,
+            'total_students' => $totalStudents,
+            'total_staff' => $totalStaff,
+            'total_capacity' => $totalCapacity,
+            'enrollment_percentage' => $enrollmentPercentage
+        ];
     }
 }

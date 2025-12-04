@@ -19,10 +19,10 @@ class CreateSchoolsTable extends Migration
             $table->string('display_name', 255);
             $table->string('short_name', 50);
 
-            // Educational Classification
+            // Educational Classification - Contexto Moçambicano (Estrutura Educacional)
             $table->enum('school_type', [
-                'public', 'private', 'charter', 'magnet', 'international',
-                'vocational', 'special_needs', 'alternative'
+                'pre_primary', 'primary', 'secondary_general', 'technical_professional',
+                'institute_medio', 'higher_education', 'teacher_training', 'adult_education', 'special_needs'
             ]);
             $table->json('educational_levels'); // ['elementary', 'middle', 'high']
             $table->string('grade_range_min', 10); // 'K', 'Pre-K', '1', etc.
@@ -96,10 +96,19 @@ class CreateSchoolsTable extends Migration
             $table->fullText(['official_name', 'display_name', 'short_name']);
         });
 
+        // Add foreign key for users.school_id after schools table is created
+        Schema::table('users', function (Blueprint $table) {
+            $table->foreign('school_id')->references('id')->on('schools')->onDelete('set null');
+        });
     }
 
     public function down()
     {
+        // Drop foreign key first
+        Schema::table('users', function (Blueprint $table) {
+            $table->dropForeign(['school_id']);
+        });
+
         Schema::dropIfExists('schools');
     }
 }

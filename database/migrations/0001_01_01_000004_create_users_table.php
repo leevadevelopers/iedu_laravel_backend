@@ -13,6 +13,8 @@ return new class extends Migration
     {
         Schema::create('users', function (Blueprint $table) {
             $table->id();
+            $table->unsignedBigInteger('tenant_id')->nullable();
+            $table->unsignedBigInteger('school_id')->nullable();
             $table->string('name');
             $table->string('identifier')->unique();
             $table->foreignId('role_id')->nullable()->constrained()->onDelete('set null');
@@ -40,9 +42,11 @@ return new class extends Migration
             $table->rememberToken();
             $table->timestamps();
 
-
+            // Foreign keys will be added after tenants and schools tables are created
             $table->index(['is_active', 'created_at']);
             $table->index('last_login_at');
+            $table->index('tenant_id');
+            $table->index('school_id');
         });
 
         Schema::create('password_reset_tokens', function (Blueprint $table) {

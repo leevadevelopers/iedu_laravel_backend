@@ -11,11 +11,15 @@ use Illuminate\Support\Facades\Route;
     |--------------------------------------------------------------------------
     */
 
-    Route::middleware(['auth:api'])->prefix('schools')->group(function () {
+    Route::middleware(['auth:api', 'tenant'])->prefix('schools')->group(function () {
         // Basic CRUD operations
         Route::get('/', [SchoolController::class, 'index']);
         Route::post('/', [SchoolController::class, 'store']);
         // Route::post('/test', action: [SchoolController::class, 'testStore']); // Test route for simplified creation
+        
+        // Statistics route - must be before /{id} routes to avoid conflicts
+        Route::get('/stats', [SchoolController::class, 'getAllSchoolsStatistics']);
+        
         Route::get('/{id}', [SchoolController::class, 'show']);
         Route::put('/{id}', [SchoolController::class, 'update']);
         Route::delete('/{id}', [SchoolController::class, 'destroy']);

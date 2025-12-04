@@ -316,6 +316,33 @@ class SchoolController extends Controller
     }
 
     /**
+     * Get all schools aggregate statistics
+     */
+    public function getAllSchoolsStatistics(): JsonResponse
+    {
+        try {
+            // Check authorization
+            $this->authorize('viewAny', School::class);
+
+            $user = Auth::user();
+            $isSuperAdmin = $user && method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin();
+
+            $stats = $this->schoolService->getAllSchoolsStatistics($isSuperAdmin);
+
+            return response()->json([
+                'success' => true,
+                'data' => $stats
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to get schools statistics',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
      * Get school statistics
      */
     public function getStatistics($id): JsonResponse

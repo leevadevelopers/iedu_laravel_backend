@@ -26,7 +26,15 @@ class Activity extends SpatieActivity
 
     public function scopeForTenant($query, $tenantId = null)
     {
-        $tenantId = $tenantId ?? session('tenant_id');
+        // If tenantId is null (for super_admin), don't filter by tenant (show all logs)
+        // If tenantId is an integer, filter by that tenant
+        // Legacy: if not provided, use session as fallback
+        if ($tenantId === null && func_num_args() < 2) {
+            // tenantId not provided, use session fallback for legacy support
+            $tenantId = session('tenant_id');
+        }
+        
+        // Filter by tenant if tenantId is set, otherwise return all (for super_admin)
         if ($tenantId) {
             return $query->where('tenant_id', $tenantId);
         }

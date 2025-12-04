@@ -3,6 +3,7 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\API\V1\UserController;
 use App\Http\Controllers\API\V1\UserProfileController;
+use App\Http\Controllers\API\V1\ActivityLogController;
 
 /*
 |--------------------------------------------------------------------------
@@ -38,6 +39,9 @@ Route::middleware(['auth:api', 'tenant'])->group(function () {
             ]);
         })->name('users.filters');
 
+        // Activity Logs (specific route before catch-all)
+        Route::get('/activity-logs', [ActivityLogController::class, 'index'])->name('users.activity-logs');
+
         // Core User CRUD (catch-all routes last)
         Route::get('/', [UserController::class, 'index'])->name('users.index');
         Route::post('/', [UserController::class, 'store'])->name('users.store');
@@ -67,8 +71,18 @@ Route::middleware(['auth:api', 'tenant'])->group(function () {
 
         // User Statistics
         Route::get('/statistics', function () {
+            /** @var \App\Models\User $user */
             $user = auth('api')->user();
+            
+            if (!$user) {
+                abort(401, 'Unauthenticated');
+            }
+
             $tenant = $user->getCurrentTenant();
+
+            if (!$tenant) {
+                abort(404, 'No current tenant set');
+            }
 
             $totalUsers = \App\Models\User::whereHas('tenants', function ($query) use ($tenant) {
                 $query->where('tenant_id', $tenant->id);
@@ -116,12 +130,16 @@ Route::bind('user', function ($value, $route) {
             ->firstOrFail();
 
         // Verify tenant access if tenant middleware is active
-        if (auth('api')->check() && method_exists(auth('api')->user(), 'tenant_id')) {
+        if (auth('api')->check()) {
+            /** @var \App\Models\User $currentUser */
             $currentUser = auth('api')->user();
+            
+            if ($currentUser) {
             $tenant = $currentUser->getCurrentTenant();
 
             if ($tenant && !$user->tenants()->where('tenant_id', $tenant->id)->exists()) {
                 abort(403, 'Access denied to this user');
+                }
             }
         }
 

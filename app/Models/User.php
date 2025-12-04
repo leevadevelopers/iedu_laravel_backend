@@ -97,50 +97,44 @@ class User extends Authenticatable implements JWTSubject
 
     public function getCurrentTenant(): ?Tenant
     {
-        // Check session first
+        // Super admin doesn't need tenant context - they work across all tenants
+        $isSuperAdmin = method_exists($this, 'isSuperAdmin') && $this->isSuperAdmin();
+        if ($isSuperAdmin) {
+            return null; // Super admin doesn't have a "current tenant" - they see all
+        }
+
+        // Priority 1: Check session (set by TenantMiddleware)
         $tenantId = session('tenant_id');
 
-        if ($tenantId) {
-            // Use cache to avoid repeated database queries
-            $cacheKey = "tenant_{$tenantId}";
-            $cachedTenant = Cache::get($cacheKey);
-
-            if ($cachedTenant !== null) {
-                return $cachedTenant;
+        // Priority 2: Check request header (for API clients)
+        if (!$tenantId && request()->hasHeader('X-Tenant-ID')) {
+            $headerTenantId = (int) request()->header('X-Tenant-ID');
+            if ($this->belongsToTenant($headerTenantId)) {
+                $tenantId = $headerTenantId;
+                session(['tenant_id' => $tenantId]);
             }
+        }
 
-            // Query database and cache result
-            $tenant = $this->tenants()->find($tenantId);
+        // Priority 3: Get from user's current tenant (wherePivot('current_tenant', true))
+        if (!$tenantId) {
+            $tenant = $this->tenants()->wherePivot('current_tenant', true)->first();
             if ($tenant) {
-                Cache::put($cacheKey, $tenant, 300); // Cache for 5 minutes
-                return $tenant;
+                $tenantId = $tenant->id;
+                session(['tenant_id' => $tenantId]);
             }
         }
 
-        // If no session or cached tenant, query database
-        $cacheKey = "user_current_tenant_{$this->id}";
-        $cachedTenant = Cache::get($cacheKey);
-
-        if ($cachedTenant !== null) {
-            session(['tenant_id' => $cachedTenant->id]);
-            return $cachedTenant;
+        // Priority 4: Fallback to first tenant
+        if (!$tenantId) {
+            $tenant = $this->tenants()->first();
+            if ($tenant) {
+                $tenantId = $tenant->id;
+                session(['tenant_id' => $tenantId]);
+            }
         }
 
-        // Query for current tenant
-        $tenant = $this->tenants()->wherePivot('current_tenant', true)->first();
-
-        if ($tenant) {
-            session(['tenant_id' => $tenant->id]);
-            Cache::put($cacheKey, $tenant, 300); // Cache for 5 minutes
-            return $tenant;
-        }
-
-        // Fallback to first tenant
-        $tenant = $this->tenants()->first();
-        if ($tenant) {
-            session(['tenant_id' => $tenant->id]);
-            Cache::put($cacheKey, $tenant, 300); // Cache for 5 minutes
-            return $tenant;
+        if ($tenantId) {
+            return $this->tenants()->find($tenantId);
         }
 
         return null;
