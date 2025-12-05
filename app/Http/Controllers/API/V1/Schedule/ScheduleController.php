@@ -573,4 +573,85 @@ class ScheduleController extends Controller
             'data' => ScheduleResource::collection($schedules)
         ]);
     }
+
+    /**
+     * Validate schedule conflict with detailed information
+     */
+    public function validateConflict(Request $request): JsonResponse
+    {
+        $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
+            'teacher_id' => 'required|exists:teachers,id',
+            'class_id' => 'required|exists:classes,id',
+            'classroom' => 'nullable|string',
+            'day_of_week' => 'required|string',
+            'start_time' => 'required|date_format:H:i:s',
+            'end_time' => 'required|date_format:H:i:s|after:start_time',
+            'exclude_schedule_id' => 'nullable|exists:schedules,id',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            $scheduleData = $request->only([
+                'teacher_id', 'class_id', 'classroom', 'day_of_week', 'start_time', 'end_time'
+            ]);
+            $excludeScheduleId = $request->exclude_schedule_id;
+
+            $conflicts = $this->scheduleService->checkConflicts($scheduleData, $excludeScheduleId);
+
+            // Format conflicts for frontend
+            $conflictDetails = [];
+            $hasConflict = !empty($conflicts);
+
+            if ($hasConflict) {
+                // Parse conflict messages to extract details
+                foreach ($conflicts as $conflictMessage) {
+                    if (strpos($conflictMessage, 'Teacher conflict') !== false) {
+                        $conflictDetails[] = [
+                            'type' => 'teacher',
+                            'message' => $conflictMessage,
+                            'severity' => 'error'
+                        ];
+                    } elseif (strpos($conflictMessage, 'Classroom conflict') !== false) {
+                        $conflictDetails[] = [
+                            'type' => 'classroom',
+                            'message' => $conflictMessage,
+                            'severity' => 'warning'
+                        ];
+                    } elseif (strpos($conflictMessage, 'Class conflict') !== false) {
+                        $conflictDetails[] = [
+                            'type' => 'class',
+                            'message' => $conflictMessage,
+                            'severity' => 'error'
+                        ];
+                    } else {
+                        $conflictDetails[] = [
+                            'type' => 'other',
+                            'message' => $conflictMessage,
+                            'severity' => 'warning'
+                        ];
+                    }
+                }
+            }
+
+            return response()->json([
+                'success' => true,
+                'hasConflict' => $hasConflict,
+                'conflicts' => $conflictDetails
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to validate conflict',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 }

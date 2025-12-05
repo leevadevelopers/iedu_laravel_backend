@@ -43,13 +43,60 @@ class SchoolContextService
                 return $user->school_id;
             }
 
-            // Check if user has any schools associated
-            if (method_exists($user, 'activeSchools') && $user->activeSchools()->count() > 0) {
-                $firstSchool = $user->activeSchools()->first();
-                if ($firstSchool) {
+            // Check if user has any schools associated via school_users pivot
+            if (method_exists($user, 'schools')) {
+                $userSchools = $user->schools()
+                    ->wherePivot('status', 'active')
+                    ->get();
+                
+                if ($userSchools->count() > 0) {
+                    $firstSchool = $userSchools->first();
                     // Set this as the current school in session
                     $this->setCurrentSchool($firstSchool->id, $firstSchool->tenant_id);
                     return $firstSchool->id;
+                }
+            }
+
+            // Fallback: If user belongs to a tenant, try to get schools from that tenant
+            // This is useful when schools act as tenants and users should have access to tenant's schools
+            if (method_exists($user, 'getCurrentTenant')) {
+                $currentTenant = $user->getCurrentTenant();
+                if ($currentTenant) {
+                    $tenantSchools = \App\Models\V1\SIS\School\School::where('tenant_id', $currentTenant->id)
+                        ->where('status', 'active')
+                        ->get();
+                    
+                    if ($tenantSchools->count() > 0) {
+                        $firstSchool = $tenantSchools->first();
+                        
+                        // Auto-associate user with school if they don't have association yet
+                        // This implements the "schools as tenants" pattern
+                        if (method_exists($user, 'schools') && !$user->schools()->where('schools.id', $firstSchool->id)->exists()) {
+                            // Determine role based on user's tenant role or default to 'owner' for school_owner role
+                            $userRole = 'staff';
+                            if (method_exists($user, 'hasRole')) {
+                                if ($user->hasRole('school_owner')) {
+                                    $userRole = 'owner';
+                                } elseif ($user->hasRole('school_admin')) {
+                                    $userRole = 'admin';
+                                } elseif ($user->hasRole('teacher')) {
+                                    $userRole = 'teacher';
+                                }
+                            }
+                            
+                            $user->schools()->attach($firstSchool->id, [
+                                'role' => $userRole,
+                                'status' => 'active',
+                                'start_date' => now(),
+                                'end_date' => null,
+                                'permissions' => null,
+                            ]);
+                        }
+                        
+                        // Set this as the current school in session
+                        $this->setCurrentSchool($firstSchool->id, $firstSchool->tenant_id);
+                        return $firstSchool->id;
+                    }
                 }
             }
         }
@@ -69,13 +116,35 @@ class SchoolContextService
         // Provide more helpful error message
         if (Auth::check()) {
             $user = Auth::user();
-            $schoolCount = method_exists($user, 'activeSchools') ? $user->activeSchools()->count() : 0;
+            $schoolCount = 0;
+            
+            if (method_exists($user, 'schools')) {
+                $schoolCount = $user->schools()->wherePivot('status', 'active')->count();
+            }
 
             if ($schoolCount === 0) {
-                throw new \RuntimeException(
-                    'No school context available. User is not associated with any schools. ' .
-                    'Please contact an administrator to associate your account with a school.'
-                );
+                // Check if tenant has schools but user is not associated
+                $tenantHasSchools = false;
+                if (method_exists($user, 'getCurrentTenant')) {
+                    $currentTenant = $user->getCurrentTenant();
+                    if ($currentTenant) {
+                        $tenantHasSchools = \App\Models\V1\SIS\School\School::where('tenant_id', $currentTenant->id)
+                            ->where('status', 'active')
+                            ->exists();
+                    }
+                }
+                
+                if ($tenantHasSchools) {
+                    throw new \RuntimeException(
+                        'No school context available. Your tenant has schools but you are not associated with any. ' .
+                        'The system will attempt to auto-associate you on next request, or please contact an administrator.'
+                    );
+                } else {
+                    throw new \RuntimeException(
+                        'No school context available. User is not associated with any schools and tenant has no schools. ' .
+                        'Please contact an administrator to associate your account with a school.'
+                    );
+                }
             } else {
                 throw new \RuntimeException(
                     'No school context available. User has access to ' . $schoolCount . ' school(s) ' .

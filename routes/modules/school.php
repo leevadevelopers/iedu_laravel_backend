@@ -31,6 +31,13 @@ use Illuminate\Support\Facades\Route;
         Route::get('/{id}/academic-years', [SchoolController::class, 'getAcademicYears']);
         Route::post('/{id}/set-current-academic-year', [SchoolController::class, 'setCurrentAcademicYear']);
         Route::get('/{id}/performance-metrics', [SchoolController::class, 'getPerformanceMetrics']);
+        Route::get('/{id}/calendar', [SchoolController::class, 'getCalendar']);
+
+        // School Events
+        Route::get('/{id}/events', [SchoolController::class, 'getEvents']);
+        Route::post('/{id}/events', [SchoolController::class, 'createEvent']);
+        Route::put('/{id}/events/{eventId}', [SchoolController::class, 'updateEvent']);
+        Route::delete('/{id}/events/{eventId}', [SchoolController::class, 'deleteEvent']);
 
         // Form Template Management
         Route::get('/form-templates', [SchoolController::class, 'getFormTemplates']);

@@ -436,4 +436,151 @@ class AcademicClassController extends Controller
 
         return $this->successResponse($classes);
     }
+
+    /**
+     * Create a draft class (with minimal validation)
+     */
+    public function createDraft(Request $request): JsonResponse
+    {
+        $user = auth('api')->user();
+
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'User not authenticated'
+            ], 401);
+        }
+
+        $tenantId = $this->getCurrentTenantId();
+        if (!$tenantId) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Tenant ID is required'
+            ], 422);
+        }
+
+        $schoolId = $this->getCurrentSchoolId();
+        if (!$schoolId) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'User is not associated with any school'
+            ], 403);
+        }
+
+        // Minimal validation for draft - only require name, subject_id, academic_year_id
+        $validator = \Illuminate\Support\Facades\Validator::make($request->all(), [
+            'name' => 'required|string|max:255',
+            'subject_id' => 'required|exists:subjects,id',
+            'academic_year_id' => 'required|exists:academic_years,id',
+            'grade_level' => 'nullable|string|max:20',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            DB::beginTransaction();
+
+            // Create draft class with status='draft'
+            $classData = $request->only([
+                'name', 'section', 'class_code', 'subject_id', 'academic_year_id',
+                'academic_term_id', 'grade_level', 'max_students', 'primary_teacher_id'
+            ]);
+            $classData['tenant_id'] = $tenantId;
+            $classData['school_id'] = $schoolId;
+            $classData['status'] = 'draft';
+            $classData['current_enrollment'] = 0;
+            $classData['max_students'] = $classData['max_students'] ?? 30;
+
+            $class = AcademicClass::create($classData);
+
+            DB::commit();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Draft class created successfully',
+                'data' => $class
+            ], 201);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to create draft class',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Publish a draft class (change status from draft to active)
+     */
+    public function publish($id): JsonResponse
+    {
+        try {
+            $class = $this->classService->getClassById($id);
+
+            if (!$class) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Class not found'
+                ], 404);
+            }
+
+            // Verify tenant access
+            $tenantId = $this->getCurrentTenantId();
+            if (!$tenantId || $class->tenant_id != $tenantId) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'You do not have access to this class'
+                ], 403);
+            }
+
+            // Check if class is a draft
+            if ($class->status !== 'draft') {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Class is not a draft. Only draft classes can be published.'
+                ], 422);
+            }
+
+            // Validate required fields before publishing
+            $requiredFields = ['name', 'subject_id', 'academic_year_id', 'grade_level'];
+            $missingFields = [];
+            foreach ($requiredFields as $field) {
+                if (empty($class->$field)) {
+                    $missingFields[] = $field;
+                }
+            }
+
+            if (!empty($missingFields)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Cannot publish class. Missing required fields: ' . implode(', ', $missingFields),
+                    'missing_fields' => $missingFields
+                ], 422);
+            }
+
+            // Update status to active
+            $class->update(['status' => 'active']);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Class published successfully',
+                'data' => $class->fresh()
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to publish class',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
 }

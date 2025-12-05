@@ -39,6 +39,7 @@ return new class extends Migration
             $table->string('current_grade_level', 20);
             $table->unsignedBigInteger('current_academic_year_id')->nullable();
             $table->enum('enrollment_status', ['enrolled', 'transferred', 'graduated', 'withdrawn', 'suspended'])->default('enrolled');
+            $table->enum('status', ['draft', 'active', 'archived'])->default('active');
             $table->date('expected_graduation_date')->nullable();
 
             // Educational Profile
@@ -67,6 +68,7 @@ return new class extends Migration
             $table->index('school_id');
             $table->index('current_grade_level');
             $table->index('enrollment_status');
+            $table->index('status');
             $table->index(['last_name', 'first_name']);
 
             // Full-text search

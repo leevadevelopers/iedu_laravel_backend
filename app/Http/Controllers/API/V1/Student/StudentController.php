@@ -18,6 +18,7 @@ use App\Services\FormEngineService;
 use App\Services\WorkflowService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
@@ -527,7 +528,7 @@ class StudentController extends Controller
             $studentData['tenant_id'] = $tenantId;
             $studentData['school_id'] = $schoolId;
             $studentData['user_id'] = $userId;
-            $studentData['student_number'] = $this->generateStudentNumber();
+            $studentData['student_number'] = $this->generateStudentNumber($schoolId);
 
             // Set default values
             $studentData['behavioral_points'] = $studentData['behavioral_points'] ?? 0;
@@ -1149,18 +1150,6 @@ class StudentController extends Controller
     }
 
     /**
-     * Generate unique student number
-     */
-    private function generateStudentNumber(): string
-    {
-        $prefix = 'STU';
-        $year = date('Y');
-        $random = strtoupper(substr(md5(uniqid()), 0, 6));
-
-        return "{$prefix}{$year}{$random}";
-    }
-
-    /**
      * Get academic progress for student
      */
     private function getAcademicProgress(Student $student): array
@@ -1241,5 +1230,693 @@ class StudentController extends Controller
             'view_profile',
             'update_profile'
         ];
+    }
+
+    /**
+     * Import students from CSV file
+     */
+    public function import(\App\Http\Requests\Student\ImportStudentsRequest $request): JsonResponse
+    {
+        try {
+            $file = $request->file('file');
+            $skipDuplicates = $request->boolean('skip_duplicates', true);
+            $updateExisting = $request->boolean('update_existing', false);
+            $validateOnly = $request->boolean('validate_only', false);
+
+            $tenantId = $request->input('tenant_id') ?? $this->getCurrentTenantId();
+            $schoolId = $request->input('school_id') ?? $this->getCurrentSchoolId();
+
+            if (!$tenantId || !$schoolId) {
+                return $this->errorResponse('Tenant ID and School ID are required', 400);
+            }
+
+            // Verify school access
+            if (!$this->verifySchoolAccess($schoolId)) {
+                return $this->errorResponse('Unauthorized access to school', 403);
+            }
+
+            $results = [
+                'imported' => 0,
+                'skipped' => 0,
+                'updated' => 0,
+                'errors' => [],
+                'warnings' => []
+            ];
+
+            // Parse CSV file
+            $filePath = $file->getRealPath();
+            $fileHandle = fopen($filePath, 'r');
+            
+            if (!$fileHandle) {
+                return $this->errorResponse('Failed to read CSV file', 500);
+            }
+
+            // Read header row
+            $headers = fgetcsv($fileHandle);
+            if (!$headers) {
+                fclose($fileHandle);
+                return $this->errorResponse('CSV file is empty or invalid', 400);
+            }
+
+            // Normalize headers (trim, lowercase, replace spaces with underscores)
+            $headers = array_map(function($header) {
+                return strtolower(trim(str_replace(' ', '_', $header)));
+            }, $headers);
+
+            // Required columns
+            $requiredColumns = ['first_name', 'last_name', 'date_of_birth', 'gender'];
+            $missingColumns = array_diff($requiredColumns, $headers);
+            
+            if (!empty($missingColumns)) {
+                fclose($fileHandle);
+                return $this->errorResponse(
+                    'Missing required columns: ' . implode(', ', $missingColumns),
+                    400
+                );
+            }
+
+            $rowNumber = 1; // Start from 1 (header is row 0)
+
+            // Process each row
+            while (($row = fgetcsv($fileHandle)) !== false) {
+                $rowNumber++;
+                
+                try {
+                    // Map row data to associative array
+                    $rowData = [];
+                    foreach ($headers as $index => $header) {
+                        $rowData[$header] = $row[$index] ?? null;
+                    }
+
+                    // Skip empty rows
+                    if (empty(array_filter($rowData))) {
+                        continue;
+                    }
+
+                    // Validate required fields
+                    $validationErrors = $this->validateStudentRow($rowData, $rowNumber);
+                    if (!empty($validationErrors)) {
+                        $results['errors'] = array_merge($results['errors'], $validationErrors);
+                        continue;
+                    }
+
+                    // If validate_only, skip actual import
+                    if ($validateOnly) {
+                        continue;
+                    }
+
+                    // Check for duplicates
+                    $existingStudent = $this->findDuplicateStudent($rowData, $schoolId);
+
+                    if ($existingStudent) {
+                        if ($updateExisting) {
+                            // Update existing student
+                            $this->updateStudentFromRow($existingStudent, $rowData, $tenantId, $schoolId);
+                            $results['updated']++;
+                        } else if ($skipDuplicates) {
+                            $results['skipped']++;
+                            $results['warnings'][] = [
+                                'row' => $rowNumber,
+                                'message' => 'Student already exists (skipped)',
+                                'value' => $rowData['email'] ?? $rowData['student_number'] ?? 'N/A'
+                            ];
+                        } else {
+                            $results['errors'][] = [
+                                'row' => $rowNumber,
+                                'field' => 'email',
+                                'message' => 'Student already exists',
+                                'value' => $rowData['email'] ?? $rowData['student_number'] ?? 'N/A'
+                            ];
+                        }
+                        continue;
+                    }
+
+                    // Create new student
+                    $this->createStudentFromRow($rowData, $tenantId, $schoolId);
+                    $results['imported']++;
+
+                } catch (\Exception $e) {
+                    $results['errors'][] = [
+                        'row' => $rowNumber,
+                        'message' => 'Error processing row: ' . $e->getMessage(),
+                        'value' => null
+                    ];
+                    Log::error('Student import error', [
+                        'row' => $rowNumber,
+                        'error' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString()
+                    ]);
+                }
+            }
+
+            fclose($fileHandle);
+
+            return $this->successResponse($results, 'Import completed');
+
+        } catch (\Exception $e) {
+            Log::error('Student import failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return $this->errorResponse('Import failed: ' . $e->getMessage(), 500);
+        }
+    }
+
+    /**
+     * Download CSV import template
+     */
+    public function downloadImportTemplate(): StreamedResponse
+    {
+        $headers = [
+            'Content-Type' => 'text/csv',
+            'Content-Disposition' => 'attachment; filename="students_import_template.csv"',
+        ];
+
+        $callback = function() {
+            $file = fopen('php://output', 'w');
+            
+            // Write BOM for UTF-8
+            fprintf($file, chr(0xEF).chr(0xBB).chr(0xBF));
+
+            // Write header row
+            fputcsv($file, [
+                'first_name',
+                'last_name',
+                'middle_name',
+                'preferred_name',
+                'date_of_birth',
+                'gender',
+                'email',
+                'phone',
+                'student_number',
+                'current_grade_level',
+                'admission_date',
+                'enrollment_status',
+                'nationality',
+                'birth_place'
+            ]);
+
+            // Write example row
+            fputcsv($file, [
+                'John',
+                'Doe',
+                'Michael',
+                'Johnny',
+                '2010-05-15',
+                'male',
+                'john.doe@example.com',
+                '+1234567890',
+                'STU001',
+                '8',
+                '2024-09-01',
+                'enrolled',
+                'US',
+                'New York'
+            ]);
+
+            fclose($file);
+        };
+
+        return response()->stream($callback, 200, $headers);
+    }
+
+    /**
+     * Validate a single student row
+     */
+    private function validateStudentRow(array $rowData, int $rowNumber): array
+    {
+        $errors = [];
+
+        // Required fields
+        if (empty($rowData['first_name'])) {
+            $errors[] = [
+                'row' => $rowNumber,
+                'field' => 'first_name',
+                'message' => 'First name is required',
+                'value' => $rowData['first_name'] ?? null
+            ];
+        }
+
+        if (empty($rowData['last_name'])) {
+            $errors[] = [
+                'row' => $rowNumber,
+                'field' => 'last_name',
+                'message' => 'Last name is required',
+                'value' => $rowData['last_name'] ?? null
+            ];
+        }
+
+        if (empty($rowData['date_of_birth'])) {
+            $errors[] = [
+                'row' => $rowNumber,
+                'field' => 'date_of_birth',
+                'message' => 'Date of birth is required',
+                'value' => $rowData['date_of_birth'] ?? null
+            ];
+        } else {
+            try {
+                $dob = \Carbon\Carbon::parse($rowData['date_of_birth']);
+                if ($dob->isFuture()) {
+                    $errors[] = [
+                        'row' => $rowNumber,
+                        'field' => 'date_of_birth',
+                        'message' => 'Date of birth cannot be in the future',
+                        'value' => $rowData['date_of_birth']
+                    ];
+                }
+            } catch (\Exception $e) {
+                $errors[] = [
+                    'row' => $rowNumber,
+                    'field' => 'date_of_birth',
+                    'message' => 'Invalid date format',
+                    'value' => $rowData['date_of_birth']
+                ];
+            }
+        }
+
+        if (empty($rowData['gender'])) {
+            $errors[] = [
+                'row' => $rowNumber,
+                'field' => 'gender',
+                'message' => 'Gender is required',
+                'value' => $rowData['gender'] ?? null
+            ];
+        } else {
+            $validGenders = ['male', 'female', 'other', 'prefer_not_to_say'];
+            if (!in_array(strtolower($rowData['gender']), $validGenders)) {
+                $errors[] = [
+                    'row' => $rowNumber,
+                    'field' => 'gender',
+                    'message' => 'Invalid gender. Must be one of: ' . implode(', ', $validGenders),
+                    'value' => $rowData['gender']
+                ];
+            }
+        }
+
+        // Optional but validated fields
+        if (!empty($rowData['email']) && !filter_var($rowData['email'], FILTER_VALIDATE_EMAIL)) {
+            $errors[] = [
+                'row' => $rowNumber,
+                'field' => 'email',
+                'message' => 'Invalid email format',
+                'value' => $rowData['email']
+            ];
+        }
+
+        if (!empty($rowData['enrollment_status'])) {
+            $validStatuses = ['enrolled', 'transferred', 'graduated', 'withdrawn', 'suspended'];
+            if (!in_array(strtolower($rowData['enrollment_status']), $validStatuses)) {
+                $errors[] = [
+                    'row' => $rowNumber,
+                    'field' => 'enrollment_status',
+                    'message' => 'Invalid enrollment status',
+                    'value' => $rowData['enrollment_status']
+                ];
+            }
+        }
+
+        return $errors;
+    }
+
+    /**
+     * Find duplicate student by email or student_number
+     */
+    private function findDuplicateStudent(array $rowData, int $schoolId): ?Student
+    {
+        $query = Student::where('school_id', $schoolId);
+
+        if (!empty($rowData['email'])) {
+            $query->where('email', $rowData['email']);
+        } elseif (!empty($rowData['student_number'])) {
+            $query->where('student_number', $rowData['student_number']);
+        } else {
+            // Try to match by first_name, last_name, and date_of_birth
+            if (!empty($rowData['first_name']) && !empty($rowData['last_name']) && !empty($rowData['date_of_birth'])) {
+                try {
+                    $dob = \Carbon\Carbon::parse($rowData['date_of_birth'])->format('Y-m-d');
+                    $query->where('first_name', $rowData['first_name'])
+                          ->where('last_name', $rowData['last_name'])
+                          ->whereDate('date_of_birth', $dob);
+                } catch (\Exception $e) {
+                    return null;
+                }
+            } else {
+                return null;
+            }
+        }
+
+        return $query->first();
+    }
+
+    /**
+     * Create student from CSV row data
+     */
+    private function createStudentFromRow(array $rowData, int $tenantId, int $schoolId): Student
+    {
+        $studentData = [
+            'tenant_id' => $tenantId,
+            'school_id' => $schoolId,
+            'first_name' => $rowData['first_name'],
+            'last_name' => $rowData['last_name'],
+            'middle_name' => $rowData['middle_name'] ?? null,
+            'preferred_name' => $rowData['preferred_name'] ?? null,
+            'date_of_birth' => \Carbon\Carbon::parse($rowData['date_of_birth'])->format('Y-m-d'),
+            'gender' => strtolower($rowData['gender']),
+            'email' => $rowData['email'] ?? null,
+            'phone' => $rowData['phone'] ?? null,
+            'student_number' => $rowData['student_number'] ?? $this->generateStudentNumber($schoolId),
+            'current_grade_level' => $rowData['current_grade_level'] ?? null,
+            'admission_date' => !empty($rowData['admission_date']) 
+                ? \Carbon\Carbon::parse($rowData['admission_date'])->format('Y-m-d')
+                : now()->format('Y-m-d'),
+            'enrollment_status' => strtolower($rowData['enrollment_status'] ?? 'enrolled'),
+            'nationality' => $rowData['nationality'] ?? null,
+            'birth_place' => $rowData['birth_place'] ?? null,
+            'behavioral_points' => 0
+        ];
+
+        return Student::create($studentData);
+    }
+
+    /**
+     * Update existing student from CSV row data
+     */
+    private function updateStudentFromRow(Student $student, array $rowData, int $tenantId, int $schoolId): void
+    {
+        $updateData = [];
+
+        if (!empty($rowData['first_name'])) {
+            $updateData['first_name'] = $rowData['first_name'];
+        }
+        if (!empty($rowData['last_name'])) {
+            $updateData['last_name'] = $rowData['last_name'];
+        }
+        if (!empty($rowData['middle_name'])) {
+            $updateData['middle_name'] = $rowData['middle_name'];
+        }
+        if (!empty($rowData['preferred_name'])) {
+            $updateData['preferred_name'] = $rowData['preferred_name'];
+        }
+        if (!empty($rowData['date_of_birth'])) {
+            $updateData['date_of_birth'] = \Carbon\Carbon::parse($rowData['date_of_birth'])->format('Y-m-d');
+        }
+        if (!empty($rowData['gender'])) {
+            $updateData['gender'] = strtolower($rowData['gender']);
+        }
+        if (!empty($rowData['email'])) {
+            $updateData['email'] = $rowData['email'];
+        }
+        if (!empty($rowData['phone'])) {
+            $updateData['phone'] = $rowData['phone'];
+        }
+        if (!empty($rowData['current_grade_level'])) {
+            $updateData['current_grade_level'] = $rowData['current_grade_level'];
+        }
+        if (!empty($rowData['enrollment_status'])) {
+            $updateData['enrollment_status'] = strtolower($rowData['enrollment_status']);
+        }
+        if (!empty($rowData['nationality'])) {
+            $updateData['nationality'] = $rowData['nationality'];
+        }
+        if (!empty($rowData['birth_place'])) {
+            $updateData['birth_place'] = $rowData['birth_place'];
+        }
+
+        $student->update($updateData);
+    }
+
+    /**
+     * Generate unique student number
+     */
+    private function generateStudentNumber(int $schoolId): string
+    {
+        $prefix = 'STU';
+        $year = now()->year;
+        
+        // Get the last student number for this school
+        $lastStudent = Student::where('school_id', $schoolId)
+            ->where('student_number', 'like', $prefix . $year . '%')
+            ->orderBy('student_number', 'desc')
+            ->first();
+
+        if ($lastStudent && preg_match('/' . $prefix . $year . '(\d+)/', $lastStudent->student_number, $matches)) {
+            $nextNumber = intval($matches[1]) + 1;
+        } else {
+            $nextNumber = 1;
+        }
+
+        return $prefix . $year . str_pad($nextNumber, 4, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * Helper method for success response
+     */
+    private function successResponse($data, string $message = 'Success', int $code = 200): JsonResponse
+    {
+        return response()->json([
+            'success' => true,
+            'data' => $data,
+            'message' => $message
+        ], $code);
+    }
+
+    /**
+     * Create a draft student (with minimal validation)
+     */
+    public function createDraft(Request $request): JsonResponse
+    {
+        $user = auth('api')->user();
+
+        if (!$user) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User not authenticated'
+            ], 401);
+        }
+
+        $tenantId = $this->getCurrentTenantId();
+        if (!$tenantId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Tenant ID is required'
+            ], 422);
+        }
+
+        $schoolId = $this->getCurrentSchoolId();
+        if (!$schoolId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User is not associated with any school'
+            ], 403);
+        }
+
+        // Minimal validation for draft - only require first_name and last_name
+        $validator = Validator::make($request->all(), [
+            'first_name' => 'required|string|max:100',
+            'last_name' => 'required|string|max:100',
+            'middle_name' => 'nullable|string|max:100',
+            'date_of_birth' => 'nullable|date|before:today',
+            'email' => 'nullable|email|max:255',
+            'phone' => 'nullable|string|max:20',
+            'current_grade_level' => 'nullable|string|max:20',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            DB::beginTransaction();
+
+            // Generate student number
+            $studentNumber = $this->generateStudentNumber($schoolId);
+
+            // Create draft student with status='draft'
+            $studentData = $request->only([
+                'first_name', 'middle_name', 'last_name', 'date_of_birth',
+                'email', 'phone', 'current_grade_level'
+            ]);
+            $studentData['tenant_id'] = $tenantId;
+            $studentData['school_id'] = $schoolId;
+            $studentData['student_number'] = $studentNumber;
+            $studentData['status'] = 'draft';
+            $studentData['enrollment_status'] = 'enrolled'; // Default
+            $studentData['admission_date'] = $request->admission_date ?? now();
+            $studentData['behavioral_points'] = 0;
+
+            $student = Student::create($studentData);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Draft student created successfully',
+                'data' => $student
+            ], 201);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to create draft student',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Publish a draft student (change status from draft to active)
+     */
+    public function publish(Student $student): JsonResponse
+    {
+        try {
+            // Verify access
+            $userSchoolId = $this->getCurrentSchoolId();
+            if (!$userSchoolId || $student->school_id != $userSchoolId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You do not have access to this student'
+                ], 403);
+            }
+
+            // Check if student is a draft
+            if ($student->status !== 'draft') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Student is not a draft. Only draft students can be published.'
+                ], 422);
+            }
+
+            // Validate required fields before publishing
+            $requiredFields = ['first_name', 'last_name', 'date_of_birth', 'current_grade_level', 'admission_date'];
+            $missingFields = [];
+            foreach ($requiredFields as $field) {
+                if (empty($student->$field)) {
+                    $missingFields[] = $field;
+                }
+            }
+
+            if (!empty($missingFields)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cannot publish student. Missing required fields: ' . implode(', ', $missingFields),
+                    'missing_fields' => $missingFields
+                ], 422);
+            }
+
+            // Update status to active
+            $student->update(['status' => 'active']);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Student published successfully',
+                'data' => $student->fresh()
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to publish student',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Validate student enrollment in a class
+     */
+    public function validateEnrollment(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'student_id' => 'required|exists:students,id',
+            'class_id' => 'required|exists:classes,id',
+            'academic_year_id' => 'nullable|exists:academic_years,id',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            $student = Student::findOrFail($request->student_id);
+            $class = \App\Models\V1\Academic\AcademicClass::with(['academicYear', 'subject'])->findOrFail($request->class_id);
+
+            $errors = [];
+            $warnings = [];
+            $valid = true;
+
+            // Verify access
+            $userSchoolId = $this->getCurrentSchoolId();
+            if (!$userSchoolId || $student->school_id != $userSchoolId || $class->school_id != $userSchoolId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You do not have access to these resources'
+                ], 403);
+            }
+
+            // Check 1: Academic year match
+            $requestAcademicYearId = $request->academic_year_id ?? $student->current_academic_year_id;
+            if ($class->academic_year_id != $requestAcademicYearId) {
+                $errors[] = 'Class academic year does not match student\'s current academic year';
+                $valid = false;
+            }
+
+            // Check 2: Grade level match (warning if different)
+            if ($class->grade_level != $student->current_grade_level) {
+                $warnings[] = "Class grade level ({$class->grade_level}) does not match student's current grade level ({$student->current_grade_level})";
+            }
+
+            // Check 3: Class capacity
+            if ($class->current_enrollment >= $class->max_students) {
+                $errors[] = 'Class has reached maximum capacity';
+                $valid = false;
+            }
+
+            // Check 4: Duplicate enrollment
+            $existingEnrollment = DB::table('student_class_enrollments')
+                ->where('student_id', $student->id)
+                ->where('class_id', $class->id)
+                ->where('status', 'active')
+                ->exists();
+
+            if ($existingEnrollment) {
+                $errors[] = 'Student is already enrolled in this class';
+                $valid = false;
+            }
+
+            return response()->json([
+                'success' => true,
+                'valid' => $valid,
+                'errors' => $errors,
+                'warnings' => $warnings
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to validate enrollment',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Helper method for error response
+     */
+    private function errorResponse(string $message, int $code = 400): JsonResponse
+    {
+        return response()->json([
+            'success' => false,
+            'message' => $message
+        ], $code);
     }
 }

@@ -133,11 +133,11 @@ class TeacherService extends BaseAcademicService
     /**
      * Get teacher by ID
      */
-    public function getTeacherById(int $id): ?Teacher
+    public function getTeacherById(string|int $id): ?Teacher
     {
         $user = Auth::user();
 
-        return Teacher::where('id', $id)
+        return Teacher::where('id', (int) $id)
             ->where('tenant_id', $user->tenant_id)
             ->first();
     }

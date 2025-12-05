@@ -26,8 +26,8 @@ class StoreAcademicYearRequest extends BaseAcademicRequest
             'description' => 'nullable|string|max:1000',
             'start_date' => 'required|date|before:end_date',
             'end_date' => 'required|date|after:start_date',
-            'enrollment_start_date' => 'nullable|date|after_or_equal:start_date',
-            'enrollment_end_date' => 'nullable|date|before:end_date',
+            'enrollment_start_date' => 'nullable|date',
+            'enrollment_end_date' => 'nullable|date|after:enrollment_start_date|before:end_date',
             'registration_deadline' => 'nullable|date|before:start_date',
             'term_structure' => 'required|in:semesters,trimesters,quarters,year_round',
             'total_terms' => 'nullable|integer|min:1|max:4',
@@ -59,6 +59,26 @@ class StoreAcademicYearRequest extends BaseAcademicRequest
                 // Check maximum duration
                 if ($endDate->diffInDays($startDate) > 400) {
                     $validator->errors()->add('end_date', 'Academic year cannot exceed 400 days.');
+                }
+            }
+
+            // Validate enrollment dates relationship
+            if ($this->filled('enrollment_start_date') && $this->filled('enrollment_end_date')) {
+                $enrollmentStart = \Carbon\Carbon::parse($this->enrollment_start_date);
+                $enrollmentEnd = \Carbon\Carbon::parse($this->enrollment_end_date);
+
+                if ($enrollmentEnd->lte($enrollmentStart)) {
+                    $validator->errors()->add('enrollment_end_date', 'Enrollment end date must be after enrollment start date.');
+                }
+            }
+
+            // Validate enrollment_end_date is before academic year end_date
+            if ($this->filled('enrollment_end_date') && $this->filled('end_date')) {
+                $enrollmentEnd = \Carbon\Carbon::parse($this->enrollment_end_date);
+                $academicYearEnd = \Carbon\Carbon::parse($this->end_date);
+
+                if ($enrollmentEnd->gte($academicYearEnd)) {
+                    $validator->errors()->add('enrollment_end_date', 'Enrollment end date must be before the academic year end date.');
                 }
             }
         });

@@ -11,6 +11,7 @@ use App\Models\Traits\Tenantable;
 use App\Models\Traits\LogsActivityWithTenant;
 use App\Models\User;
 use App\Models\V1\SIS\Student\Student;
+use App\Models\V1\SIS\School\SchoolEvent;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -223,6 +224,14 @@ class School extends Model
     {
         return $this->hasMany(\App\Models\Forms\FormInstance::class, 'reference_id')
             ->where('reference_type', 'School');
+    }
+
+    /**
+     * Get the events associated with this school.
+     */
+    public function events(): HasMany
+    {
+        return $this->hasMany(SchoolEvent::class);
     }
 
     /**

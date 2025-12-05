@@ -40,9 +40,11 @@ Route::middleware(['auth:api', 'tenant'])->group(function () {
     Route::prefix('classes')->name('classes.')->group(function () {
         Route::get('/', [AcademicClassController::class, 'index'])->name('index');
         Route::post('/', [AcademicClassController::class, 'store'])->name('store');
+        Route::post('draft', [AcademicClassController::class, 'createDraft'])->name('draft');
         Route::get('/teacher', [AcademicClassController::class, 'teacherClasses'])->name('teacher');
         Route::get('/{class}', [AcademicClassController::class, 'show'])->name('show');
         Route::put('/{class}', [AcademicClassController::class, 'update'])->name('update');
+        Route::put('/{class}/publish', [AcademicClassController::class, 'publish'])->name('publish');
         Route::delete('/{class}', [AcademicClassController::class, 'destroy'])->name('destroy');
 
         // Class Enrollment Management
@@ -139,6 +141,8 @@ Route::middleware(['auth:api', 'tenant'])->group(function () {
     Route::prefix('teachers')->name('teachers.')->group(function () {
         Route::get('/', [TeacherController::class, 'index'])->name('index');
         Route::post('/', [TeacherController::class, 'store'])->name('store');
+        Route::post('draft', [TeacherController::class, 'createDraft'])->name('draft');
+        Route::post('validate-assignment', [TeacherController::class, 'validateAssignment'])->name('validate-assignment');
         Route::get('/search', [TeacherController::class, 'search'])->name('search');
         Route::get('/by-department', [TeacherController::class, 'byDepartment'])->name('by-department');
         Route::get('/by-employment-type', [TeacherController::class, 'byEmploymentType'])->name('by-employment-type');
@@ -148,6 +152,7 @@ Route::middleware(['auth:api', 'tenant'])->group(function () {
         Route::get('/for-class-assignment', [TeacherController::class, 'forClassAssignment'])->name('for-class-assignment');
         Route::get('/{id}', [TeacherController::class, 'show'])->name('show');
         Route::put('/{id}', [TeacherController::class, 'update'])->name('update');
+        Route::put('/{id}/publish', [TeacherController::class, 'publish'])->name('publish');
         Route::delete('/{id}', [TeacherController::class, 'destroy'])->name('destroy');
 
         // Teacher-specific actions

@@ -3,8 +3,10 @@
 namespace App\Models\Settings;
 
 use App\Models\User;
+use App\Models\Subscription\Subscription;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
 class Tenant extends Model
@@ -83,5 +85,21 @@ class Tenant extends Model
               ->orWhere('slug', 'like', "%{$search}%")
               ->orWhere('domain', 'like', "%{$search}%");
         });
+    }
+
+    // Subscription relationships
+    public function subscriptions(): HasMany
+    {
+        return $this->hasMany(Subscription::class);
+    }
+
+    public function activeSubscription()
+    {
+        return $this->hasOne(Subscription::class)->where('status', 'active');
+    }
+
+    public function getActivePackageAttribute()
+    {
+        return $this->activeSubscription?->package;
     }
 }

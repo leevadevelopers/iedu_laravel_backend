@@ -28,6 +28,8 @@ Route::prefix('v1')->group(function () {
     require __DIR__ . '/modules/director.php';
     require __DIR__ . '/modules/teacher-portal.php';
     require __DIR__ . '/modules/super-admin.php';
+    require __DIR__ . '/modules/school-owner.php';
+    require __DIR__ . '/modules/settings.php';
 });
 
 // Transport Module Routes
@@ -63,7 +65,13 @@ Route::bind('stop', function ($value) {
 });
 
 Route::bind('subscription', function ($value) {
-    return \App\Models\V1\Transport\StudentTransportSubscription::findOrFail($value);
+    // Check if it's a transport subscription first
+    $transportSubscription = \App\Models\V1\Transport\StudentTransportSubscription::find($value);
+    if ($transportSubscription) {
+        return $transportSubscription;
+    }
+    // Otherwise, try subscription management subscription
+    return \App\Models\Subscription\Subscription::findOrFail($value);
 });
 
 //

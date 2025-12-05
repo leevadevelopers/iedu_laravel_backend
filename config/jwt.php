@@ -101,7 +101,7 @@ return [
     |
     */
 
-    'ttl' => env('JWT_TTL', 60),
+    'ttl' => env('JWT_TTL', 480), // Default: 8 hours (480 minutes) - can be overridden in .env
 
     /*
     |--------------------------------------------------------------------------

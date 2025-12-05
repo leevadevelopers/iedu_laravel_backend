@@ -44,6 +44,8 @@ Route::middleware(['auth:api'])->group(function () {
         // Conflict Detection
         Route::post('/check-conflicts', [ScheduleController::class, 'checkConflicts'])
             ->name('check-conflicts');
+        Route::post('/validate-conflict', [ScheduleController::class, 'validateConflict'])
+            ->name('validate-conflict');
 
         // Statistics
         Route::get('/stats/overview', [ScheduleController::class, 'stats'])

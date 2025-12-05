@@ -16,6 +16,22 @@ Route::middleware(['auth:api'])->group(function () {
 
     // Additional Student Operations
     Route::prefix('students')->group(function () {
+        // Draft operations
+        Route::post('draft', [\App\Http\Controllers\API\V1\Student\StudentController::class, 'createDraft'])
+            ->name('students.draft');
+        Route::put('{student}/publish', [\App\Http\Controllers\API\V1\Student\StudentController::class, 'publish'])
+            ->name('students.publish');
+
+        // Validation endpoints
+        Route::post('validate-enrollment', [\App\Http\Controllers\API\V1\Student\StudentController::class, 'validateEnrollment'])
+            ->name('students.validate-enrollment');
+
+        // CSV Import operations
+        Route::post('import', [\App\Http\Controllers\API\V1\Student\StudentController::class, 'import'])
+            ->name('students.import');
+        Route::get('import/template', [\App\Http\Controllers\API\V1\Student\StudentController::class, 'downloadImportTemplate'])
+            ->name('students.import.template');
+
         // Academic summary for a specific student
         Route::get('{student}/academic-summary', [\App\Http\Controllers\API\V1\Student\StudentController::class, 'academicSummary'])
             ->name('students.academic-summary');

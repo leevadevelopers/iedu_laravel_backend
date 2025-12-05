@@ -37,7 +37,7 @@ return new class extends Migration
             ])->default('full_time');
             $table->date('hire_date');
             $table->date('termination_date')->nullable();
-            $table->enum('status', ['active', 'inactive', 'terminated', 'on_leave'])->default('active');
+            $table->enum('status', ['draft', 'active', 'inactive', 'terminated', 'on_leave', 'archived'])->default('active');
 
             // Educational Background
             $table->json('education_json')->nullable(); // Degrees, certifications
@@ -48,7 +48,7 @@ return new class extends Migration
             $table->string('department', 100)->nullable();
             $table->string('position', 100)->nullable();
             $table->decimal('salary', 10, 2)->nullable();
-            $table->json('schedule_json')->nullable(); // Work schedule, availability
+            // schedule_json removed - use Schedule model instead
 
             // Emergency Contacts
             $table->json('emergency_contacts_json')->nullable();

@@ -57,7 +57,6 @@ class Teacher extends BaseModel
         'education_json' => 'array',
         'certifications_json' => 'array',
         'specializations_json' => 'array',
-        'schedule_json' => 'array',
         'emergency_contacts_json' => 'array',
         'preferences_json' => 'array',
         'salary' => 'decimal:2'
@@ -97,6 +96,11 @@ class Teacher extends BaseModel
     public function scopeActive(Builder $query): Builder
     {
         return $query->where('status', 'active');
+    }
+
+    public function scopeDraft(Builder $query): Builder
+    {
+        return $query->where('status', 'draft');
     }
 
     public function scopeByDepartment(Builder $query, string $department): Builder

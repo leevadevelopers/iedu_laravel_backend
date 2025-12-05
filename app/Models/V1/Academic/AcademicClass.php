@@ -96,6 +96,11 @@ class AcademicClass extends BaseModel
         return $query->where('status', 'active');
     }
 
+    public function scopeDraft(Builder $query): Builder
+    {
+        return $query->where('status', 'draft');
+    }
+
     public function scopeByGrade(Builder $query, string $gradeLevel): Builder
     {
         return $query->where('grade_level', $gradeLevel);

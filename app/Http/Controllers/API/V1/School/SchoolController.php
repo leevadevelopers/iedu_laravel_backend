@@ -4,6 +4,7 @@ namespace App\Http\Controllers\API\V1\School;
 
 use App\Http\Controllers\Controller;
 use App\Models\V1\SIS\School\School;
+use App\Models\V1\SIS\School\SchoolEvent;
 use App\Models\Forms\FormTemplate;
 use App\Models\Scopes\TenantScope;
 use App\Services\SchoolService;
@@ -1268,6 +1269,113 @@ class SchoolController extends Controller
     }
 
     /**
+     * Get unified school calendar (academic years + events)
+     */
+    public function getCalendar($id, Request $request): JsonResponse
+    {
+        try {
+            $user = Auth::user();
+            $isSuperAdmin = $user && method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin();
+
+            // Super admin can access any school, others are scoped by tenant
+            if ($isSuperAdmin) {
+                $school = School::withoutTenantScope()->findOrFail($id);
+            } else {
+                $school = School::findOrFail($id);
+            }
+
+            // Check authorization
+            $this->authorize('view', $school);
+
+            // Get date range from request
+            $startDate = $request->get('start_date');
+            $endDate = $request->get('end_date');
+
+            // Get academic years that overlap with the date range (or all if no range specified)
+            $academicYearsQuery = \App\Models\V1\SIS\School\AcademicYear::where('school_id', $school->id);
+
+            if ($startDate && $endDate) {
+                $academicYearsQuery->where(function ($query) use ($startDate, $endDate) {
+                    $query->whereBetween('start_date', [$startDate, $endDate])
+                          ->orWhereBetween('end_date', [$startDate, $endDate])
+                          ->orWhere(function ($q) use ($startDate, $endDate) {
+                              $q->where('start_date', '<=', $startDate)
+                                ->where('end_date', '>=', $endDate);
+                          });
+                });
+            }
+
+            $academicYears = $academicYearsQuery
+                ->with(['terms' => function ($query) {
+                    $query->select('id', 'academic_year_id', 'name', 'start_date', 'end_date', 'status')
+                          ->orderBy('start_date');
+                }])
+                ->orderBy('start_date')
+                ->get();
+
+            // Build calendar data
+            $calendar = [
+                'school_id' => $school->id,
+                'school_name' => $school->display_name ?? $school->official_name,
+                'academic_years' => $academicYears->map(function ($year) {
+                    return [
+                        'id' => $year->id,
+                        'name' => $year->name,
+                        'year' => $year->year,
+                        'start_date' => $year->start_date,
+                        'end_date' => $year->end_date,
+                        'status' => $year->status,
+                        'is_current' => $year->is_current,
+                        'terms' => $year->terms->map(function ($term) {
+                            return [
+                                'id' => $term->id,
+                                'name' => $term->name,
+                                'start_date' => $term->start_date,
+                                'end_date' => $term->end_date,
+                                'status' => $term->status,
+                            ];
+                        }),
+                        'important_dates' => [
+                            'enrollment_start' => $year->enrollment_start_date,
+                            'enrollment_end' => $year->enrollment_end_date,
+                            'registration_deadline' => $year->registration_deadline,
+                        ],
+                        'holidays' => $year->holidays_json ? (is_array($year->holidays_json) ? $year->holidays_json : json_decode($year->holidays_json, true)) : [],
+                    ];
+                }),
+                'events' => $this->getSchoolEvents($school, $startDate, $endDate),
+            ];
+
+            // Filter events by date range if provided
+            if ($startDate && $endDate) {
+                // Filter holidays within date range
+                $calendar['academic_years'] = $calendar['academic_years']->map(function ($year) use ($startDate, $endDate) {
+                    if (isset($year['holidays']) && is_array($year['holidays'])) {
+                        $year['holidays'] = array_filter($year['holidays'], function ($holiday) use ($startDate, $endDate) {
+                            $holidayDate = $holiday['date'] ?? null;
+                            if (!$holidayDate) return false;
+                            return $holidayDate >= $startDate && $holidayDate <= $endDate;
+                        });
+                    }
+                    return $year;
+                });
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => $calendar
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to get school calendar',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
      * Get age distribution for students
      */
     private function getAgeDistribution(School $school): array
@@ -1328,5 +1436,240 @@ class SchoolController extends Controller
     {
         // TODO: Implement academic progress calculation
         return [];
+    }
+
+    /**
+     * Get school events
+     */
+    public function getEvents($id, Request $request): JsonResponse
+    {
+        try {
+            $user = Auth::user();
+            $isSuperAdmin = $user && method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin();
+
+            if ($isSuperAdmin) {
+                $school = School::withoutTenantScope()->findOrFail($id);
+            } else {
+                $school = School::findOrFail($id);
+            }
+
+            $this->authorize('view', $school);
+
+            $query = SchoolEvent::where('school_id', $school->id);
+
+            // Filter by date range
+            if ($request->has('start_date')) {
+                $query->where('end_date', '>=', $request->get('start_date'));
+            }
+            if ($request->has('end_date')) {
+                $query->where('start_date', '<=', $request->get('end_date'));
+            }
+
+            // Filter by event type
+            if ($request->has('event_type')) {
+                $query->where('event_type', $request->get('event_type'));
+            }
+
+            $events = $query->orderBy('start_date')->get();
+
+            return response()->json([
+                'success' => true,
+                'data' => $events
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to get school events',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Create a school event
+     */
+    public function createEvent($id, Request $request): JsonResponse
+    {
+        try {
+            $user = Auth::user();
+            $isSuperAdmin = $user && method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin();
+
+            if ($isSuperAdmin) {
+                $school = School::withoutTenantScope()->findOrFail($id);
+            } else {
+                $school = School::findOrFail($id);
+            }
+
+            $this->authorize('update', $school);
+
+            $validator = Validator::make($request->all(), [
+                'title' => 'required|string|max:200',
+                'description' => 'nullable|string|max:1000',
+                'event_type' => 'required|in:academic,holiday,activity,meeting,exam,other',
+                'start_date' => 'required|date',
+                'end_date' => 'required|date|after_or_equal:start_date',
+                'all_day' => 'boolean',
+                'location' => 'nullable|string|max:200',
+                'color' => 'nullable|string|max:7',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            $event = SchoolEvent::create([
+                'school_id' => $school->id,
+                'title' => $request->get('title'),
+                'description' => $request->get('description'),
+                'event_type' => $request->get('event_type'),
+                'start_date' => $request->get('start_date'),
+                'end_date' => $request->get('end_date'),
+                'all_day' => $request->get('all_day', false),
+                'location' => $request->get('location'),
+                'color' => $request->get('color', '#3b82f6'),
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Event created successfully',
+                'data' => $event
+            ], 201);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to create event',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Update a school event
+     */
+    public function updateEvent($id, $eventId, Request $request): JsonResponse
+    {
+        try {
+            $user = Auth::user();
+            $isSuperAdmin = $user && method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin();
+
+            if ($isSuperAdmin) {
+                $school = School::withoutTenantScope()->findOrFail($id);
+            } else {
+                $school = School::findOrFail($id);
+            }
+
+            $this->authorize('update', $school);
+
+            $event = SchoolEvent::where('school_id', $school->id)->findOrFail($eventId);
+
+            $validator = Validator::make($request->all(), [
+                'title' => 'sometimes|required|string|max:200',
+                'description' => 'nullable|string|max:1000',
+                'event_type' => 'sometimes|required|in:academic,holiday,activity,meeting,exam,other',
+                'start_date' => 'sometimes|required|date',
+                'end_date' => 'sometimes|required|date|after_or_equal:start_date',
+                'all_day' => 'boolean',
+                'location' => 'nullable|string|max:200',
+                'color' => 'nullable|string|max:7',
+            ]);
+
+            if ($validator->fails()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => $validator->errors()
+                ], 422);
+            }
+
+            $event->update($request->only([
+                'title', 'description', 'event_type', 'start_date', 'end_date',
+                'all_day', 'location', 'color'
+            ]));
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Event updated successfully',
+                'data' => $event->fresh()
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to update event',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Delete a school event
+     */
+    public function deleteEvent($id, $eventId): JsonResponse
+    {
+        try {
+            $user = Auth::user();
+            $isSuperAdmin = $user && method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin();
+
+            if ($isSuperAdmin) {
+                $school = School::withoutTenantScope()->findOrFail($id);
+            } else {
+                $school = School::findOrFail($id);
+            }
+
+            $this->authorize('update', $school);
+
+            $event = SchoolEvent::where('school_id', $school->id)->findOrFail($eventId);
+            $event->delete();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Event deleted successfully'
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to delete event',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get school events for calendar
+     */
+    private function getSchoolEvents(School $school, ?string $startDate = null, ?string $endDate = null): array
+    {
+        $query = SchoolEvent::where('school_id', $school->id);
+
+        if ($startDate) {
+            $query->where('end_date', '>=', $startDate);
+        }
+        if ($endDate) {
+            $query->where('start_date', '<=', $endDate);
+        }
+
+        return $query->orderBy('start_date')->get()->map(function ($event) {
+            return [
+                'id' => $event->id,
+                'school_id' => $event->school_id,
+                'title' => $event->title,
+                'description' => $event->description,
+                'event_type' => $event->event_type,
+                'start_date' => $event->all_day ? $event->start_date->toDateString() : $event->start_date->toDateTimeString(),
+                'end_date' => $event->all_day ? $event->end_date->toDateString() : $event->end_date->toDateTimeString(),
+                'all_day' => $event->all_day,
+                'location' => $event->location,
+                'color' => $event->color,
+                'created_at' => $event->created_at->toDateTimeString(),
+                'updated_at' => $event->updated_at->toDateTimeString(),
+            ];
+        })->toArray();
     }
 }

@@ -35,7 +35,7 @@ return new class extends Migration
             $table->string('room_number', 50)->nullable();
 
             // Status
-            $table->enum('status', ['planned', 'active', 'completed', 'cancelled'])->default('planned');
+            $table->enum('status', ['draft', 'planned', 'active', 'completed', 'cancelled', 'archived'])->default('planned');
 
             $table->timestamps();
 

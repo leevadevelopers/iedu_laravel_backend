@@ -82,6 +82,7 @@ class Student extends Model
         'current_grade_level',
         'current_academic_year_id',
         'enrollment_status',
+        'status',
         'expected_graduation_date',
         'learning_profile_json',
         'accommodation_needs_json',
@@ -283,6 +284,16 @@ class Student extends Model
     public function scopeEnrolled($query)
     {
         return $query->where('enrollment_status', 'enrolled');
+    }
+
+    public function scopeActive($query)
+    {
+        return $query->where('status', 'active');
+    }
+
+    public function scopeDraft($query)
+    {
+        return $query->where('status', 'draft');
     }
 
     /**

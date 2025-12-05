@@ -256,8 +256,8 @@ class AcademicYearController extends Controller
                 'description' => 'nullable|string|max:1000',
                 'start_date' => 'required|date',
                 'end_date' => 'required|date|after:start_date',
-                'enrollment_start_date' => 'nullable|date|after_or_equal:start_date',
-                'enrollment_end_date' => 'nullable|date|before:end_date',
+                'enrollment_start_date' => 'nullable|date',
+                'enrollment_end_date' => 'nullable|date|after:enrollment_start_date|before:end_date',
                 'term_structure' => 'nullable|in:semesters,trimesters,quarters,year_round',
                 'total_terms' => 'nullable|integer|min:1',
                 'is_current' => 'nullable|boolean'
@@ -413,8 +413,8 @@ class AcademicYearController extends Controller
             'description' => 'nullable|string|max:1000',
             'is_current' => 'boolean',
             'status' => 'required|in:planning,active,completed,archived',
-            'enrollment_start_date' => 'nullable|date|after_or_equal:start_date',
-            'enrollment_end_date' => 'nullable|date|before:end_date',
+            'enrollment_start_date' => 'nullable|date',
+            'enrollment_end_date' => 'nullable|date|after:enrollment_start_date|before:end_date',
             'registration_deadline' => 'nullable|date|before:start_date',
             'term_structure' => 'nullable|in:semesters,trimesters,quarters,year_round',
             'total_terms' => 'nullable|integer|min:1',
@@ -599,8 +599,8 @@ class AcademicYearController extends Controller
             'description' => 'nullable|string|max:1000',
             'is_current' => 'boolean',
             'status' => 'sometimes|required|in:planning,active,completed,archived',
-            'enrollment_start_date' => 'nullable|date|after_or_equal:start_date',
-            'enrollment_end_date' => 'nullable|date|before:end_date',
+            'enrollment_start_date' => 'nullable|date',
+            'enrollment_end_date' => 'nullable|date|after:enrollment_start_date|before:end_date',
             'registration_deadline' => 'nullable|date|before:start_date',
             'term_structure' => 'nullable|in:semesters,trimesters,quarters,year_round',
             'total_terms' => 'nullable|integer|min:1',
@@ -768,10 +768,32 @@ class AcademicYearController extends Controller
                 ], 403);
             }
 
+            // First, try to find academic year with is_current = true
             $currentYear = AcademicYear::where('school_id', $schoolId)
                 ->where('is_current', true)
                 ->with(['terms:id,academic_year_id,name,start_date,end_date,status'])
                 ->first();
+
+            // If no current year found by is_current flag, try to find active year that contains today's date
+            if (!$currentYear) {
+                $today = now();
+                $currentYear = AcademicYear::where('school_id', $schoolId)
+                    ->where('status', 'active')
+                    ->whereDate('start_date', '<=', $today)
+                    ->whereDate('end_date', '>=', $today)
+                    ->with(['terms:id,academic_year_id,name,start_date,end_date,status'])
+                    ->orderBy('start_date', 'desc')
+                    ->first();
+            }
+
+            // If still no current year, try to find the most recent active or planning year
+            if (!$currentYear) {
+                $currentYear = AcademicYear::where('school_id', $schoolId)
+                    ->whereIn('status', ['active', 'planning'])
+                    ->with(['terms:id,academic_year_id,name,start_date,end_date,status'])
+                    ->orderBy('start_date', 'desc')
+                    ->first();
+            }
 
             if (!$currentYear) {
                 return response()->json([

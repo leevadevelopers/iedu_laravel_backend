@@ -15,6 +15,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Validator;
 use Spatie\Permission\Models\Role;
 
 class TeacherController extends Controller
@@ -755,6 +756,265 @@ class TeacherController extends Controller
         );
 
         return $this->successPaginatedResponse($combinedPaginator);
+    }
+
+    /**
+     * Create a draft teacher (with minimal validation)
+     */
+    public function createDraft(Request $request): JsonResponse
+    {
+        $user = auth('api')->user();
+
+        if (!$user) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'User not authenticated'
+            ], 401);
+        }
+
+        $tenantId = $this->getCurrentTenantId();
+        if (!$tenantId) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Tenant ID is required'
+            ], 422);
+        }
+
+        $schoolId = $this->getCurrentSchoolId();
+        if (!$schoolId) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'User is not associated with any school'
+            ], 403);
+        }
+
+        // Minimal validation for draft - only require first_name and last_name
+        $validator = Validator::make($request->all(), [
+            'first_name' => 'required|string|max:100',
+            'last_name' => 'required|string|max:100',
+            'middle_name' => 'nullable|string|max:100',
+            'email' => 'nullable|email|max:255',
+            'phone' => 'nullable|string|max:20',
+            'employee_id' => 'nullable|string|max:50|unique:teachers,employee_id',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            DB::beginTransaction();
+
+            // Generate employee_id if not provided
+            $employeeId = $request->employee_id ?? $this->generateEmployeeId($schoolId);
+
+            // Create draft teacher with status='draft'
+            $teacherData = $request->only([
+                'first_name', 'middle_name', 'last_name', 'preferred_name',
+                'email', 'phone', 'employee_id', 'employment_type', 'hire_date'
+            ]);
+            $teacherData['tenant_id'] = $tenantId;
+            $teacherData['school_id'] = $schoolId;
+            $teacherData['employee_id'] = $employeeId;
+            $teacherData['status'] = 'draft';
+            $teacherData['employment_type'] = $teacherData['employment_type'] ?? 'full_time';
+            $teacherData['hire_date'] = $teacherData['hire_date'] ?? now();
+
+            $teacher = Teacher::create($teacherData);
+
+            DB::commit();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Draft teacher created successfully',
+                'data' => $teacher
+            ], 201);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to create draft teacher',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Publish a draft teacher (change status from draft to active)
+     */
+    public function publish($id): JsonResponse
+    {
+        try {
+            $teacher = $this->teacherService->getTeacherById($id);
+
+            if (!$teacher) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Teacher not found'
+                ], 404);
+            }
+
+            // Verify tenant access
+            $tenantId = $this->getCurrentTenantId();
+            if (!$tenantId || $teacher->tenant_id != $tenantId) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'You do not have access to this teacher'
+                ], 403);
+            }
+
+            // Check if teacher is a draft
+            if ($teacher->status !== 'draft') {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Teacher is not a draft. Only draft teachers can be published.'
+                ], 422);
+            }
+
+            // Validate required fields before publishing
+            $requiredFields = ['first_name', 'last_name', 'employee_id', 'hire_date'];
+            $missingFields = [];
+            foreach ($requiredFields as $field) {
+                if (empty($teacher->$field)) {
+                    $missingFields[] = $field;
+                }
+            }
+
+            if (!empty($missingFields)) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Cannot publish teacher. Missing required fields: ' . implode(', ', $missingFields),
+                    'missing_fields' => $missingFields
+                ], 422);
+            }
+
+            // Update status to active
+            $teacher->update(['status' => 'active']);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Teacher published successfully',
+                'data' => $teacher->fresh()
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to publish teacher',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Validate teacher assignment to subject/class
+     */
+    public function validateAssignment(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'teacher_id' => 'required|exists:teachers,id',
+            'subject_id' => 'required|exists:subjects,id',
+            'class_id' => 'nullable|exists:classes,id',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Validation failed',
+                'errors' => $validator->errors()
+            ], 422);
+        }
+
+        try {
+            $teacher = Teacher::findOrFail($request->teacher_id);
+            $subject = \App\Models\V1\Academic\Subject::findOrFail($request->subject_id);
+
+            $errors = [];
+            $warnings = [];
+            $valid = true;
+
+            // Verify access
+            $userSchoolId = $this->getCurrentSchoolId();
+            if (!$userSchoolId || $teacher->school_id != $userSchoolId || $subject->school_id != $userSchoolId) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'You do not have access to these resources'
+                ], 403);
+            }
+
+            // Check 1: Teacher is active
+            if ($teacher->status !== 'active') {
+                $errors[] = 'Teacher is not active';
+                $valid = false;
+            }
+
+            // Check 2: Teacher has subject specialization
+            $specializations = $teacher->specializations_json ?? [];
+            $hasSpecialization = false;
+            if (is_array($specializations)) {
+                // Check if subject_id or subject name is in specializations
+                foreach ($specializations as $spec) {
+                    if (is_array($spec) && isset($spec['subject_id']) && $spec['subject_id'] == $subject->id) {
+                        $hasSpecialization = true;
+                        break;
+                    } elseif (is_string($spec) && $spec == $subject->name) {
+                        $hasSpecialization = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!$hasSpecialization) {
+                $warnings[] = "Teacher may not have specialization in subject: {$subject->name}";
+            }
+
+            // Check 3: Teacher has no conflicting schedules (if class_id provided)
+            if ($request->class_id) {
+                $class = \App\Models\V1\Academic\AcademicClass::findOrFail($request->class_id);
+                // This would require checking Schedule model - simplified for now
+                $warnings[] = 'Schedule conflict check recommended';
+            }
+
+            return response()->json([
+                'status' => 'success',
+                'valid' => $valid,
+                'errors' => $errors,
+                'warnings' => $warnings
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to validate assignment',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Generate unique employee ID
+     */
+    private function generateEmployeeId(int $schoolId): string
+    {
+        $prefix = 'EMP';
+        $year = date('Y');
+        $lastEmployee = Teacher::where('school_id', $schoolId)
+            ->where('employee_id', 'like', "{$prefix}{$year}%")
+            ->orderBy('employee_id', 'desc')
+            ->first();
+
+        if ($lastEmployee && preg_match('/\d+$/', $lastEmployee->employee_id, $matches)) {
+            $nextNumber = intval($matches[0]) + 1;
+        } else {
+            $nextNumber = 1;
+        }
+
+        return sprintf('%s%s%04d', $prefix, $year, $nextNumber);
     }
 
     /**

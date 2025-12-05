@@ -374,8 +374,20 @@ class AuthController extends Controller
     {
         try {
             $token = auth('api')->refresh();
-            return $this->respondWithToken($token);
+            $user = auth('api')->user();
+            
+            // Return format matching frontend expectations
+            return response()->json([
+                'access_token' => $token,
+                'token_type' => 'bearer',
+                'expires_in' => auth('api')->factory()->getTTL() * 60,
+            ]);
         } catch (\Exception $e) {
+            \Log::error('Token refresh failed', [
+                'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine()
+            ]);
             return response()->json(['error' => 'Token refresh failed'], 401);
         }
     }

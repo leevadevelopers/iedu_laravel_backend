@@ -62,6 +62,7 @@ class UserSeeder extends Seeder
             'current_tenant' => true,
             'joined_at' => now(),
         ]);
+        // Note: School association will be handled by SchoolSeeder
 
         // 3. SCHOOL ADMIN (Assigned to tenant 1)
         $schoolAdmin = User::create([

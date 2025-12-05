@@ -23,8 +23,10 @@ class DatabaseSeeder extends Seeder
             LibraryPermissionsSeeder::class,
             FinancialPermissionsSeeder::class,
             RolesSeeder::class,
+            SubscriptionPackageSeeder::class, // Seed subscription packages
             TenantSeeder::class, // Create tenant before users
             UserSeeder::class, // Users will be assigned to tenant
+            SchoolSeeder::class, // Create school and associate users
         ]);
     }
 }
