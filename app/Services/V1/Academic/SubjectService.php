@@ -249,7 +249,7 @@ class SubjectService extends BaseAcademicService
 
         foreach ($gradeLevels as $grade) {
             if (!in_array($grade, $allowedGrades, true)) {
-                throw new \InvalidArgumentException(\"Invalid grade level: {$grade}. Configure levels in School settings first.\");
+                throw new \InvalidArgumentException("Invalid grade level: {$grade}. Configure levels in School settings first.");
             }
         }
     }

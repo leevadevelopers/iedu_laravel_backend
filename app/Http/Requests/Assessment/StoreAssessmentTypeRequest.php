@@ -19,6 +19,7 @@ class StoreAssessmentTypeRequest extends FormRequest
             'description' => 'nullable|string',
             'default_weight' => 'nullable|numeric|min:0|max:100',
             'max_score' => 'nullable|numeric|min:0',
+            'grading_scale' => 'nullable|in:percentage,numeric',
             'color' => 'nullable|string|max:7',
             'is_active' => 'nullable|boolean',
         ];

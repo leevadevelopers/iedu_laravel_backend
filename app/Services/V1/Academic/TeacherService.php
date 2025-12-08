@@ -2,6 +2,7 @@
 
 namespace App\Services\V1\Academic;
 
+use App\Models\V1\Academic\AcademicClass;
 use App\Models\V1\Academic\Teacher;
 use App\Models\V1\SIS\School\SchoolUser;
 use App\Models\User;
@@ -200,6 +201,60 @@ class TeacherService extends BaseAcademicService
             DB::rollBack();
             throw $e;
         }
+    }
+
+    /**
+     * Fetch active teachers scoped to current tenant/school
+     */
+    public function getActiveTeachers(?int $schoolId = null): Collection
+    {
+        $user = Auth::user();
+        $schoolId = $schoolId ?? $this->getCurrentSchoolId();
+
+        return Teacher::with(['user', 'school'])
+            ->where('tenant_id', $user->tenant_id)
+            ->when($schoolId, fn($query) => $query->where('school_id', $schoolId))
+            ->active()
+            ->orderBy('last_name')
+            ->orderBy('first_name')
+            ->get();
+    }
+
+    /**
+     * Fetch teachers linked to a given class (primary + additional)
+     */
+    public function getTeachersByClass(int $classId): Collection
+    {
+        $user = Auth::user();
+        $class = AcademicClass::where('id', $classId)
+            ->where('tenant_id', $user->tenant_id)
+            ->firstOrFail();
+
+        $schoolId = $class->school_id ?? $this->getCurrentSchoolId();
+
+        $teacherIds = [];
+
+        if ($class->primary_teacher_id) {
+            $teacherIds[] = $class->primary_teacher_id;
+        }
+
+        if (is_array($class->additional_teachers_json)) {
+            $teacherIds = array_merge($teacherIds, array_filter($class->additional_teachers_json));
+        }
+
+        // No teachers assigned yet
+        if (empty($teacherIds)) {
+            return new Collection();
+        }
+
+        return Teacher::with(['user', 'school'])
+            ->whereIn('id', $teacherIds)
+            ->where('tenant_id', $user->tenant_id)
+            ->when($schoolId, fn($query) => $query->where('school_id', $schoolId))
+            ->active()
+            ->orderBy('last_name')
+            ->orderBy('first_name')
+            ->get();
     }
 
     /**

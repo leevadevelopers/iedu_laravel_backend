@@ -17,53 +17,142 @@ class AcademicClassService extends BaseAcademicService
     }
 
     /**
-     * Get paginated classes with filters
+     * Get paginated classes with filters (non-grouped).
      */
     public function getClasses(array $filters = []): LengthAwarePaginator
     {
         $user = Auth::user();
 
-        $schoolId = $this->getCurrentSchoolId();
+        $schoolId = $filters['school_id'] ?? $this->getCurrentSchoolId();
         $tenantId = $user->tenant_id;
 
         $query = AcademicClass::tenantScope($tenantId)
             ->where('school_id', $schoolId);
 
         // Apply filters
-        if (isset($filters['search'])) {
-            $query->where(function ($q) use ($filters) {
-                $q->where('name', 'like', '%' . $filters['search'] . '%')
-                  ->orWhere('class_code', 'like', '%' . $filters['search'] . '%');
+        if (!empty($filters['search'])) {
+            $search = $filters['search'];
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', '%' . $search . '%')
+                  ->orWhere('class_code', 'like', '%' . $search . '%');
             });
         }
 
-        if (isset($filters['subject_id'])) {
+        if (!empty($filters['subject_id'])) {
             $query->where('subject_id', $filters['subject_id']);
         }
 
-        if (isset($filters['grade_level'])) {
+        if (!empty($filters['grade_level'])) {
             $query->where('grade_level', $filters['grade_level']);
         }
 
-        if (isset($filters['status'])) {
+        if (!empty($filters['status'])) {
             $query->where('status', $filters['status']);
         }
 
-        if (isset($filters['primary_teacher_id'])) {
+        if (!empty($filters['primary_teacher_id'])) {
             $query->where('primary_teacher_id', $filters['primary_teacher_id']);
         }
 
-        if (isset($filters['academic_year_id'])) {
+        if (!empty($filters['academic_year_id'])) {
             $query->where('academic_year_id', $filters['academic_year_id']);
         }
 
-        if (isset($filters['academic_term_id'])) {
+        if (!empty($filters['academic_term_id'])) {
             $query->where('academic_term_id', $filters['academic_term_id']);
         }
 
-        return $query->with(['subject', 'primaryTeacher', 'academicYear', 'academicTerm', 'school'])
+        $perPage = $filters['per_page'] ?? 15;
+
+        $paginator = $query->with(['subject', 'primaryTeacher', 'academicYear', 'academicTerm', 'school'])
             ->orderBy('name')
-            ->paginate($filters['per_page'] ?? 15);
+            ->paginate($perPage);
+
+        // Normalize grade_level on returned items
+        $paginator->getCollection()->transform(function (AcademicClass $class) {
+            $class->grade_level = $this->normalizeGradeLevel($class->grade_level ?? $class->grade);
+            return $class;
+        });
+
+        return $paginator;
+    }
+
+    /**
+     * Get classes grouped by grade_level. Returns an array of groups.
+     */
+    public function getClassesGrouped(array $filters = []): array
+    {
+        $user = Auth::user();
+        $tenantId = $user->tenant_id;
+        $schoolId = $filters['school_id'] ?? $this->getCurrentSchoolId();
+
+        // Determine allowed grade levels (configured or default)
+        $school = $this->getCurrentSchool();
+        $allowedLevels = $this->getAllowedGradeLevels($school);
+
+        $query = AcademicClass::tenantScope($tenantId)
+            ->where('school_id', $schoolId);
+
+        // Apply filters (search, status, academic year/term, subject)
+        if (!empty($filters['search'])) {
+            $search = $filters['search'];
+            $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', '%' . $search . '%')
+                  ->orWhere('class_code', 'like', '%' . $search . '%');
+            });
+        }
+        if (!empty($filters['status'])) {
+            $query->where('status', $filters['status']);
+        }
+        if (!empty($filters['academic_year_id'])) {
+            $query->where('academic_year_id', $filters['academic_year_id']);
+        }
+        if (!empty($filters['academic_term_id'])) {
+            $query->where('academic_term_id', $filters['academic_term_id']);
+        }
+        if (!empty($filters['subject_id'])) {
+            $query->where('subject_id', $filters['subject_id']);
+        }
+        if (!empty($filters['primary_teacher_id'])) {
+            $query->where('primary_teacher_id', $filters['primary_teacher_id']);
+        }
+        if (!empty($filters['grade_level'])) {
+            // When requesting grouped data with a specific grade_level, just filter it
+            $query->where('grade_level', $filters['grade_level']);
+            $allowedLevels = [$filters['grade_level']];
+        }
+
+        $classes = $query->with(['subject', 'primaryTeacher', 'academicYear', 'academicTerm', 'school'])
+            ->orderBy('name')
+            ->get();
+
+        // Normalize grade_level
+        $classes = $classes->map(function (AcademicClass $class) {
+            $class->grade_level = $this->normalizeGradeLevel($class->grade_level ?? $class->grade);
+            return $class;
+        });
+
+        // Group by grade_level, ensuring empty groups for all allowed levels
+        $groups = [];
+        foreach ($allowedLevels as $level) {
+            $groups[$level] = [
+                'grade_level' => $level,
+                'classes' => [],
+            ];
+        }
+
+        foreach ($classes as $class) {
+            $level = $class->grade_level ?: 'other';
+            if (!isset($groups[$level])) {
+                $groups[$level] = [
+                    'grade_level' => $level,
+                    'classes' => [],
+                ];
+            }
+            $groups[$level]['classes'][] = $class;
+        }
+
+        return array_values($groups);
     }
 
     /**
@@ -426,5 +515,47 @@ class AcademicClassService extends BaseAcademicService
             '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12',
             'T1', 'T2', 'T3',
         ];
+    }
+
+    /**
+     * Normalize grade level strings to configured keys.
+     */
+    private function normalizeGradeLevel(?string $value): ?string
+    {
+        if (empty($value)) {
+            return null;
+        }
+
+        $v = trim($value);
+        $upper = strtoupper($v);
+
+        if (in_array($upper, ['PRE-K', 'PREK', 'PRE'], true)) {
+            return 'Pre-K';
+        }
+        if (in_array($upper, ['K', 'KINDER', 'KINDERGARTEN'], true)) {
+            return 'K';
+        }
+
+        // Técnico variants
+        if (str_starts_with($upper, 'T1')) return 'T1';
+        if (str_starts_with($upper, 'T2')) return 'T2';
+        if (str_starts_with($upper, 'T3')) return 'T3';
+
+        // Ordinal suffixes (1ST, 2ND, 3RD, 4TH...)
+        if (preg_match('/^(\\d+)(ST|ND|RD|TH)$/', $upper, $m)) {
+            return $m[1];
+        }
+
+        // “º ANO” variants
+        if (preg_match('/^(\\d+)[ºO]?\\s*ANO/', $upper, $m)) {
+            return $m[1];
+        }
+
+        // Plain digits
+        if (preg_match('/^(\\d{1,2})$/', $upper, $m)) {
+            return $m[1];
+        }
+
+        return $v;
     }
 }

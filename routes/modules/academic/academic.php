@@ -150,6 +150,8 @@ Route::middleware(['auth:api', 'tenant'])->group(function () {
         Route::get('/by-grade-level', [TeacherController::class, 'byGradeLevel'])->name('by-grade-level');
         Route::get('/available-at', [TeacherController::class, 'availableAt'])->name('available-at');
         Route::get('/for-class-assignment', [TeacherController::class, 'forClassAssignment'])->name('for-class-assignment');
+        Route::get('/active', [TeacherController::class, 'active'])->name('active');
+        Route::get('/class/{classId}', [TeacherController::class, 'byClass'])->name('by-class');
         Route::get('/{id}', [TeacherController::class, 'show'])->name('show');
         Route::put('/{id}', [TeacherController::class, 'update'])->name('update');
         Route::put('/{id}/publish', [TeacherController::class, 'publish'])->name('publish');

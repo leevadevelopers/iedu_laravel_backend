@@ -18,6 +18,7 @@ class AssessmentType extends BaseModel
         'description',
         'default_weight',
         'max_score',
+        'grading_scale',
         'color',
         'is_active',
     ];

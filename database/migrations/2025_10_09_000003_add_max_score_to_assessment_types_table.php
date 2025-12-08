@@ -11,9 +11,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('assessment_types', function (Blueprint $table) {
-            $table->decimal('max_score', 5, 2)->nullable()->after('default_weight');
-        });
+        if (Schema::hasTable('assessment_types') && !Schema::hasColumn('assessment_types', 'max_score')) {
+            Schema::table('assessment_types', function (Blueprint $table) {
+                $table->decimal('max_score', 5, 2)->nullable()->after('default_weight');
+            });
+        }
     }
 
     /**
@@ -21,9 +23,11 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('assessment_types', function (Blueprint $table) {
-            $table->dropColumn('max_score');
-        });
+        if (Schema::hasTable('assessment_types') && Schema::hasColumn('assessment_types', 'max_score')) {
+            Schema::table('assessment_types', function (Blueprint $table) {
+                $table->dropColumn('max_score');
+            });
+        }
     }
 };
 

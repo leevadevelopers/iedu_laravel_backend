@@ -99,7 +99,19 @@ class AcademicClassController extends Controller
     public function index(Request $request): JsonResponse
     {
 
-        $classes = $this->classService->getClasses($request->all());
+        $filters = $request->all();
+
+        // If grouped by grade_level, return grouped data (no pagination)
+        if (isset($filters['group_by']) && $filters['group_by'] === 'grade_level') {
+            $data = $this->classService->getClassesGrouped($filters);
+
+            return response()->json([
+                'status' => 'success',
+                'data' => $data,
+            ]);
+        }
+
+        $classes = $this->classService->getClasses($filters);
 
         return response()->json([
             'status' => 'success',

@@ -134,10 +134,10 @@ class UpdateScheduleRequest extends BaseScheduleRequest
             ],
             'teacher_id' => [
                 'sometimes',
-                'required',
+                'nullable',
                 'integer',
                 function ($attribute, $value, $fail) use ($tenantId, $schoolId) {
-                    if ($tenantId && $schoolId) {
+                    if ($value && $tenantId && $schoolId) {
                         $exists = \App\Models\V1\Academic\Teacher::where('id', $value)
                             ->where('tenant_id', $tenantId)
                             ->where('school_id', $schoolId)
@@ -150,10 +150,10 @@ class UpdateScheduleRequest extends BaseScheduleRequest
             ],
             'academic_year_id' => [
                 'sometimes',
-                'required',
+                'nullable',
                 'integer',
                 function ($attribute, $value, $fail) use ($tenantId, $schoolId) {
-                    if ($tenantId && $schoolId) {
+                    if ($value && $tenantId && $schoolId) {
                         $exists = \App\Models\V1\SIS\School\AcademicYear::where('id', $value)
                             ->where('tenant_id', $tenantId)
                             ->where('school_id', $schoolId)

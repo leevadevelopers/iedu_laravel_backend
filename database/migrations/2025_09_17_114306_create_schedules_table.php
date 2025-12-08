@@ -11,7 +11,7 @@ return new class extends Migration
         Schema::create('schedules', function (Blueprint $table) {
             $table->id();
             $table->foreignId('school_id')->constrained('schools')->onDelete('cascade');
-            $table->foreignId('academic_year_id')->constrained('academic_years')->onDelete('cascade');
+            $table->foreignId('academic_year_id')->nullable()->constrained('academic_years')->onDelete('set null');
             $table->foreignId('academic_term_id')->nullable()->constrained('academic_terms')->onDelete('set null');
 
             // Basic Schedule Information
@@ -21,7 +21,7 @@ return new class extends Migration
             // Associations
             $table->foreignId('subject_id')->constrained('subjects')->onDelete('cascade');
             $table->foreignId('class_id')->constrained('classes')->onDelete('cascade');
-            $table->foreignId('teacher_id')->constrained('teachers')->onDelete('cascade');
+            $table->foreignId('teacher_id')->nullable()->constrained('teachers')->onDelete('set null');
             $table->string('classroom', 50)->nullable(); // Sala de aula
 
             // Time Configuration
@@ -55,7 +55,9 @@ return new class extends Migration
             $table->index(['start_date', 'end_date']);
             $table->index('status');
 
-            // Unique constraint to prevent conflicts
+            // Unique constraint to prevent conflicts (only when teacher_id is set)
+            // Note: MySQL unique constraints with NULL values allow multiple NULLs
+            // So this will only enforce uniqueness when teacher_id is not null
             $table->unique([
                 'school_id', 'teacher_id', 'day_of_week',
                 'start_time', 'end_time', 'start_date', 'end_date'

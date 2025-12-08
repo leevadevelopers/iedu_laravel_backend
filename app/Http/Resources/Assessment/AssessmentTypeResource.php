@@ -18,6 +18,7 @@ class AssessmentTypeResource extends JsonResource
             'default_weight' => (float) $this->default_weight,
             'weight' => (float) $this->default_weight, // Also include as 'weight' for frontend compatibility
             'max_score' => $this->max_score ? (float) $this->max_score : null,
+            'grading_scale' => $this->grading_scale ?? 'percentage',
             'color' => $this->color,
             'is_active' => $this->is_active,
             'assessments_count' => $this->whenCounted('assessments'),

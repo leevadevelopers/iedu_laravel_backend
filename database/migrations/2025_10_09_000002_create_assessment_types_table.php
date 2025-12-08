@@ -18,6 +18,8 @@ return new class extends Migration
             $table->string('code')->nullable();
             $table->text('description')->nullable();
             $table->decimal('default_weight', 5, 2)->default(0); // Peso padrão (ex: 20.00%)
+            $table->decimal('max_score', 5, 2)->nullable(); // Pontuação máxima padrão
+            $table->enum('grading_scale', ['percentage', 'numeric'])->default('percentage'); // Tipo de escala: percentual ou numérico
             $table->string('color')->nullable(); // Para UI
             $table->boolean('is_active')->default(true);
             $table->timestamps();

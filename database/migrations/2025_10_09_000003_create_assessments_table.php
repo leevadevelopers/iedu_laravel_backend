@@ -17,7 +17,7 @@ return new class extends Migration
             $table->foreignId('term_id')->constrained('assessment_terms')->onDelete('cascade');
             $table->foreignId('subject_id')->constrained('subjects')->onDelete('cascade');
             $table->foreignId('class_id')->constrained('classes')->onDelete('cascade');
-            $table->foreignId('teacher_id')->constrained('users')->onDelete('cascade');
+            $table->foreignId('teacher_id')->nullable()->constrained('users')->onDelete('set null');
             $table->foreignId('type_id')->constrained('assessment_types')->onDelete('cascade');
             $table->string('title');
             $table->text('description')->nullable();

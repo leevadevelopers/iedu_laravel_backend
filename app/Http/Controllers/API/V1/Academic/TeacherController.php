@@ -11,6 +11,7 @@ use App\Http\Requests\Academic\StoreTeacherRequest;
 use App\Http\Requests\Academic\UpdateTeacherRequest;
 use App\Services\V1\Academic\TeacherService;
 use App\Traits\ApiResponseTrait;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
@@ -756,6 +757,44 @@ class TeacherController extends Controller
         );
 
         return $this->successPaginatedResponse($combinedPaginator);
+    }
+
+    /**
+     * List all active teachers for the current tenant/school
+     */
+    public function active(): JsonResponse
+    {
+        try {
+            $teachers = $this->teacherService->getActiveTeachers();
+            return $this->successResponse($teachers);
+        } catch (\Exception $e) {
+            return $this->errorResponse(
+                'Failed to load active teachers',
+                ['error' => $e->getMessage()],
+                'SERVER_ERROR',
+                500
+            );
+        }
+    }
+
+    /**
+     * List teachers assigned to a specific class
+     */
+    public function byClass(int $classId): JsonResponse
+    {
+        try {
+            $teachers = $this->teacherService->getTeachersByClass($classId);
+            return $this->successResponse($teachers);
+        } catch (ModelNotFoundException $e) {
+            return $this->notFoundResponse('Class not found');
+        } catch (\Exception $e) {
+            return $this->errorResponse(
+                'Failed to load teachers for class',
+                ['error' => $e->getMessage()],
+                'SERVER_ERROR',
+                500
+            );
+        }
     }
 
     /**

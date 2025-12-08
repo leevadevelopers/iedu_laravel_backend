@@ -194,10 +194,15 @@ class ScheduleService extends BaseScheduleService
 
         $tenantId = $this->getCurrentTenantId();
         $schoolId = $this->getCurrentSchoolId();
-        $teacherId = $scheduleData['teacher_id'];
+        $teacherId = $scheduleData['teacher_id'] ?? null;
         $dayOfWeek = $scheduleData['day_of_week'];
         $startTime = $scheduleData['start_time'];
         $endTime = $scheduleData['end_time'];
+
+        // If no teacher is assigned, skip teacher conflict checks
+        if (empty($teacherId)) {
+            return [];
+        }
 
         // Check teacher conflicts
         $teacherConflicts = Schedule::where('tenant_id', $tenantId)
