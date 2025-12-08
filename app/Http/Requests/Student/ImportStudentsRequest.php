@@ -34,6 +34,7 @@ class ImportStudentsRequest extends FormRequest
             'skip_duplicates' => 'nullable|boolean',
             'update_existing' => 'nullable|boolean',
             'validate_only' => 'nullable|boolean',
+            'preview_only' => 'nullable|boolean',
             'tenant_id' => 'nullable|integer|exists:tenants,id',
             'school_id' => 'nullable|integer|exists:schools,id'
         ];

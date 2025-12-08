@@ -1242,6 +1242,7 @@ class StudentController extends Controller
             $skipDuplicates = $request->boolean('skip_duplicates', true);
             $updateExisting = $request->boolean('update_existing', false);
             $validateOnly = $request->boolean('validate_only', false);
+            $previewOnly = $request->boolean('preview_only', false);
 
             $tenantId = $request->input('tenant_id') ?? $this->getCurrentTenantId();
             $schoolId = $request->input('school_id') ?? $this->getCurrentSchoolId();
@@ -1260,7 +1261,8 @@ class StudentController extends Controller
                 'skipped' => 0,
                 'updated' => 0,
                 'errors' => [],
-                'warnings' => []
+                'warnings' => [],
+                'preview_rows' => []
             ];
 
             // Parse CSV file
@@ -1271,57 +1273,128 @@ class StudentController extends Controller
                 return $this->errorResponse('Failed to read CSV file', 500);
             }
 
-            // Read header row
-            $headers = fgetcsv($fileHandle);
+            // Detect delimiter (semicolon for PT locales, comma for others)
+            $delimiter = $this->detectCsvDelimiter($filePath);
+            \Log::info('CSV Import - Detected delimiter', ['delimiter' => $delimiter]);
+            
+            // Read header row with detected delimiter
+            $headers = fgetcsv($fileHandle, 0, $delimiter);
+            \Log::info('CSV Import - Raw headers from file', ['headers' => $headers, 'count' => count($headers ?? [])]);
+            
             if (!$headers) {
                 fclose($fileHandle);
+                \Log::error('CSV Import - No headers found in file');
                 return $this->errorResponse('CSV file is empty or invalid', 400);
             }
 
+            // Remove BOM (Byte Order Mark) from first header if present
+            if (!empty($headers[0])) {
+                // Remove UTF-8 BOM (\xEF\xBB\xBF) - use actual bytes, not Unicode escape
+                $headers[0] = ltrim($headers[0], "\xEF\xBB\xBF");
+                // Also remove using mb_ functions if available
+                if (function_exists('mb_substr') && mb_substr($headers[0], 0, 1) === "\xEF\xBB\xBF") {
+                    $headers[0] = mb_substr($headers[0], 1);
+                }
+            }
+
             // Normalize headers (trim, lowercase, replace spaces with underscores)
-            $headers = array_map(function($header) {
-                return strtolower(trim(str_replace(' ', '_', $header)));
+            $normalizedHeaders = array_map(function($header) {
+                // Remove UTF-8 BOM bytes (\xEF\xBB\xBF) from beginning
+                $cleaned = ltrim($header, "\xEF\xBB\xBF");
+                // Normalize: lowercase, trim, replace spaces with underscores
+                return strtolower(trim(str_replace(' ', '_', $cleaned)));
             }, $headers);
+            
+            \Log::info('CSV Import - Normalized headers', [
+                'original' => $headers,
+                'normalized' => $normalizedHeaders,
+                'count' => count($normalizedHeaders)
+            ]);
 
             // Required columns
             $requiredColumns = ['first_name', 'last_name', 'date_of_birth', 'gender'];
-            $missingColumns = array_diff($requiredColumns, $headers);
+            $missingColumns = array_diff($requiredColumns, $normalizedHeaders);
+            
+            \Log::info('CSV Import - Column validation', [
+                'required' => $requiredColumns,
+                'found' => $normalizedHeaders,
+                'missing' => $missingColumns,
+                'all_headers' => $normalizedHeaders
+            ]);
             
             if (!empty($missingColumns)) {
                 fclose($fileHandle);
+                \Log::error('CSV Import - Missing required columns', [
+                    'missing' => $missingColumns,
+                    'found_headers' => $normalizedHeaders,
+                    'delimiter_used' => $delimiter
+                ]);
                 return $this->errorResponse(
                     'Missing required columns: ' . implode(', ', $missingColumns),
                     400
                 );
             }
+            
+            // Update headers variable for use in rest of function
+            $headers = $normalizedHeaders;
 
             $rowNumber = 1; // Start from 1 (header is row 0)
+            $previewLimit = 50; // Limit preview to first 50 rows
+            $totalRows = 0;
 
-            // Process each row
-            while (($row = fgetcsv($fileHandle)) !== false) {
+            // Process each row with detected delimiter
+            while (($row = fgetcsv($fileHandle, 0, $delimiter)) !== false) {
                 $rowNumber++;
+                $totalRows++;
                 
                 try {
                     // Map row data to associative array
                     $rowData = [];
                     foreach ($headers as $index => $header) {
-                        $rowData[$header] = $row[$index] ?? null;
+                        $rowData[$header] = trim($row[$index] ?? '');
                     }
 
                     // Skip empty rows
                     if (empty(array_filter($rowData))) {
+                        $rowNumber--; // Adjust row number for empty rows
+                        $totalRows--;
                         continue;
                     }
 
                     // Validate required fields
                     $validationErrors = $this->validateStudentRow($rowData, $rowNumber);
+                    
+                    // If preview_only mode, collect preview data
+                    if ($previewOnly && $rowNumber <= $previewLimit + 1) {
+                        $previewRow = [
+                            'row_number' => $rowNumber,
+                            'data' => $rowData,
+                            'errors' => $validationErrors,
+                            'warnings' => []
+                        ];
+                        
+                        // Check for duplicates in preview mode
+                        $existingStudent = $this->findDuplicateStudent($rowData, $schoolId);
+                        if ($existingStudent) {
+                            $previewRow['warnings'][] = [
+                                'message' => 'Student already exists',
+                                'field' => 'email',
+                                'value' => $rowData['email'] ?? $rowData['student_number'] ?? 'N/A'
+                            ];
+                        }
+                        
+                        $results['preview_rows'][] = $previewRow;
+                    }
+                    
                     if (!empty($validationErrors)) {
                         $results['errors'] = array_merge($results['errors'], $validationErrors);
-                        continue;
+                        if (!$previewOnly) {
+                            continue;
+                        }
                     }
 
-                    // If validate_only, skip actual import
-                    if ($validateOnly) {
+                    // If validate_only or preview_only, skip actual import
+                    if ($validateOnly || $previewOnly) {
                         continue;
                     }
 
@@ -1371,7 +1444,15 @@ class StudentController extends Controller
 
             fclose($fileHandle);
 
-            return $this->successResponse($results, 'Import completed');
+            // Add summary for preview mode
+            if ($previewOnly) {
+                $results['total_rows'] = $totalRows;
+                $results['preview_count'] = count($results['preview_rows']);
+                $results['valid_rows'] = $totalRows - count($results['errors']);
+                $results['error_count'] = count($results['errors']);
+            }
+
+            return $this->successResponse($results, $previewOnly ? 'Preview completed' : 'Import completed');
 
         } catch (\Exception $e) {
             Log::error('Student import failed', [
@@ -1399,7 +1480,10 @@ class StudentController extends Controller
             // Write BOM for UTF-8
             fprintf($file, chr(0xEF).chr(0xBB).chr(0xBF));
 
-            // Write header row
+            // Use semicolon delimiter for PT locales (Excel standard)
+            $delimiter = ';';
+
+            // Write header row with semicolon delimiter
             fputcsv($file, [
                 'first_name',
                 'last_name',
@@ -1415,9 +1499,9 @@ class StudentController extends Controller
                 'enrollment_status',
                 'nationality',
                 'birth_place'
-            ]);
+            ], $delimiter);
 
-            // Write example row
+            // Write example row with semicolon delimiter
             fputcsv($file, [
                 'John',
                 'Doe',
@@ -1433,12 +1517,65 @@ class StudentController extends Controller
                 'enrolled',
                 'US',
                 'New York'
-            ]);
+            ], $delimiter);
 
             fclose($file);
         };
 
         return response()->stream($callback, 200, $headers);
+    }
+
+    /**
+     * Detect CSV delimiter (semicolon or comma)
+     */
+    protected function detectCsvDelimiter(string $filePath): string
+    {
+        $delimiters = [';' => 0, ',' => 0];
+        $handle = fopen($filePath, 'r');
+        
+        if (!$handle) {
+            \Log::warning('CSV Import - Cannot open file for delimiter detection', ['path' => $filePath]);
+            // Default to semicolon for PT locales
+            return ';';
+        }
+        
+        // Read first line to detect delimiter
+        $firstLine = fgets($handle);
+        fclose($handle);
+        
+        if ($firstLine === false) {
+            \Log::warning('CSV Import - Cannot read first line for delimiter detection');
+            return ';'; // Default to semicolon
+        }
+        
+        \Log::info('CSV Import - First line for delimiter detection', [
+            'first_line' => substr($firstLine, 0, 200), // Log first 200 chars
+            'length' => strlen($firstLine)
+        ]);
+        
+        // Count occurrences of each delimiter
+        foreach ($delimiters as $delimiter => &$count) {
+            $count = substr_count($firstLine, $delimiter);
+        }
+        
+        \Log::info('CSV Import - Delimiter counts', [
+            'semicolon_count' => $delimiters[';'],
+            'comma_count' => $delimiters[',']
+        ]);
+        
+        // Return delimiter with highest count, default to semicolon if equal
+        $maxCount = max($delimiters);
+        $detectedDelimiter = ';'; // Default
+        if ($maxCount > 0) {
+            $detectedDelimiter = array_search($maxCount, $delimiters) ?: ';';
+        }
+        
+        \Log::info('CSV Import - Detected delimiter result', [
+            'detected' => $detectedDelimiter,
+            'max_count' => $maxCount
+        ]);
+        
+        return $detectedDelimiter;
     }
 
     /**
@@ -1574,9 +1711,55 @@ class StudentController extends Controller
      */
     private function createStudentFromRow(array $rowData, int $tenantId, int $schoolId): Student
     {
+        // Create or find user account (required for student)
+        $userId = null;
+        $identifier = $rowData['email'] ?? $rowData['phone'] ?? null;
+        
+        if (!$identifier) {
+            throw new \Exception('Email or phone is required to create user account for student');
+        }
+        
+        $userType = isset($rowData['email']) ? 'email' : 'phone';
+        $userName = trim(($rowData['first_name'] ?? '') . ' ' . ($rowData['last_name'] ?? ''));
+        
+        // Check if user with this identifier already exists
+        $existingUser = User::where('identifier', $identifier)->first();
+        if ($existingUser) {
+            $userId = $existingUser->id;
+        } else {
+            // Create new user with default password
+            $newUser = User::create([
+                'name' => $userName,
+                'identifier' => $identifier,
+                'type' => $userType,
+                'password' => bcrypt('@EstudanteIedu'),
+                'must_change' => true,
+                'tenant_id' => $tenantId,
+                'is_active' => true,
+            ]);
+
+            $userId = $newUser->id;
+
+            // Create TenantUser association
+            $studentRole = Role::where('name', 'student')->first();
+            if ($studentRole) {
+                $newUser->tenants()->attach($tenantId, [
+                    'status' => 'active',
+                    'joined_at' => now(),
+                    'role_id' => $studentRole->id,
+                    'current_tenant' => true,
+                ]);
+            }
+        }
+
+        if (!$userId) {
+            throw new \Exception('Failed to create or retrieve user. Email or phone is required.');
+        }
+
         $studentData = [
             'tenant_id' => $tenantId,
             'school_id' => $schoolId,
+            'user_id' => $userId,
             'first_name' => $rowData['first_name'],
             'last_name' => $rowData['last_name'],
             'middle_name' => $rowData['middle_name'] ?? null,
@@ -1596,7 +1779,23 @@ class StudentController extends Controller
             'behavioral_points' => 0
         ];
 
-        return Student::create($studentData);
+        $student = Student::create($studentData);
+
+        // Create or update SchoolUser association (idempotent to avoid duplicates)
+        if ($student->user_id && $student->school_id) {
+            SchoolUser::updateOrCreate(
+                [
+                    'school_id' => $student->school_id,
+                    'user_id' => $student->user_id,
+                ],
+                [
+                    'status' => 'active',
+                    'joined_at' => now(),
+                ]
+            );
+        }
+
+        return $student;
     }
 
     /**

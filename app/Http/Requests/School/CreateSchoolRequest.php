@@ -41,6 +41,8 @@ class CreateSchoolRequest extends FormRequest
             'school_type' => 'required|in:pre_primary,primary,secondary_general,technical_professional,institute_medio,higher_education,teacher_training,adult_education,special_needs',
             // Educational levels and grades can be added in subsequent steps
             'educational_levels' => 'nullable|array',
+            'configured_grade_levels' => 'nullable|array',
+            'configured_grade_levels.*' => 'string|max:20',
             'grade_range_min' => 'nullable|string|max:10',
             'grade_range_max' => 'nullable|string|max:10',
             // Contact info can be added in subsequent steps

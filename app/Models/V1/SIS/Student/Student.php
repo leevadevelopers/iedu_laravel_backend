@@ -122,6 +122,25 @@ class Student extends Model
         'special_circumstances_json',
     ];
 
+    protected static function booted(): void
+    {
+        static::saving(function (Student $student) {
+            $school = $student->school()->first();
+            if (!$school) {
+                return;
+            }
+
+            $allowedLevels = $school->getConfiguredGradeLevels();
+            if (empty($allowedLevels)) {
+                $allowedLevels = self::defaultGradeLevels();
+            }
+
+            if ($student->current_grade_level && !in_array($student->current_grade_level, $allowedLevels, true)) {
+                throw new \InvalidArgumentException('Grade level is not configured for this school.');
+            }
+        });
+    }
+
     /**
      * Get the user account associated with the student.
      */
@@ -136,6 +155,18 @@ class Student extends Model
     public function school(): BelongsTo
     {
         return $this->belongsTo(School::class);
+    }
+
+    /**
+    * Default grade levels used when school has not configured any.
+    */
+    private static function defaultGradeLevels(): array
+    {
+        return [
+            'Pre-K', 'K',
+            '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12',
+            'T1', 'T2', 'T3',
+        ];
     }
 
     /**

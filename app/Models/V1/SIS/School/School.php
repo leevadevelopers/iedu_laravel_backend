@@ -86,6 +86,7 @@ class School extends Model
         'short_name',
         'school_type',
         'educational_levels',
+        'configured_grade_levels',
         'grade_range_min',
         'grade_range_max',
         'email',
@@ -125,6 +126,7 @@ class School extends Model
         'educational_levels' => 'array',
         'address_json' => 'array',
         'language_instruction' => 'array',
+        'configured_grade_levels' => 'array',
         'feature_flags' => 'array',
         'integration_settings' => 'array',
         'branding_configuration' => 'array',
@@ -346,5 +348,21 @@ class School extends Model
     {
         return $query->whereNotNull('student_capacity')
                     ->where('current_enrollment', '<', 'student_capacity');
+    }
+
+    /**
+     * Return configured grade levels for this school.
+     */
+    public function getConfiguredGradeLevels(): array
+    {
+        return $this->configured_grade_levels ?? [];
+    }
+
+    /**
+     * Check if a grade/level is enabled for this school.
+     */
+    public function hasGradeLevel(string $level): bool
+    {
+        return in_array($level, $this->getConfiguredGradeLevels(), true);
     }
 }

@@ -3,6 +3,7 @@
 namespace App\Services\V1\Academic;
 
 use App\Models\V1\Academic\AcademicClass;
+use App\Models\V1\Academic\Subject;
 use App\Models\V1\SIS\Student\Student;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -75,6 +76,22 @@ class AcademicClassService extends BaseAcademicService
         // Add tenant_id from authenticated user
         $data['tenant_id'] = $user->tenant_id;
 
+        $school = $this->getCurrentSchool();
+        $allowedLevels = $this->getAllowedGradeLevels($school);
+
+        // Validate grade level against school configuration
+        if (!empty($data['grade_level']) && !in_array($data['grade_level'], $allowedLevels, true)) {
+            throw new \InvalidArgumentException('Grade level not configured for this school. Configure levels first.');
+        }
+
+        // Validate subject compatibility with grade level
+        if (!empty($data['subject_id']) && !empty($data['grade_level'])) {
+            $subject = Subject::find($data['subject_id']);
+            if ($subject && is_array($subject->grade_levels) && !in_array($data['grade_level'], $subject->grade_levels, true)) {
+                throw new \InvalidArgumentException('Selected subject is not offered for this grade level.');
+            }
+        }
+
         // Validate class code uniqueness if provided
         if (isset($data['class_code'])) {
             $this->validateClassCode($data['class_code'], $data['school_id']);
@@ -99,6 +116,20 @@ class AcademicClassService extends BaseAcademicService
     public function updateClass(AcademicClass $class, array $data): AcademicClass
     {
         $this->validateTenantAndSchoolOwnership($class);
+
+        $school = $this->getCurrentSchool();
+        $allowedLevels = $this->getAllowedGradeLevels($school);
+
+        if (isset($data['grade_level']) && !in_array($data['grade_level'], $allowedLevels, true)) {
+            throw new \InvalidArgumentException('Grade level not configured for this school. Configure levels first.');
+        }
+
+        if (isset($data['grade_level']) && isset($data['subject_id'])) {
+            $subject = Subject::find($data['subject_id']);
+            if ($subject && is_array($subject->grade_levels) && !in_array($data['grade_level'], $subject->grade_levels, true)) {
+                throw new \InvalidArgumentException('Selected subject is not offered for this grade level.');
+            }
+        }
 
         // Validate class code if changed
         if (isset($data['class_code']) && $data['class_code'] !== $class->class_code) {
@@ -369,6 +400,31 @@ class AcademicClassService extends BaseAcademicService
         return [
             'average_rate' => null,
             'total_sessions' => 0
+        ];
+    }
+
+    /**
+     * Resolve grade levels allowed for the current school.
+     */
+    private function getAllowedGradeLevels($school): array
+    {
+        $configured = $school?->getConfiguredGradeLevels() ?? [];
+        if (!empty($configured)) {
+            return $configured;
+        }
+
+        return $this->getDefaultGradeLevels();
+    }
+
+    /**
+     * Default grade levels used when school has not configured any.
+     */
+    private function getDefaultGradeLevels(): array
+    {
+        return [
+            'Pre-K', 'K',
+            '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12',
+            'T1', 'T2', 'T3',
         ];
     }
 }

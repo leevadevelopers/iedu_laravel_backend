@@ -25,6 +25,7 @@ class CreateSchoolsTable extends Migration
                 'institute_medio', 'higher_education', 'teacher_training', 'adult_education', 'special_needs'
             ]);
             $table->json('educational_levels'); // ['elementary', 'middle', 'high']
+            $table->json('configured_grade_levels')->nullable(); // ['1', '2', '3', ..., 'T1', 'T2', 'T3'] - School's configured grade levels
             $table->string('grade_range_min', 10); // 'K', 'Pre-K', '1', etc.
             $table->string('grade_range_max', 10); // '5', '8', '12', etc.
 

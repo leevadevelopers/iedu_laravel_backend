@@ -47,6 +47,8 @@ class UpdateSchoolRequest extends FormRequest
             // School types - Contexto Moçambicano
             'school_type' => 'sometimes|required|in:pre_primary,primary,secondary_general,technical_professional,institute_medio,higher_education,teacher_training,adult_education,special_needs',
             'educational_levels' => 'sometimes|required|array',
+            'configured_grade_levels' => 'nullable|array',
+            'configured_grade_levels.*' => 'string|max:20',
             'grade_range_min' => 'sometimes|required|string|max:10',
             'grade_range_max' => 'sometimes|required|string|max:10',
             'email' => 'sometimes|required|email|max:255',

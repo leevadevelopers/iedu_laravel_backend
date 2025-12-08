@@ -245,13 +245,40 @@ class SubjectService extends BaseAcademicService
      */
     private function validateGradeLevels(array $gradeLevels): void
     {
-        $validGrades = ['K', 'Pre-K', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12'];
+        $allowedGrades = $this->getAllowedGradeLevels();
 
         foreach ($gradeLevels as $grade) {
-            if (!in_array($grade, $validGrades)) {
-                throw new \InvalidArgumentException("Invalid grade level: {$grade}");
+            if (!in_array($grade, $allowedGrades, true)) {
+                throw new \InvalidArgumentException(\"Invalid grade level: {$grade}. Configure levels in School settings first.\");
             }
         }
+    }
+
+    /**
+     * Resolve grade levels allowed for the current school.
+     */
+    private function getAllowedGradeLevels(): array
+    {
+        $school = $this->getCurrentSchool();
+        $configured = $school?->getConfiguredGradeLevels() ?? [];
+
+        if (!empty($configured)) {
+            return $configured;
+        }
+
+        return $this->getDefaultGradeLevels();
+    }
+
+    /**
+     * Default grade levels used when school has not configured any.
+     */
+    private function getDefaultGradeLevels(): array
+    {
+        return [
+            'Pre-K', 'K',
+            '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12',
+            'T1', 'T2', 'T3',
+        ];
     }
 
     /**
