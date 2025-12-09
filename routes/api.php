@@ -18,6 +18,7 @@ Route::prefix('v1')->group(function () {
     require __DIR__ . '/modules/library.php';
     require __DIR__ . '/modules/financial.php';
     require __DIR__ . '/modules/assessment.php';
+    require __DIR__ . '/modules/lesson-plans.php';
     // New
     require __DIR__ . '/modules/communication.php';
     require __DIR__ . '/modules/parent.php';
