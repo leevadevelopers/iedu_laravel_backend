@@ -30,7 +30,8 @@ return new class extends Migration
 
             // Subscription applies to either a tenant OR a project
             $table->foreignId('tenant_id')->nullable()->constrained('tenants')->onDelete('cascade');
-            $table->foreignId('project_id')->nullable()->constrained()->onDelete('cascade');
+            // project_id kept for future use when projects table is created
+            $table->unsignedBigInteger('project_id')->nullable();
 
             $table->date('start_date');
             $table->date('end_date');
