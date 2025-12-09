@@ -13,10 +13,16 @@ class GradeScaleResource extends BaseAcademicResource
     {
         return $this->addMetadata([
             'id' => $this->id,
-            'grading_system_id' => $this->grading_system_id,
             'name' => $this->name,
+            'code' => $this->code,
+            'description' => $this->description,
             'scale_type' => $this->scale_type,
+            'min_value' => $this->min_value,
+            'max_value' => $this->max_value,
+            'passing_grade' => $this->passing_grade,
+            'status' => $this->status,
             'is_default' => $this->is_default,
+            'configuration_json' => $this->configuration_json,
 
             // Helper fields
             'display_name' => $this->name . ($this->is_default ? ' (Default)' : ''),

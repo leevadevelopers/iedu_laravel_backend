@@ -342,25 +342,37 @@ class GradingSystemService extends BaseAcademicService
     }
 
     /**
-     * Get maximum score for the primary grading system
-     * Returns the max_value from the highest range in the default grade scale
+     * Get maximum score from the default grade scale
+     * Returns the max_value from the default grade scale (no longer uses grading_systems)
      */
     public function getMaxScore(): ?float
     {
-        $primarySystem = $this->getPrimaryGradingSystem();
-
-        if (!$primarySystem) {
+        $user = Auth::user();
+        if (!$user) {
             return null;
         }
 
-        $defaultScale = $primarySystem->getDefaultScale();
+        // Get default grade scale directly (no longer through grading system)
+        $defaultScale = \App\Models\V1\Academic\GradeScale::where('tenant_id', $user->tenant_id)
+            ->where('school_id', $this->getCurrentSchoolId())
+            ->where('is_default', true)
+            ->first();
+
+        // If no default scale, get the first scale
         if (!$defaultScale) {
-            // If no default scale, get the first scale
-            $defaultScale = $primarySystem->gradeScales->first();
+            $defaultScale = \App\Models\V1\Academic\GradeScale::where('tenant_id', $user->tenant_id)
+                ->where('school_id', $this->getCurrentSchoolId())
+                ->first();
         }
 
         if (!$defaultScale) {
-            return null;
+            // Return default based on common scale types
+            return 100.0; // Default to percentage scale max
+        }
+
+        // Get max_value directly from grade scale
+        if ($defaultScale->max_value) {
+            return (float) $defaultScale->max_value;
         }
 
         // Get the maximum value from all ranges
@@ -371,9 +383,9 @@ class GradingSystemService extends BaseAcademicService
             $maxValue = $defaultScale->gradeLevels()->max('percentage_max');
         }
 
-        // If still no value, use system type defaults
+        // If still no value, use scale type defaults
         if (!$maxValue) {
-            $maxValue = match ($primarySystem->system_type) {
+            $maxValue = match ($defaultScale->scale_type) {
                 'percentage' => 100.0,
                 'points' => 20.0, // Default for Portuguese system
                 default => 100.0

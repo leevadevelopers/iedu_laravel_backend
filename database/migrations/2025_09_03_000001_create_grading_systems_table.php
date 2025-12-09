@@ -8,6 +8,16 @@ return new class extends Migration
 {
     public function up()
     {
+        // Skip creating grading_systems table - it's being consolidated into grade_scales
+        // This migration is kept for historical reference but won't create the table
+        if (Schema::hasTable('grading_systems')) {
+            return; // Table already exists from previous migration
+        }
+        
+        // Don't create - will be removed by consolidation migration
+        return;
+        
+        /* Original migration - commented out
         Schema::create('grading_systems', function (Blueprint $table) {
             $table->id();
             $table->foreignId('school_id')->constrained('schools')->onDelete('cascade');
@@ -38,6 +48,7 @@ return new class extends Migration
             $table->index(['tenant_id']);
             $table->index(['school_id', 'tenant_id']);
         });
+        */
     }
 
     public function down()

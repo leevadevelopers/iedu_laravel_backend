@@ -14,24 +14,29 @@ class GradeScale extends BaseModel
     use Tenantable;
 
     protected $fillable = [
-        'grading_system_id',
         'school_id',
         'tenant_id',
         'name',
+        'code',
+        'description',
         'scale_type',
+        'min_value',
+        'max_value',
+        'passing_grade',
+        'status',
         'is_default',
+        'configuration_json',
     ];
 
     protected $casts = [
         'is_default' => 'boolean',
+        'min_value' => 'decimal:2',
+        'max_value' => 'decimal:2',
+        'passing_grade' => 'decimal:2',
+        'configuration_json' => 'array',
     ];
 
     // Relationships
-    public function gradingSystem(): BelongsTo
-    {
-        return $this->belongsTo(GradingSystem::class);
-    }
-
     public function school(): BelongsTo
     {
         return $this->belongsTo(School::class);
@@ -60,9 +65,7 @@ class GradeScale extends BaseModel
 
     public function scopeActive(Builder $query): Builder
     {
-        return $query->whereHas('gradingSystem', function ($q) {
-            $q->where('status', 'active');
-        });
+        return $query->where('status', 'active');
     }
 
     // Methods

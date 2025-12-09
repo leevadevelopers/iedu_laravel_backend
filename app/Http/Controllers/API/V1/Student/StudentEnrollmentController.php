@@ -9,14 +9,17 @@ use App\Models\V1\SIS\Student\Student;
 use App\Models\V1\SIS\School\School;
 use App\Models\V1\SIS\School\AcademicYear;
 use App\Models\V1\SIS\School\AcademicTerm;
+use App\Models\V1\Academic\AcademicClass;
 use App\Models\Forms\FormTemplate;
 use App\Services\FormEngineService;
 use App\Services\WorkflowService;
+use App\Services\V1\Academic\AcademicClassService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 
 class StudentEnrollmentController extends Controller
 {
@@ -746,6 +749,7 @@ class StudentEnrollmentController extends Controller
             'student_ids' => 'required|array|min:1',
             'student_ids.*' => 'exists:students,id',
             'school_id' => 'sometimes|exists:schools,id',
+            'class_id' => 'nullable|exists:classes,id',
             'academic_year_id' => 'required|exists:academic_years,id',
             'grade_level_at_enrollment' => 'required|string|max:20',
             'enrollment_date' => 'required|date',
@@ -767,22 +771,32 @@ class StudentEnrollmentController extends Controller
 
             $students = Student::whereIn('id', $request->student_ids)->get();
             $enrolledCount = 0;
+            $classEnrolledCount = 0;
+            $classEnrollmentErrors = [];
+
+            // Get class if class_id is provided
+            $class = null;
+            $classService = null;
+            if ($request->has('class_id') && $request->class_id) {
+                $class = AcademicClass::where('id', $request->class_id)
+                    ->where('tenant_id', $tenantId)
+                    ->where('school_id', $schoolId)
+                    ->first();
+                
+                if ($class) {
+                    $classService = app(AcademicClassService::class);
+                } else {
+                    Log::warning("Class not found or access denied", [
+                        'class_id' => $request->class_id,
+                        'tenant_id' => $tenantId,
+                        'school_id' => $schoolId
+                    ]);
+                }
+            }
 
             foreach ($students as $student) {
-                // Create enrollment record using correct model attributes
-                StudentEnrollmentHistory::create([
-                    'tenant_id' => $tenantId,
-                    'student_id' => $student->id,
-                    'school_id' => $schoolId,
-                    'academic_year_id' => $request->academic_year_id,
-                    'grade_level_at_enrollment' => $request->grade_level_at_enrollment,
-                    'enrollment_date' => $request->enrollment_date,
-                    'enrollment_type' => $request->enrollment_type,
-                    'previous_school' => $request->previous_school,
-                    'withdrawal_reason' => $request->withdrawal_reason,
-                ]);
-
-                // Update student's current enrollment info (if Student model has these fields)
+                // Update student's current enrollment info FIRST (if Student model has these fields)
+                // This ensures the grade level is set before we try to enroll in the class
                 $studentUpdateData = [
                     'school_id' => $schoolId,
                     'current_academic_year_id' => $request->academic_year_id,
@@ -795,24 +809,91 @@ class StudentEnrollmentController extends Controller
                     return $student->isFillable($key) && $value !== null;
                 }, ARRAY_FILTER_USE_BOTH));
 
+                // Refresh the student model to ensure updated values are available
+                $student->refresh();
+
+                // Create enrollment history record
+                StudentEnrollmentHistory::create([
+                    'tenant_id' => $tenantId,
+                    'student_id' => $student->id,
+                    'school_id' => $schoolId,
+                    'academic_year_id' => $request->academic_year_id,
+                    'grade_level_at_enrollment' => $request->grade_level_at_enrollment,
+                    'enrollment_date' => $request->enrollment_date,
+                    'enrollment_type' => $request->enrollment_type,
+                    'previous_school' => $request->previous_school,
+                    'withdrawal_reason' => $request->withdrawal_reason,
+                ]);
+
+                // If class_id is provided, also enroll student in the class
+                if ($class && $classService) {
+                    try {
+                        // Use the service method which handles all validations
+                        // The student's current_grade_level should now match the class grade_level
+                        $classService->enrollStudent($class, $student->id);
+                        $classEnrolledCount++;
+                    } catch (\Exception $e) {
+                        // Log the error but don't fail the entire operation
+                        // Enrollment history is still created
+                        $classEnrollmentErrors[] = [
+                            'student_id' => $student->id,
+                            'student_name' => ($student->first_name ?? '') . ' ' . ($student->last_name ?? ''),
+                            'error' => $e->getMessage()
+                        ];
+                        Log::warning("Failed to enroll student in class", [
+                            'student_id' => $student->id,
+                            'class_id' => $class->id,
+                            'class_grade_level' => $class->grade_level,
+                            'student_grade_level' => $student->current_grade_level,
+                            'error' => $e->getMessage()
+                        ]);
+                    }
+                }
+
                 $enrolledCount++;
             }
 
             DB::commit();
 
+            $responseData = [
+                'enrolled_count' => $enrolledCount,
+                'school_id' => $schoolId,
+                'academic_year_id' => $request->academic_year_id,
+                'grade_level_at_enrollment' => $request->grade_level_at_enrollment
+            ];
+
+            // Add class enrollment information if class_id was provided
+            if ($request->has('class_id') && $request->class_id) {
+                $responseData['class_id'] = $request->class_id;
+                $responseData['class_enrolled_count'] = $classEnrolledCount;
+                if (!empty($classEnrollmentErrors)) {
+                    $responseData['class_enrollment_errors'] = $classEnrollmentErrors;
+                    $responseData['class_enrollment_warnings'] = count($classEnrollmentErrors) . ' student(s) could not be enrolled in the class';
+                }
+            }
+
+            $message = "Successfully enrolled {$enrolledCount} students";
+            if ($request->has('class_id') && $request->class_id) {
+                if ($classEnrolledCount > 0) {
+                    $message .= " ({$classEnrolledCount} enrolled in class)";
+                }
+                if (!empty($classEnrollmentErrors)) {
+                    $message .= ". " . count($classEnrollmentErrors) . " student(s) could not be enrolled in the class";
+                }
+            }
+
             return response()->json([
                 'success' => true,
-                'message' => "Successfully enrolled {$enrolledCount} students",
-                'data' => [
-                    'enrolled_count' => $enrolledCount,
-                    'school_id' => $schoolId,
-                    'academic_year_id' => $request->academic_year_id,
-                    'grade_level_at_enrollment' => $request->grade_level_at_enrollment
-                ]
+                'message' => $message,
+                'data' => $responseData
             ]);
 
         } catch (\Exception $e) {
             DB::rollBack();
+            Log::error("Bulk enrollment failed", [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to bulk enroll students',

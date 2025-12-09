@@ -114,7 +114,6 @@ abstract class BaseAcademicRequest extends FormRequest
             'grade_levels' => 'grade levels',
             'subject_area' => 'subject area',
             'system_type' => 'system type',
-            'grading_system_id' => 'grading system',
             'grade_scale_id' => 'grade scale',
             'configuration_json.passing_threshold' => 'passing threshold',
             'configuration_json.gpa_scale' => 'GPA scale',

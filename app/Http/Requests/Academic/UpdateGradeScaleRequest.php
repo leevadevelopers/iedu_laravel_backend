@@ -15,10 +15,19 @@ class UpdateGradeScaleRequest extends BaseAcademicRequest
     public function rules(): array
     {
         return [
-            'grading_system_id' => 'nullable|exists:grading_systems,id',
             'name' => 'nullable|string|max:255',
+            'code' => 'nullable|string|max:50',
+            'description' => 'nullable|string',
             'scale_type' => 'nullable|string|in:letter,percentage,points,standards',
+            'min_value' => 'nullable|numeric|min:0',
+            'max_value' => 'nullable|numeric|min:0',
+            'passing_grade' => 'nullable|numeric|min:0',
+            'status' => 'nullable|string|in:active,inactive',
             'is_default' => 'nullable|boolean',
+            'configuration_json' => 'nullable|array',
+            'configuration_json.passing_threshold' => 'nullable|numeric|min:0|max:100',
+            'configuration_json.gpa_scale' => 'nullable|numeric|min:1|max:10',
+            'configuration_json.decimal_places' => 'nullable|integer|min:0|max:3',
         ];
     }
 
@@ -33,7 +42,7 @@ class UpdateGradeScaleRequest extends BaseAcademicRequest
                 return;
             }
 
-            // Get the grade scale to access its current grading_system_id
+            // Get the grade scale
             $gradeScale = \App\Models\V1\Academic\GradeScale::where('id', $gradeScaleId)
                 ->where('school_id', $this->getCurrentSchoolId())
                 ->first();
@@ -43,25 +52,15 @@ class UpdateGradeScaleRequest extends BaseAcademicRequest
                 return;
             }
 
-            // Validate that grading system belongs to current school
-            if ($this->filled('grading_system_id')) {
-                $gradingSystem = \App\Models\V1\Academic\GradingSystem::find($this->grading_system_id);
-                if (!$gradingSystem || $gradingSystem->school_id !== $this->getCurrentSchoolId()) {
-                    $validator->errors()->add('grading_system_id', 'Invalid grading system selected');
-                }
-            }
-
-            // Check for duplicate name within grading system
+            // Check for duplicate name within school
             if ($this->filled('name')) {
-                $gradingSystemId = $this->input('grading_system_id', $gradeScale->grading_system_id);
                 $existing = \App\Models\V1\Academic\GradeScale::where('name', $this->name)
-                    ->where('grading_system_id', $gradingSystemId)
                     ->where('school_id', $this->getCurrentSchoolId())
                     ->where('id', '!=', $gradeScale->id)
                     ->first();
 
                 if ($existing) {
-                    $validator->errors()->add('name', 'Grade scale name already exists in this grading system');
+                    $validator->errors()->add('name', 'Grade scale name already exists in this school');
                 }
             }
         });
@@ -73,8 +72,8 @@ class UpdateGradeScaleRequest extends BaseAcademicRequest
     public function messages(): array
     {
         return array_merge(parent::messages(), [
-            'grading_system_id.exists' => 'Invalid grading system selected',
             'scale_type.in' => 'Invalid scale type selected',
+            'status.in' => 'Invalid status selected',
         ]);
     }
 
@@ -84,10 +83,16 @@ class UpdateGradeScaleRequest extends BaseAcademicRequest
     public function attributes(): array
     {
         return array_merge(parent::attributes(), [
-            'grading_system_id' => 'grading system',
             'name' => 'grade scale name',
+            'code' => 'code',
+            'description' => 'description',
             'scale_type' => 'scale type',
+            'min_value' => 'minimum value',
+            'max_value' => 'maximum value',
+            'passing_grade' => 'passing grade',
+            'status' => 'status',
             'is_default' => 'default status',
+            'configuration_json' => 'configuration',
         ]);
     }
 }

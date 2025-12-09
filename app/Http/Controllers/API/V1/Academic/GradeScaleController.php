@@ -165,7 +165,7 @@ class GradeScaleController extends Controller
             ], 403);
         }
 
-        $gradeScale->load(['gradeLevels', 'gradingSystem']);
+        $gradeScale->load(['gradeLevels']);
 
         return response()->json([
             'status' => 'success',

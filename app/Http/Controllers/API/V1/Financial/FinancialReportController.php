@@ -167,6 +167,33 @@ class FinancialReportController extends BaseController
         ], 'Cash flow generated successfully');
     }
 
+    /**
+     * Dashboard summary used by frontend financial overview.
+     */
+    public function dashboard(Request $request): JsonResponse
+    {
+        $startDate = $request->get('start_date', now()->startOfMonth());
+        $endDate = $request->get('end_date', now()->endOfMonth());
+
+        // Reuse summary logic
+        $summary = $this->summary($request)->getData(true);
+        $data = $summary['data'] ?? [];
+
+        // Additional counts
+        $pendingInvoicesCount = Invoice::whereIn('status', ['issued', 'partially_paid'])
+            ->whereBetween('issued_at', [$startDate, $endDate])
+            ->count();
+
+        $overdueInvoicesCount = Invoice::where('status', 'overdue')->count();
+        $totalAccounts = \App\Models\V1\Financial\FinancialAccount::count();
+
+        $data['pending_invoices_count'] = $pendingInvoicesCount;
+        $data['overdue_invoices_count'] = $overdueInvoicesCount;
+        $data['total_accounts'] = $totalAccounts;
+
+        return $this->successResponse($data, 'Dashboard retrieved successfully');
+    }
+
     public function accountsReceivable(Request $request): JsonResponse
     {
         $startDate = $request->get('start_date', now()->startOfMonth());

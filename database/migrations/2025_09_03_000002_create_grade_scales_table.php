@@ -10,22 +10,33 @@ return new class extends Migration
     {
         Schema::create('grade_scales', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('grading_system_id')->constrained('grading_systems')->onDelete('cascade');
             $table->foreignId('school_id')->constrained('schools')->onDelete('cascade');
             $table->foreignId('tenant_id')->constrained('tenants')->onDelete('cascade');
 
             // Scale Identity
             $table->string('name', 255);
+            $table->string('code', 50)->nullable();
+            $table->text('description')->nullable();
             $table->enum('scale_type', ['letter', 'percentage', 'points', 'standards']);
             $table->boolean('is_default')->default(false);
+            
+            // Values
+            $table->decimal('min_value', 5, 2)->nullable();
+            $table->decimal('max_value', 5, 2)->nullable();
+            $table->decimal('passing_grade', 5, 2)->nullable();
+            
+            // Status and Configuration
+            $table->enum('status', ['active', 'inactive'])->default('active');
+            $table->json('configuration_json')->nullable();
 
             $table->timestamps();
 
             // Indexes
-            $table->index(['grading_system_id']);
             $table->index(['school_id']);
             $table->index(['tenant_id']);
             $table->index(['school_id', 'tenant_id']);
+            $table->index(['scale_type']);
+            $table->index(['status']);
         });
     }
 

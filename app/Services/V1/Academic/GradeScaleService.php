@@ -3,7 +3,6 @@
 namespace App\Services\V1\Academic;
 
 use App\Models\V1\Academic\GradeScale;
-use App\Models\V1\Academic\GradingSystem;
 use Illuminate\Pagination\LengthAwarePaginator;
 
 class GradeScaleService extends BaseAcademicService
@@ -13,13 +12,10 @@ class GradeScaleService extends BaseAcademicService
      */
     public function getGradeScales(array $filters = []): LengthAwarePaginator
     {
-        $query = GradeScale::with(['gradeLevels', 'gradingSystem'])
+        $query = GradeScale::with(['gradeLevels'])
             ->where('school_id', $this->getCurrentSchoolId());
 
         // Apply filters
-        if (isset($filters['grading_system_id'])) {
-            $query->where('grading_system_id', $filters['grading_system_id']);
-        }
 
         if (isset($filters['scale_type'])) {
             $query->where('scale_type', $filters['scale_type']);
@@ -43,10 +39,9 @@ class GradeScaleService extends BaseAcademicService
     {
         $data['school_id'] = $this->getCurrentSchoolId();
 
-        // Ensure only one default grade scale per grading system
+        // Ensure only one default grade scale per school
         if (isset($data['is_default']) && $data['is_default']) {
-            GradeScale::where('grading_system_id', $data['grading_system_id'])
-                ->where('school_id', $this->getCurrentSchoolId())
+            GradeScale::where('school_id', $this->getCurrentSchoolId())
                 ->update(['is_default' => false]);
         }
 
@@ -62,8 +57,7 @@ class GradeScaleService extends BaseAcademicService
 
         // Handle default grade scale logic
         if (isset($data['is_default']) && $data['is_default']) {
-            GradeScale::where('grading_system_id', $gradeScale->grading_system_id)
-                ->where('school_id', $this->getCurrentSchoolId())
+            GradeScale::where('school_id', $this->getCurrentSchoolId())
                 ->where('id', '!=', $gradeScale->id)
                 ->update(['is_default' => false]);
         }
@@ -94,9 +88,8 @@ class GradeScaleService extends BaseAcademicService
     {
         $this->validateSchoolOwnership($gradeScale);
 
-        // Remove default status from other grade scales in the same grading system
-        GradeScale::where('grading_system_id', $gradeScale->grading_system_id)
-            ->where('school_id', $this->getCurrentSchoolId())
+        // Remove default status from other grade scales in the same school
+        GradeScale::where('school_id', $this->getCurrentSchoolId())
             ->where('id', '!=', $gradeScale->id)
             ->update(['is_default' => false]);
 
@@ -120,7 +113,7 @@ class GradeScaleService extends BaseAcademicService
      */
     public function getDefaultGradeScale(): ?GradeScale
     {
-        return GradeScale::with(['gradeLevels', 'gradingSystem'])
+        return GradeScale::with(['gradeLevels'])
             ->where('school_id', $this->getCurrentSchoolId())
             ->where('is_default', true)
             ->first();
@@ -137,13 +130,15 @@ class GradeScaleService extends BaseAcademicService
     }
 
     /**
-     * Get grade scales by grading system
+     * Get grade scales by type
+     * @deprecated Use getGradeScalesByType instead
      */
     public function getGradeScalesByGradingSystem(int $gradingSystemId): \Illuminate\Database\Eloquent\Collection
     {
+        // This method is deprecated - grading systems no longer exist
+        // Return empty collection or redirect to getGradeScalesByType
         return GradeScale::with(['gradeLevels'])
             ->where('school_id', $this->getCurrentSchoolId())
-            ->where('grading_system_id', $gradingSystemId)
             ->orderBy('is_default', 'desc')
             ->orderBy('name')
             ->get();
@@ -178,26 +173,20 @@ class GradeScaleService extends BaseAcademicService
     {
         $errors = [];
 
-        // Check if grading system exists and belongs to school
-        if (isset($data['grading_system_id'])) {
-            $gradingSystem = GradingSystem::where('id', $data['grading_system_id'])
-                ->where('school_id', $this->getCurrentSchoolId())
-                ->first();
-
-            if (!$gradingSystem) {
-                $errors['grading_system_id'] = 'Invalid grading system selected';
+        // Check for duplicate name within school
+        if (isset($data['name'])) {
+            $query = GradeScale::where('name', $data['name'])
+                ->where('school_id', $this->getCurrentSchoolId());
+            
+            // If updating, exclude current scale
+            if (isset($data['id'])) {
+                $query->where('id', '!=', $data['id']);
             }
-        }
-
-        // Check for duplicate name within grading system
-        if (isset($data['name']) && isset($data['grading_system_id'])) {
-            $existing = GradeScale::where('name', $data['name'])
-                ->where('grading_system_id', $data['grading_system_id'])
-                ->where('school_id', $this->getCurrentSchoolId())
-                ->first();
+            
+            $existing = $query->first();
 
             if ($existing) {
-                $errors['name'] = 'Grade scale name already exists in this grading system';
+                $errors['name'] = 'Grade scale name already exists in this school';
             }
         }
 

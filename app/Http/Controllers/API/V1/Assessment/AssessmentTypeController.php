@@ -7,19 +7,19 @@ use App\Http\Requests\Assessment\StoreAssessmentTypeRequest;
 use App\Http\Requests\Assessment\UpdateAssessmentTypeRequest;
 use App\Http\Resources\Assessment\AssessmentTypeResource;
 use App\Models\Assessment\AssessmentType;
-use App\Services\V1\Academic\GradingSystemService;
+use App\Services\V1\Academic\GradeScaleService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class AssessmentTypeController extends BaseController
 {
-    protected GradingSystemService $gradingSystemService;
+    protected GradeScaleService $gradeScaleService;
 
-    public function __construct(GradingSystemService $gradingSystemService)
+    public function __construct(GradeScaleService $gradeScaleService)
     {
         $this->middleware('auth:api');
-        $this->gradingSystemService = $gradingSystemService;
+        $this->gradeScaleService = $gradeScaleService;
     }
 
     /**
@@ -61,8 +61,9 @@ class AssessmentTypeController extends BaseController
 
         $types = $query->paginate($request->get('per_page', 15));
 
-        // Get max_score from grading system for response metadata
-        $maxScore = $this->gradingSystemService->getMaxScore();
+        // Get max_score from default grade scale for response metadata
+        $defaultScale = $this->gradeScaleService->getDefaultGradeScale();
+        $maxScore = $defaultScale?->max_value ?? 100.0;
 
         $response = $this->paginatedResponse(
             AssessmentTypeResource::collection($types),
@@ -79,11 +80,12 @@ class AssessmentTypeController extends BaseController
     }
 
     /**
-     * Get max score from grading system
+     * Get max score from default grade scale
      */
     public function getMaxScore(): JsonResponse
     {
-        $maxScore = $this->gradingSystemService->getMaxScore();
+        $defaultScale = $this->gradeScaleService->getDefaultGradeScale();
+        $maxScore = $defaultScale?->max_value ?? 100.0;
         
         return $this->successResponse(
             ['max_score' => $maxScore],
@@ -98,10 +100,11 @@ class AssessmentTypeController extends BaseController
     {
         $tenantId = session('tenant_id') ?? Auth::user()->tenant_id;
         
-        // Get max_score from grading system if not provided
+        // Get max_score from default grade scale if not provided
         $data = $request->validated();
         if (!isset($data['max_score'])) {
-            $maxScore = $this->gradingSystemService->getMaxScore();
+            $defaultScale = $this->gradeScaleService->getDefaultGradeScale();
+            $maxScore = $defaultScale?->max_value ?? 100.0;
             if ($maxScore) {
                 $data['max_score'] = $maxScore;
             }
