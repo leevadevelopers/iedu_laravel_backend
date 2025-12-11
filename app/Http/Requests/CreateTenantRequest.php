@@ -25,6 +25,9 @@ class CreateTenantRequest extends FormRequest
             'settings.language' => 'nullable|string|size:2',
             'settings.features' => 'nullable|array',
             'is_active' => 'nullable|boolean',
+            'users_to_associate' => 'nullable|array',
+            'users_to_associate.*.user_id' => 'required|integer|exists:users,id',
+            'users_to_associate.*.role_id' => 'required|integer|exists:roles,id',
         ];
     }
 

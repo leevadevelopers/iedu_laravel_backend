@@ -25,24 +25,48 @@ class TenantController extends Controller
     public function index(Request $request): AnonymousResourceCollection
     {
         $user = $request->user();
+        $isSuperAdmin = method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin();
 
-        $tenants = $user->activeTenants()
-            ->withPivot(['role_id', 'current_tenant', 'status', 'joined_at'])
-            ->when($request->get('search'), function ($query, $search) {
-                $query->where(function ($q) use ($search) {
-                    $q->where('name', 'like', "%{$search}%")
-                      ->orWhere('slug', 'like', "%{$search}%");
+        // Super admin can see all tenants
+        if ($isSuperAdmin) {
+            $tenants = Tenant::query()
+                ->when($request->get('search'), function ($query, $search) {
+                    $query->where(function ($q) use ($search) {
+                        $q->where('name', 'like', "%{$search}%")
+                          ->orWhere('slug', 'like', "%{$search}%");
+                    });
+                })
+                ->orderBy('tenants.name')
+                ->get()
+                ->map(function ($tenant) use ($user) {
+                    // Check if superadmin is associated with this tenant
+                    $pivot = $user->tenants()->where('tenants.id', $tenant->id)->first()?->pivot;
+                    $tenant->user_role = $pivot?->role_id ?? null;
+                    $tenant->is_current = $pivot?->current_tenant ?? false;
+                    $tenant->user_status = $pivot?->status ?? null;
+                    $tenant->joined_at = $pivot?->joined_at ?? null;
+                    return $tenant;
                 });
-            })
-            ->orderBy('tenants.name')
-            ->get()
-            ->map(function ($tenant) {
-                $tenant->user_role = $tenant->pivot->role_id;
-                $tenant->is_current = $tenant->pivot->current_tenant;
-                $tenant->user_status = $tenant->pivot->status;
-                $tenant->joined_at = $tenant->pivot->joined_at;
-                return $tenant;
-            });
+        } else {
+            // Regular users see only their tenants
+            $tenants = $user->activeTenants()
+                ->withPivot(['role_id', 'current_tenant', 'status', 'joined_at'])
+                ->when($request->get('search'), function ($query, $search) {
+                    $query->where(function ($q) use ($search) {
+                        $q->where('name', 'like', "%{$search}%")
+                          ->orWhere('slug', 'like', "%{$search}%");
+                    });
+                })
+                ->orderBy('tenants.name')
+                ->get()
+                ->map(function ($tenant) {
+                    $tenant->user_role = $tenant->pivot->role_id;
+                    $tenant->is_current = $tenant->pivot->current_tenant;
+                    $tenant->user_status = $tenant->pivot->status;
+                    $tenant->joined_at = $tenant->pivot->joined_at;
+                    return $tenant;
+                });
+        }
 
         return TenantResource::collection($tenants);
     }
@@ -92,9 +116,14 @@ class TenantController extends Controller
     public function showById(Request $request, $id): JsonResponse
     {
         $user = $request->user();
+        $isSuperAdmin = method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin();
         
-        // Check if user has access to this tenant
-        $tenant = $user->activeTenants()->find($id);
+        // Super admin can access any tenant, regular users only their tenants
+        if ($isSuperAdmin) {
+            $tenant = Tenant::find($id);
+        } else {
+            $tenant = $user->activeTenants()->find($id);
+        }
         
         if (!$tenant) {
             return response()->json(['error' => 'Tenant not found or access denied'], 404);
@@ -363,6 +392,81 @@ class TenantController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'error' => 'Failed to update tenant branding',
+                'message' => $e->getMessage()
+            ], 422);
+        }
+    }
+
+    /**
+     * Update a tenant
+     */
+    public function update(Request $request, $id): JsonResponse
+    {
+        $user = $request->user();
+        $isSuperAdmin = method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin();
+
+        // Super admin can update any tenant, regular users only their tenants
+        if ($isSuperAdmin) {
+            $tenant = Tenant::find($id);
+        } else {
+            $tenant = $user->activeTenants()->find($id);
+        }
+
+        if (!$tenant) {
+            return response()->json(['error' => 'Tenant not found or access denied'], 404);
+        }
+
+        $request->validate([
+            'name' => 'sometimes|string|max:255|unique:tenants,name,' . $tenant->id,
+            'slug' => 'sometimes|string|max:255|unique:tenants,slug,' . $tenant->id . '|regex:/^[a-z0-9-]+$/',
+            'domain' => 'sometimes|nullable|string|max:255|unique:tenants,domain,' . $tenant->id,
+            'is_active' => 'sometimes|boolean',
+            'owner_id' => 'sometimes|integer|exists:users,id',
+        ]);
+
+        try {
+            $tenant->update($request->only(['name', 'slug', 'domain', 'is_active', 'owner_id']));
+
+            return response()->json([
+                'data' => new TenantResource($tenant),
+                'message' => 'Tenant updated successfully'
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => 'Failed to update tenant',
+                'message' => $e->getMessage()
+            ], 422);
+        }
+    }
+
+    /**
+     * Delete a tenant
+     */
+    public function destroy(Request $request, $id): JsonResponse
+    {
+        $user = $request->user();
+        $isSuperAdmin = method_exists($user, 'isSuperAdmin') && $user->isSuperAdmin();
+
+        // Super admin can delete any tenant, regular users only their tenants
+        if ($isSuperAdmin) {
+            $tenant = Tenant::find($id);
+        } else {
+            $tenant = $user->activeTenants()->find($id);
+        }
+
+        if (!$tenant) {
+            return response()->json(['error' => 'Tenant not found or access denied'], 404);
+        }
+
+        try {
+            $tenant->delete();
+
+            return response()->json([
+                'message' => 'Tenant deleted successfully'
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => 'Failed to delete tenant',
                 'message' => $e->getMessage()
             ], 422);
         }

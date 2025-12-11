@@ -6,6 +6,7 @@ use App\Models\Settings\Tenant;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
 
@@ -30,7 +31,29 @@ class TenantService
                 'created_by' => $creator->id,
             ]);
 
+            // Add creator as owner (always)
             $this->addUserToTenant($tenant, $creator, 'owner', true);
+
+            // Associate additional users if provided
+            if (isset($data['users_to_associate']) && is_array($data['users_to_associate'])) {
+                foreach ($data['users_to_associate'] as $userAssociation) {
+                    if (isset($userAssociation['user_id']) && isset($userAssociation['role_id'])) {
+                        $userToAssociate = User::find($userAssociation['user_id']);
+                        if ($userToAssociate && $userToAssociate->id !== $creator->id) {
+                            // Get role name from role_id
+                            $role = Role::find($userAssociation['role_id']);
+                            if ($role) {
+                                try {
+                                    $this->addUserToTenant($tenant, $userToAssociate, $role->name, false);
+                                } catch (\InvalidArgumentException $e) {
+                                    // User already belongs to tenant, skip
+                                    Log::warning("User {$userToAssociate->id} already belongs to tenant {$tenant->id}");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
 
             return $tenant;
         });
