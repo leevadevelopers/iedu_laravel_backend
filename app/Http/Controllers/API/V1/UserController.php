@@ -56,9 +56,12 @@ class UserController extends Controller
                     $q->where('tenant_id', $tenant->id)->where('status', $status);
                 });
             } else if ($isSuperAdmin) {
-                // For super admin, filter by status across all tenants
-                $usersQuery->whereHas('tenants', function ($q) use ($status) {
-                    $q->where('status', $status);
+                // For super admin, include users without tenant and those with tenant status
+                $usersQuery->where(function ($q) use ($status) {
+                    $q->where('status', $status)
+                      ->orWhereHas('tenants', function ($tenantQuery) use ($status) {
+                          $tenantQuery->where('status', $status);
+                      });
                 });
             }
         }
@@ -101,6 +104,9 @@ class UserController extends Controller
             }
         }
 
+        // Order newest first so recent users are visible on first page
+        $usersQuery->orderByDesc('created_at');
+
         $perPage = $request->get('per_page', 20);
         $users = $usersQuery->paginate($perPage);
 
@@ -137,6 +143,7 @@ class UserController extends Controller
             'status' => 'nullable|in:active,inactive,suspended',
             'phone' => 'nullable|string|max:20',
             'role_id' => 'nullable|integer|exists:roles,id',
+            'tenant_id' => 'nullable|integer|exists:tenants,id',
         ]);
 
         if ($validator->fails()) {
@@ -156,8 +163,23 @@ class UserController extends Controller
             'tenant_id' => !$isSuperAdmin && isset($tenant) ? $tenant->id : null,
         ]);
 
+        // Attach role (Spatie) if provided
+        if ($request->has('role_id') && $request->role_id) {
+            $roleModel = \Spatie\Permission\Models\Role::find($request->role_id);
+            if ($roleModel) {
+                $user->assignRole($roleModel->name);
+            }
+        }
+
+        // Attach to tenant
         if (!$isSuperAdmin && isset($tenant)) {
             $user->tenants()->attach($tenant->id, [
+                'status' => $request->status ?? 'active',
+                'role_id' => $request->role_id,
+                'joined_at' => now(),
+            ]);
+        } else if ($isSuperAdmin && $request->tenant_id) {
+            $user->tenants()->attach($request->tenant_id, [
                 'status' => $request->status ?? 'active',
                 'role_id' => $request->role_id,
                 'joined_at' => now(),
@@ -217,6 +239,7 @@ class UserController extends Controller
             'status' => 'nullable|in:active,inactive,suspended',
             'phone' => 'nullable|string|max:20',
             'role_id' => 'nullable|integer|exists:roles,id',
+            'tenant_id' => 'nullable|integer|exists:tenants,id',
         ]);
 
         if ($validator->fails()) {
@@ -234,10 +257,31 @@ class UserController extends Controller
 
         $user->update($updateData);
 
-        if ($request->has('role_id') && !$isSuperAdmin && isset($tenant)) {
-            $user->tenants()->updateExistingPivot($tenant->id, [
-                'role_id' => $request->role_id,
-            ]);
+        // Update/attach role (Spatie) if provided
+        if ($request->has('role_id') && $request->role_id) {
+            $roleModel = \Spatie\Permission\Models\Role::find($request->role_id);
+            if ($roleModel) {
+                // syncRoles removes previous and sets new one
+                $user->syncRoles([$roleModel->name]);
+            }
+        }
+
+        // Update tenant pivot if applicable
+        if ($request->has('role_id')) {
+            if (!$isSuperAdmin && isset($tenant)) {
+                $user->tenants()->updateExistingPivot($tenant->id, [
+                    'role_id' => $request->role_id,
+                ]);
+            } else if ($isSuperAdmin && $request->tenant_id) {
+                // ensure pivot exists or create
+                $user->tenants()->syncWithoutDetaching([
+                    $request->tenant_id => [
+                        'role_id' => $request->role_id,
+                        'status' => $request->status ?? 'active',
+                        'joined_at' => now(),
+                    ]
+                ]);
+            }
         }
 
         return response()->json([
