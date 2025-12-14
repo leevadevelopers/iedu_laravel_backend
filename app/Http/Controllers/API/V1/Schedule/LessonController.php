@@ -24,7 +24,7 @@ class LessonController extends Controller
     {
         $filters = $request->only([
             'teacher_id', 'class_id', 'subject_id', 'type', 'status',
-            'date_from', 'date_to', 'is_online',
+            'date', 'date_from', 'date_to', 'is_online',
             'search', 'sort_by', 'sort_direction', 'per_page'
         ]);
 

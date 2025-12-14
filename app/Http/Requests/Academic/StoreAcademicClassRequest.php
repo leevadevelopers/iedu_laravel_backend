@@ -206,9 +206,41 @@ class StoreAcademicClassRequest extends BaseAcademicRequest
 
             if ($subject) {
                 $section = $this->section ?? 'A';
-                $classCode = strtoupper($subject->code . '-' . $this->grade_level . '-' . $section);
+                $baseCode = strtoupper($subject->code . '-' . $this->grade_level . '-' . $section);
+                
+                // Generate unique code by checking existing codes and appending a counter
+                $classCode = $this->generateUniqueClassCode($baseCode, $schoolId);
                 $this->merge(['class_code' => $classCode]);
             }
         }
+    }
+
+    /**
+     * Generate a unique class code by checking existing codes and appending a counter if needed
+     */
+    private function generateUniqueClassCode(string $baseCode, int $schoolId): string
+    {
+        $classCode = $baseCode;
+        $counter = 1;
+        $maxAttempts = 1000; // Prevent infinite loop
+
+        // Check if code exists, if so, append counter
+        while (
+            $counter < $maxAttempts &&
+            \App\Models\V1\Academic\AcademicClass::where('class_code', $classCode)
+                ->where('school_id', $schoolId)
+                ->exists()
+        ) {
+            $classCode = $baseCode . '-' . str_pad((string)$counter, 3, '0', STR_PAD_LEFT);
+            $counter++;
+        }
+
+        // If still not unique after max attempts, add timestamp
+        if ($counter >= $maxAttempts) {
+            $timestamp = substr((string)time(), -6);
+            $classCode = $baseCode . '-' . $timestamp;
+        }
+
+        return $classCode;
     }
 }

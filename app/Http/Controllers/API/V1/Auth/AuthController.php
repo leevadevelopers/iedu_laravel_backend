@@ -326,6 +326,7 @@ class AuthController extends Controller
         // Try to get current tenant, but don't fail if none exists
         $currentTenant = null;
         $tenantContext = null;
+        $currentSchool = null;
 
         try {
             if ($user) {
@@ -345,9 +346,17 @@ class AuthController extends Controller
                         ],
                     ];
                 } else {
-                $currentTenant = $user->getCurrentTenant();
-                if ($currentTenant) {
-                    $tenantContext = $this->getTenantContext($user);
+                    $currentTenant = $user->getCurrentTenant();
+                    if ($currentTenant) {
+                        $tenantContext = $this->getTenantContext($user);
+                    }
+                    
+                    // Get current school for the user (from session or first active school)
+                    try {
+                        $currentSchool = $user->getCurrentSchool();
+                    } catch (\Exception $e) {
+                        // Log but don't fail if school retrieval fails
+                        Log::warning('Failed to get current school in me() method: ' . $e->getMessage());
                     }
                 }
             }
@@ -360,6 +369,11 @@ class AuthController extends Controller
             'user' => $user,
             'current_tenant' => $currentTenant,
             'tenant_context' => $tenantContext,
+            'current_school' => $currentSchool ? [
+                'id' => $currentSchool->id,
+                'name' => $currentSchool->display_name,
+                'school_code' => $currentSchool->school_code,
+            ] : null,
         ]);
     }
 

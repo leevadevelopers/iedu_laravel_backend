@@ -52,7 +52,7 @@ class SchoolService
             // Use withoutTenantScope to get ALL schools regardless of tenant
             $query = School::withoutTenantScope()->select([
                 'id', 'tenant_id', 'school_code', 'official_name', 'display_name',
-                'school_type', 'status', 'city', 'state_province', 'country_code',
+                'school_type', 'educational_levels', 'configured_grade_levels', 'status', 'city', 'state_province', 'country_code',
                 'email', 'phone', 'website', 'current_enrollment', 'staff_count',
                 'created_at', 'updated_at'
             ]);
@@ -60,7 +60,7 @@ class SchoolService
             // Regular users see only schools from their tenant (TenantScope applies automatically)
             $query = School::select([
                 'id', 'tenant_id', 'school_code', 'official_name', 'display_name',
-                'school_type', 'status', 'city', 'state_province', 'country_code',
+                'school_type', 'educational_levels', 'configured_grade_levels', 'status', 'city', 'state_province', 'country_code',
                 'email', 'phone', 'website', 'current_enrollment', 'staff_count',
                 'created_at', 'updated_at'
             ]);

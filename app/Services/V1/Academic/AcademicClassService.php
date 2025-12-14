@@ -257,7 +257,7 @@ class AcademicClassService extends BaseAcademicService
     /**
      * Enroll student in class
      */
-    public function enrollStudent(AcademicClass $class, int $studentId): array
+    public function enrollStudent(AcademicClass $class, int $studentId, array $options = []): array
     {
         $this->validateTenantAndSchoolOwnership($class);
 
@@ -283,12 +283,29 @@ class AcademicClassService extends BaseAcademicService
         }
 
         // Check grade level compatibility
-        if ($student->current_grade_level !== $class->grade_level) {
+        // Use grade_level_at_enrollment from options if provided, otherwise use student's current_grade_level
+        $gradeLevelAtEnrollment = $options['grade_level_at_enrollment'] ?? $student->current_grade_level;
+        $classGradeLevel = $class->grade_level ?? $class->level_id;
+
+        // Compare grade levels - check both class->grade_level and class->level_id
+        $gradeLevelMatches = false;
+        if ($gradeLevelAtEnrollment !== null) {
+            $gradeLevelMatches = (string)$gradeLevelAtEnrollment === (string)$classGradeLevel 
+                || (string)$gradeLevelAtEnrollment === (string)$class->level_id;
+        }
+
+        if (!$gradeLevelMatches) {
             throw new \Exception('Student grade level does not match class grade level');
         }
 
+        // Use enrollment_date from options if provided, otherwise use now()
+        $enrollmentDate = $options['enrollment_date'] ?? now();
+        if (is_string($enrollmentDate)) {
+            $enrollmentDate = \Carbon\Carbon::parse($enrollmentDate);
+        }
+
         $class->students()->attach($studentId, [
-            'enrollment_date' => now(),
+            'enrollment_date' => $enrollmentDate,
             'status' => 'active'
         ]);
 
@@ -297,7 +314,7 @@ class AcademicClassService extends BaseAcademicService
         return [
             'student_id' => $studentId,
             'class_id' => $class->id,
-            'enrollment_date' => now(),
+            'enrollment_date' => $enrollmentDate,
             'status' => 'active'
         ];
     }
