@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Models\V1\Academic\AcademicClass;
 use App\Models\V1\Academic\GradeEntry;
 use App\Models\V1\Academic\Subject;
+use App\Models\V1\SIS\School\AcademicTerm;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -18,7 +19,7 @@ class Assessment extends BaseModel
 
     protected $fillable = [
         'tenant_id',
-        'term_id',
+        'academic_term_id',
         'subject_id',
         'class_id',
         'teacher_id',
@@ -54,11 +55,19 @@ class Assessment extends BaseModel
     ];
 
     /**
-     * Get the assessment term.
+     * Get the academic term.
      */
     public function term(): BelongsTo
     {
-        return $this->belongsTo(AssessmentTerm::class, 'term_id');
+        return $this->belongsTo(AcademicTerm::class, 'academic_term_id');
+    }
+
+    /**
+     * Alias for term() - backward compatibility
+     */
+    public function academicTerm(): BelongsTo
+    {
+        return $this->term();
     }
 
     /**
@@ -111,13 +120,22 @@ class Assessment extends BaseModel
 
     /**
      * Get the grade entries for this assessment.
-     * Uses the existing grade_entries table with assessment_name filter
+     * Uses assessment_id foreign key (preferred) or falls back to assessment_name matching
      */
     public function gradeEntries(): HasMany
     {
+        return $this->hasMany(GradeEntry::class, 'assessment_id');
+    }
+
+    /**
+     * Get grade entries by assessment name (backward compatibility).
+     * Use gradeEntries() for new relationships.
+     */
+    public function gradeEntriesByName(): HasMany
+    {
         return $this->hasMany(GradeEntry::class, 'assessment_name', 'title')
                     ->where('class_id', $this->class_id)
-                    ->where('academic_term_id', $this->term_id);
+                    ->where('academic_term_id', $this->academic_term_id);
     }
 
     /**

@@ -12,7 +12,8 @@ class AssessmentResource extends JsonResource
         return [
             'id' => $this->id,
             'tenant_id' => $this->tenant_id,
-            'term_id' => $this->term_id,
+            'term_id' => $this->academic_term_id, // Map to term_id for backward compatibility
+            'academic_term_id' => $this->academic_term_id, // New preferred field
             'subject_id' => $this->subject_id,
             'class_id' => $this->class_id,
             'teacher_id' => $this->teacher_id,

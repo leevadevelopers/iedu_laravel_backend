@@ -14,7 +14,8 @@ return new class extends Migration
         Schema::create('assessments', function (Blueprint $table) {
             $table->id();
             $table->foreignId('tenant_id')->constrained('tenants')->onDelete('cascade');
-            $table->foreignId('term_id')->constrained('assessment_terms')->onDelete('cascade');
+            // Use academic_term_id instead of term_id (unified with grade entries)
+            $table->foreignId('academic_term_id')->constrained('academic_terms')->onDelete('cascade');
             $table->foreignId('subject_id')->constrained('subjects')->onDelete('cascade');
             $table->foreignId('class_id')->constrained('classes')->onDelete('cascade');
             $table->foreignId('teacher_id')->nullable()->constrained('users')->onDelete('set null');
@@ -23,6 +24,9 @@ return new class extends Migration
             $table->text('description')->nullable();
             $table->text('instructions')->nullable();
             $table->dateTime('scheduled_date')->nullable();
+            // Time fields (consolidated from add_time_fields migration)
+            $table->time('start_time')->nullable();
+            $table->integer('duration_minutes')->nullable();
             $table->dateTime('submission_deadline')->nullable();
             $table->decimal('total_marks', 8, 2)->default(100);
             $table->decimal('weight', 5, 2)->default(0); // Peso no cálculo final
@@ -36,7 +40,8 @@ return new class extends Migration
             $table->timestamps();
             $table->softDeletes();
 
-            $table->index(['tenant_id', 'term_id', 'subject_id', 'class_id']);
+            // Updated indexes to use academic_term_id
+            $table->index(['tenant_id', 'academic_term_id', 'subject_id', 'class_id']);
             $table->index(['tenant_id', 'teacher_id']);
             $table->index(['tenant_id', 'status']);
         });

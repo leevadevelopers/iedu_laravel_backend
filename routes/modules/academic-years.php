@@ -55,6 +55,8 @@ Route::middleware(['auth:api', 'tenant'])->group(function () {
             ->name('set-as-current');
         Route::get('{academicYear}/calendar', [AcademicYearController::class, 'getCalendar'])
             ->name('calendar');
+        Route::get('{academicYear}/terms', [AcademicYearController::class, 'getTerms'])
+            ->name('terms');
     });
 
     /*

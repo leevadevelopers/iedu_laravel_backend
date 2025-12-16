@@ -15,7 +15,12 @@ class UpdateGradeEntryRequest extends BaseAcademicRequest
     public function rules(): array
     {
         return [
-            'assessment_name' => 'sometimes|required|string|max:255',
+            'assessment_id' => [
+                'nullable',
+                'integer',
+                'exists:assessments,id'
+            ],
+            'assessment_name' => 'required_without:assessment_id|string|max:255',
             'assessment_type' => 'sometimes|required|in:formative,summative,project,participation,homework,quiz,exam',
             'assessment_date' => 'sometimes|required|date|before_or_equal:today',
             'raw_score' => 'nullable|numeric|min:0',

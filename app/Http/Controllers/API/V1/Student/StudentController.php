@@ -423,7 +423,20 @@ class StudentController extends Controller
             $schoolId = $request->school_id;
         }
 
-        $validator = Validator::make($request->all(), [
+        // Normalize empty strings to null for email and phone
+        $requestData = $request->all();
+        if (isset($requestData['email']) && $requestData['email'] === '') {
+            $requestData['email'] = null;
+        }
+        if (isset($requestData['phone']) && $requestData['phone'] === '') {
+            $requestData['phone'] = null;
+        }
+
+        // Extract normalized email/phone for use in student creation
+        $email = $requestData['email'] ?? null;
+        $phone = $requestData['phone'] ?? null;
+
+        $validator = Validator::make($requestData, [
             'user_id' => 'nullable|exists:users,id',
             'user_data' => 'nullable|array', // For creating new user when user_id is provided
             'user_data.name' => 'nullable|string|max:255',
@@ -436,8 +449,9 @@ class StudentController extends Controller
             'birth_place' => 'nullable|string|max:255',
             'gender' => 'required|in:male,female,other',
             'nationality' => 'nullable|string|max:100',
-            'email' => 'nullable|email|max:255|unique:students,email',
-            'phone' => 'nullable|string|max:20',
+            // Contact Information - require at least one (email or phone)
+            'email' => 'nullable|required_without:phone|email|max:255|unique:students,email',
+            'phone' => 'nullable|required_without:email|string|max:20',
             'address_json' => 'nullable|array',
             'current_academic_year_id' => 'required|exists:academic_years,id',
             'current_grade_level' => 'required|string|max:20',
@@ -476,8 +490,8 @@ class StudentController extends Controller
                 // If user_id is not provided, create new user automatically
                 // Use user_data if provided, otherwise use student data
                 $userData = $request->user_data ?? [];
-                $identifier = $userData['email'] ?? $userData['phone'] ?? $request->email ?? $request->phone;
-                $userType = isset($userData['email']) || isset($request->email) ? 'email' : 'phone';
+                $identifier = $userData['email'] ?? $userData['phone'] ?? $email ?? $phone;
+                $userType = isset($userData['email']) || !empty($email) ? 'email' : 'phone';
                 $userName = $userData['name'] ?? "{$request->first_name} {$request->last_name}";
 
                 if (!$identifier) {
@@ -523,8 +537,19 @@ class StudentController extends Controller
                 ], 422);
             }
 
-            // Create student
+            // Create student - use normalized email/phone values
             $studentData = $request->except(['form_data', 'family_relationships', 'user_data']);
+            // Override with normalized email/phone values (null instead of empty string)
+            if ($email !== null) {
+                $studentData['email'] = $email;
+            } else {
+                unset($studentData['email']);
+            }
+            if ($phone !== null) {
+                $studentData['phone'] = $phone;
+            } else {
+                unset($studentData['phone']);
+            }
             $studentData['tenant_id'] = $tenantId;
             $studentData['school_id'] = $schoolId;
             $studentData['user_id'] = $userId;
@@ -670,7 +695,29 @@ class StudentController extends Controller
             }
         }
 
-        $validator = Validator::make($request->all(), [
+        // Normalize empty strings to null for email and phone
+        $requestData = $request->all();
+        if (isset($requestData['email']) && $requestData['email'] === '') {
+            $requestData['email'] = null;
+        }
+        if (isset($requestData['phone']) && $requestData['phone'] === '') {
+            $requestData['phone'] = null;
+        }
+
+        // Extract normalized email/phone for use in update
+        $email = $requestData['email'] ?? null;
+        $phone = $requestData['phone'] ?? null;
+
+        // For validation, merge with existing values if not in request
+        $validationData = $requestData;
+        if (!isset($validationData['email'])) {
+            $validationData['email'] = $student->email;
+        }
+        if (!isset($validationData['phone'])) {
+            $validationData['phone'] = $student->phone;
+        }
+
+        $validator = Validator::make($requestData, [
             'user_id' => 'sometimes|exists:users,id',
             'first_name' => 'sometimes|required|string|max:100',
             'middle_name' => 'nullable|string|max:100',
@@ -679,7 +726,8 @@ class StudentController extends Controller
             'birth_place' => 'nullable|string|max:255',
             'gender' => 'sometimes|required|in:male,female,other',
             'nationality' => 'nullable|string|max:100',
-            'email' => 'sometimes|required|email|max:255|unique:students,email,' . $student->id,
+            // Contact Information - validate format if provided, but don't require if not in request
+            'email' => 'nullable|email|max:255|unique:students,email,' . $student->id,
             'phone' => 'nullable|string|max:20',
             'address_json' => 'nullable|array',
             'school_id' => 'sometimes|required|exists:schools,id',
@@ -704,6 +752,20 @@ class StudentController extends Controller
                 'success' => false,
                 'message' => 'Validation failed',
                 'errors' => $validator->errors()
+            ], 422);
+        }
+
+        // Ensure at least one contact method exists (email or phone) after update
+        $finalEmail = $email ?? $student->email;
+        $finalPhone = $phone ?? $student->phone;
+        if (empty($finalEmail) && empty($finalPhone)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => [
+                    'email' => ['At least one contact method (email or phone) is required.'],
+                    'phone' => ['At least one contact method (email or phone) is required.']
+                ]
             ], 422);
         }
 
@@ -743,8 +805,15 @@ class StudentController extends Controller
             // Only include fields that are present in the request
             $updateData = [];
             foreach ($allowedFields as $field) {
-                if ($request->has($field)) {
-                    $updateData[$field] = $request->input($field);
+                if (isset($requestData[$field])) {
+                    // Use normalized values for email and phone
+                    if ($field === 'email') {
+                        $updateData[$field] = $email ?? null;
+                    } elseif ($field === 'phone') {
+                        $updateData[$field] = $phone ?? null;
+                    } else {
+                        $updateData[$field] = $requestData[$field];
+                    }
                 }
             }
 
