@@ -142,9 +142,28 @@ class Schedule extends BaseModel
     // Accessors & Methods
     public function getDurationInMinutesAttribute(): int
     {
-        $start = Carbon::parse($this->start_time);
-        $end = Carbon::parse($this->end_time);
-        return $end->diffInMinutes($start);
+        // Handle both Carbon instances and time strings
+        if ($this->start_time instanceof Carbon && $this->end_time instanceof Carbon) {
+            $start = $this->start_time->copy()->setDate(2000, 1, 1);
+            $end = $this->end_time->copy()->setDate(2000, 1, 1);
+        } else {
+            $startTimeStr = $this->start_time instanceof Carbon 
+                ? $this->start_time->format('H:i:s') 
+                : (string) $this->start_time;
+            $endTimeStr = $this->end_time instanceof Carbon 
+                ? $this->end_time->format('H:i:s') 
+                : (string) $this->end_time;
+            
+            $start = Carbon::createFromFormat('H:i:s', $startTimeStr);
+            $end = Carbon::createFromFormat('H:i:s', $endTimeStr);
+        }
+        
+        // If end is before start, add a day (shouldn't happen for same-day lessons)
+        if ($end->lt($start)) {
+            $end->addDay();
+        }
+        
+        return $start->diffInMinutes($end);
     }
 
     public function isActive(): bool
@@ -175,11 +194,41 @@ class Schedule extends BaseModel
     public function generateLessons(): array
     {
         $lessons = [];
-        $currentDate = Carbon::parse($this->start_date);
-        $endDate = Carbon::parse($this->end_date);
+        $currentDate = Carbon::parse($this->start_date)->startOfDay();
+        $endDate = Carbon::parse($this->end_date)->endOfDay();
+        $targetDayOfWeek = $this->getDayOfWeekNumber();
+
+        // Prefer schedule's academic_term_id, but gracefully fall back to class academic_term_id
+        $academicTermId = $this->academic_term_id;
+        if (!$academicTermId && $this->relationLoaded('class') || $this->class) {
+            $academicTermId = $this->class->academic_term_id ?? $academicTermId;
+        }
+
+        // Calculate duration correctly - parse times with same date context
+        if ($this->start_time instanceof Carbon && $this->end_time instanceof Carbon) {
+            $startTime = $this->start_time->copy()->setDate(2000, 1, 1);
+            $endTime = $this->end_time->copy()->setDate(2000, 1, 1);
+        } else {
+            $startTimeStr = $this->start_time instanceof Carbon 
+                ? $this->start_time->format('H:i:s') 
+                : (string) $this->start_time;
+            $endTimeStr = $this->end_time instanceof Carbon 
+                ? $this->end_time->format('H:i:s') 
+                : (string) $this->end_time;
+            
+            $startTime = Carbon::createFromFormat('H:i:s', $startTimeStr);
+            $endTime = Carbon::createFromFormat('H:i:s', $endTimeStr);
+        }
+        
+        // If end time is before start time, it means it's next day (shouldn't happen for same-day lessons)
+        if ($endTime->lt($startTime)) {
+            $endTime->addDay();
+        }
+        $durationMinutes = $startTime->diffInMinutes($endTime);
 
         while ($currentDate->lte($endDate)) {
-            if ($currentDate->dayOfWeek === $this->getDayOfWeekNumber()) {
+            // Carbon's dayOfWeek: 0=Sunday, 1=Monday, 2=Tuesday, etc.
+            if ($currentDate->dayOfWeek === $targetDayOfWeek) {
                 $lessons[] = [
                     'schedule_id' => $this->id,
                     'tenant_id' => $this->tenant_id,
@@ -187,11 +236,11 @@ class Schedule extends BaseModel
                     'subject_id' => $this->subject_id,
                     'class_id' => $this->class_id,
                     'teacher_id' => $this->teacher_id,
-                    'academic_term_id' => $this->academic_term_id,
+                    'academic_term_id' => $academicTermId,
                     'lesson_date' => $currentDate->toDateString(),
                     'start_time' => $this->start_time,
                     'end_time' => $this->end_time,
-                    'duration_minutes' => $this->duration_in_minutes,
+                    'duration_minutes' => $durationMinutes,
                     'classroom' => $this->classroom,
                     'is_online' => $this->is_online,
                     'online_meeting_url' => $this->online_meeting_url,

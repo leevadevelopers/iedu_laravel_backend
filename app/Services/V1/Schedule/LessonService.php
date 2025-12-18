@@ -267,8 +267,14 @@ class LessonService extends BaseScheduleService
     public function getTodayLessons(array $filters = []): Collection
     {
         $query = Lesson::where('school_id', $this->getCurrentSchoolId())
-            ->today()
             ->with(['subject', 'class', 'teacher']);
+
+        // Use date filter if provided, otherwise use today's date
+        if (!empty($filters['date'])) {
+            $query->where('lesson_date', $filters['date']);
+        } else {
+            $query->today();
+        }
 
         if (!empty($filters['teacher_id'])) {
             $query->byTeacher($filters['teacher_id']);
