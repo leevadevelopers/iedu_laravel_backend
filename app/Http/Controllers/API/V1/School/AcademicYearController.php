@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\V1\SIS\School\AcademicYear;
 use App\Models\V1\SIS\School\AcademicTerm;
 use App\Models\V1\SIS\School\School;
+use Carbon\Carbon;
 use App\Models\V1\SIS\Student\Student;
 use App\Models\Forms\FormTemplate;
 use App\Services\FormEngineService;
@@ -438,10 +439,12 @@ class AcademicYearController extends Controller
             DB::beginTransaction();
 
             // Check for overlapping academic years (only within same school and tenant, excluding soft deleted)
+            // Exclude records with status 'planning' or 'draft' to allow multiple drafts
             // Use withoutTenantScope to ensure we check only the specific tenant_id
             $overlapping = AcademicYear::withoutTenantScope()
                 ->where('school_id', $schoolId)
                 ->where('tenant_id', $tenantId)
+                ->whereNotIn('status', ['planning', 'draft']) // Allow overlapping drafts/planning records
                 ->where(function($query) use ($request) {
                     $query->whereBetween('start_date', [$request->start_date, $request->end_date])
                           ->orWhereBetween('end_date', [$request->start_date, $request->end_date])
@@ -500,6 +503,33 @@ class AcademicYearController extends Controller
 
                 $processedData = $this->formEngineService->processFormData('academic_year_setup', $request->form_data);
                 $this->formEngineService->createFormInstance('academic_year_setup', $processedData, 'AcademicYear', $academicYear->id, $tenantId);
+            }
+
+            // Create academic terms automatically whenever term_structure & total_terms are provided.
+            // We intentionally allow this even when status is 'planning' so draft years can already
+            // have their terms generated.
+            \Log::info('AcademicYearController@store: Checking if terms should be created', [
+                'academic_year_id' => $academicYear->id,
+                'status' => $academicYear->status,
+                'term_structure' => $request->term_structure,
+                'total_terms' => $request->total_terms,
+                'should_create' => $request->filled('term_structure') && $request->filled('total_terms')
+            ]);
+            
+            if ($request->filled('term_structure') && $request->filled('total_terms')) {
+                \Log::info('AcademicYearController@store: Creating academic terms automatically', [
+                    'academic_year_id' => $academicYear->id,
+                    'term_structure' => $request->term_structure,
+                    'total_terms' => $request->total_terms
+                ]);
+                $this->createAcademicTermsAutomatically($academicYear, $request, $user, $tenantId);
+            } else {
+                \Log::warning('AcademicYearController@store: Terms NOT created', [
+                    'reason' => 'Status is planning or missing term_structure/total_terms',
+                    'status' => $academicYear->status,
+                    'has_term_structure' => $request->filled('term_structure'),
+                    'has_total_terms' => $request->filled('total_terms')
+                ]);
             }
 
             // Start academic year setup workflow
@@ -622,6 +652,35 @@ class AcademicYearController extends Controller
         try {
             DB::beginTransaction();
 
+            // Check for overlapping academic years when updating dates (exclude the current record)
+            if ($request->filled('start_date') || $request->filled('end_date')) {
+                $startDate = $request->start_date ?? $academicYear->start_date;
+                $endDate = $request->end_date ?? $academicYear->end_date;
+                
+                $overlapping = AcademicYear::withoutTenantScope()
+                    ->where('school_id', $academicYear->school_id)
+                    ->where('tenant_id', $academicYear->tenant_id)
+                    ->where('id', '!=', $academicYear->id) // Exclude the current record
+                    ->whereNotIn('status', ['planning', 'draft']) // Allow overlapping drafts/planning records
+                    ->where(function($query) use ($startDate, $endDate) {
+                        $query->whereBetween('start_date', [$startDate, $endDate])
+                              ->orWhereBetween('end_date', [$startDate, $endDate])
+                              ->orWhere(function($q) use ($startDate, $endDate) {
+                                  $q->where('start_date', '<=', $startDate)
+                                    ->where('end_date', '>=', $endDate);
+                              });
+                    })
+                    ->exists();
+
+                if ($overlapping) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Academic year dates overlap with existing academic year'
+                    ], 422);
+                }
+            }
+
             $updateData = $request->except(['holidays']);
 
             if ($request->has('holidays')) {
@@ -636,6 +695,29 @@ class AcademicYearController extends Controller
             }
 
             $academicYear->update($updateData);
+
+            // Create academic terms automatically if status changed to not 'planning' and terms don't exist
+            $termsCount = $academicYear->terms()->count();
+            \Log::info('AcademicYearController@update: Checking if terms should be created', [
+                'academic_year_id' => $academicYear->id,
+                'current_status' => $academicYear->status,
+                'new_status' => $request->status,
+                'terms_count' => $termsCount,
+                'has_term_structure' => $request->filled('term_structure'),
+                'has_total_terms' => $request->filled('total_terms'),
+                'should_create' => $request->filled('status') && $request->status !== 'planning' && $termsCount === 0 && $request->filled('term_structure') && $request->filled('total_terms')
+            ]);
+            
+            if ($request->filled('status') && $request->status !== 'planning' && $termsCount === 0) {
+                if ($request->filled('term_structure') && $request->filled('total_terms')) {
+                    $user = auth('api')->user();
+                    $tenantId = $this->getCurrentTenantId();
+                    \Log::info('AcademicYearController@update: Creating academic terms automatically');
+                    $this->createAcademicTermsAutomatically($academicYear, $request, $user, $tenantId);
+                } else {
+                    \Log::warning('AcademicYearController@update: Terms NOT created - missing term_structure or total_terms');
+                }
+            }
 
             DB::commit();
 
@@ -897,6 +979,41 @@ class AcademicYearController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to get academic year calendar',
+                'error' => $e->getMessage()
+            ], 500);
+        }
+    }
+
+    /**
+     * Get academic terms for a specific academic year
+     */
+    public function getTerms(AcademicYear $academicYear): JsonResponse
+    {
+        try {
+            // Verify access: must belong to user's school
+            $userSchoolId = $this->getCurrentSchoolId();
+            if (!$userSchoolId || $academicYear->school_id != $userSchoolId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'You do not have access to this academic year'
+                ], 403);
+            }
+
+            $terms = $academicYear->terms()
+                ->select('id', 'name', 'type', 'term_number', 'start_date', 'end_date', 'status', 'is_current')
+                ->orderBy('term_number')
+                ->orderBy('start_date')
+                ->get();
+
+            return response()->json([
+                'success' => true,
+                'data' => $terms
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to retrieve academic terms',
                 'error' => $e->getMessage()
             ], 500);
         }
@@ -1267,5 +1384,168 @@ class AcademicYearController extends Controller
                 'error' => $e->getMessage()
             ], 500);
         }
+    }
+
+    /**
+     * Create academic terms automatically based on term structure
+     */
+    protected function createAcademicTermsAutomatically(AcademicYear $academicYear, Request $request, $user, $tenantId): void
+    {
+        \Log::info('AcademicYearController@createAcademicTermsAutomatically: Starting', [
+            'academic_year_id' => $academicYear->id,
+            'academic_year_name' => $academicYear->name,
+            'term_structure' => $request->term_structure,
+            'total_terms' => $request->total_terms,
+            'start_date' => $academicYear->start_date,
+            'end_date' => $academicYear->end_date,
+            'tenant_id' => $tenantId,
+            'school_id' => $academicYear->school_id
+        ]);
+        
+        $termStructure = $request->term_structure;
+        $totalTerms = $request->total_terms ?? 2;
+        $startDate = Carbon::parse($academicYear->start_date);
+        $endDate = Carbon::parse($academicYear->end_date);
+        
+        // Use startDate->diffInDays(endDate) to guarantee a positive duration
+        $totalDays = $startDate->diffInDays($endDate) + 1;
+
+        \Log::info('AcademicYearController@createAcademicTermsAutomatically: Calculated dates', [
+            'start_date' => $startDate->format('Y-m-d'),
+            'end_date' => $endDate->format('Y-m-d'),
+            'total_days' => $totalDays
+        ]);
+
+        // Calculate term dates
+        $daysPerTerm = floor($totalDays / $totalTerms);
+
+        $termLabels = [
+            'semesters' => ['1º Semestre', '2º Semestre'],
+            'trimesters' => ['1º Trimestre', '2º Trimestre', '3º Trimestre'],
+            'quarters' => ['1º Quadrimestre', '2º Quadrimestre', '3º Quadrimestre', '4º Quadrimestre'],
+            'year_round' => ['Ano Letivo']
+        ];
+
+        $labels = $termLabels[$termStructure] ?? array_map(fn($i) => "{$i}º Período", range(1, $totalTerms));
+
+        // Map term structure to type
+        $typeMap = [
+            'semesters' => 'semester',
+            'trimesters' => 'trimester',
+            'quarters' => 'quarter',
+            'year_round' => 'other'
+        ];
+        $termType = $typeMap[$termStructure] ?? 'other';
+
+        $currentStart = clone $startDate;
+        $createdCount = 0;
+        $skippedCount = 0;
+
+        \Log::info('AcademicYearController@createAcademicTermsAutomatically: Pre-loop summary', [
+            'total_terms_requested' => $totalTerms,
+            'term_structure' => $termStructure,
+            'term_type' => $termType,
+            'days_per_term' => $daysPerTerm,
+            'existing_terms_count' => AcademicTerm::where('academic_year_id', $academicYear->id)->count(),
+        ]);
+
+        \Log::info('AcademicYearController@createAcademicTermsAutomatically: Starting loop', [
+            'total_terms' => $totalTerms,
+            'days_per_term' => $daysPerTerm,
+            'term_type' => $termType
+        ]);
+
+        for ($i = 0; $i < $totalTerms; $i++) {
+            $termStart = clone $currentStart;
+            
+            if ($i === $totalTerms - 1) {
+                // Last term ends on the academic year end date
+                $termEnd = clone $endDate;
+            } else {
+                // Calculate end date for this term
+                $termEnd = clone $termStart;
+                $termEnd->addDays($daysPerTerm - 1);
+                
+                // Ensure we don't exceed the academic year end date
+                if ($termEnd > $endDate) {
+                    $termEnd = clone $endDate;
+                }
+            }
+
+            \Log::info("AcademicYearController@createAcademicTermsAutomatically: Processing term {$i}", [
+                'term_number' => $i + 1,
+                'term_start' => $termStart->format('Y-m-d'),
+                'term_end' => $termEnd->format('Y-m-d'),
+                'term_name' => $labels[$i] ?? "{$i}º Período"
+            ]);
+
+            // Check for overlapping terms
+            $overlapping = AcademicTerm::withoutTenantScope()
+                ->where('academic_year_id', $academicYear->id)
+                ->where('tenant_id', $tenantId)
+                ->where(function($query) use ($termStart, $termEnd) {
+                    $query->whereBetween('start_date', [$termStart, $termEnd])
+                          ->orWhereBetween('end_date', [$termStart, $termEnd])
+                          ->orWhere(function($q) use ($termStart, $termEnd) {
+                              $q->where('start_date', '<=', $termStart)
+                                ->where('end_date', '>=', $termEnd);
+                          });
+                })
+                ->exists();
+
+            if (!$overlapping) {
+                try {
+                    $term = AcademicTerm::create([
+                        'academic_year_id' => $academicYear->id,
+                        'school_id' => $academicYear->school_id,
+                        'name' => $labels[$i] ?? "{$i}º Período",
+                        'type' => $termType,
+                        'term_number' => $i + 1,
+                        'start_date' => $termStart->format('Y-m-d'),
+                        'end_date' => $termEnd->format('Y-m-d'),
+                        'description' => ($labels[$i] ?? "{$i}º Período") . ' do ano letivo',
+                        'status' => 'planning',
+                        'is_current' => false,
+                        'created_by' => $user->id,
+                        'tenant_id' => $tenantId
+                    ]);
+                    
+                    $createdCount++;
+                    \Log::info("AcademicYearController@createAcademicTermsAutomatically: Term created successfully", [
+                        'term_id' => $term->id,
+                        'term_name' => $term->name,
+                        'term_number' => $term->term_number,
+                        'academic_year_id' => $academicYear->id,
+                        'current_total_terms_in_db' => AcademicTerm::where('academic_year_id', $academicYear->id)->count(),
+                    ]);
+                } catch (\Exception $e) {
+                    \Log::error("AcademicYearController@createAcademicTermsAutomatically: Failed to create term {$i}", [
+                        'error' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString()
+                    ]);
+                }
+            } else {
+                $skippedCount++;
+                \Log::warning("AcademicYearController@createAcademicTermsAutomatically: Term {$i} skipped (overlapping)", [
+                    'term_number' => $i + 1,
+                    'term_start' => $termStart->format('Y-m-d'),
+                    'term_end' => $termEnd->format('Y-m-d')
+                ]);
+            }
+
+            // Next term starts the day after this term ends
+            if ($i < $totalTerms - 1) {
+                $currentStart = clone $termEnd;
+                $currentStart->addDay();
+            }
+        }
+        
+        \Log::info('AcademicYearController@createAcademicTermsAutomatically: Completed', [
+            'academic_year_id' => $academicYear->id,
+            'created_count' => $createdCount,
+            'skipped_count' => $skippedCount,
+            'total_expected' => $totalTerms,
+            'final_terms_in_db' => AcademicTerm::where('academic_year_id', $academicYear->id)->get(['id','term_number','name','start_date','end_date'])->toArray(),
+        ]);
     }
 }

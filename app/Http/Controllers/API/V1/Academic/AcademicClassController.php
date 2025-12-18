@@ -8,6 +8,7 @@ use App\Http\Requests\Academic\StoreAcademicClassRequest;
 use App\Http\Requests\Academic\UpdateAcademicClassRequest;
 use App\Services\V1\Academic\AcademicClassService;
 use App\Traits\ApiResponseTrait;
+use App\Models\V1\SIS\Student\Student;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Auth;
@@ -333,7 +334,11 @@ class AcademicClassController extends Controller
                 ], 403);
             }
 
-            $enrollment = $this->classService->enrollStudent($class, $request->student_id);
+            $enrollment = $this->classService->enrollStudent($class, $request->student_id, [
+                'grade_level_at_enrollment' => $request->grade_level_at_enrollment,
+                'academic_year_id' => $request->academic_year_id,
+                'enrollment_date' => $request->enrollment_date,
+            ]);
 
             DB::commit();
 
@@ -344,6 +349,7 @@ class AcademicClassController extends Controller
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
+            
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to enroll student',
@@ -394,6 +400,7 @@ class AcademicClassController extends Controller
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
+            
             return response()->json([
                 'status' => 'error',
                 'message' => 'Failed to remove student',

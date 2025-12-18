@@ -18,6 +18,12 @@ return new class extends Migration
             $table->foreignId('academic_term_id')->constrained('academic_terms')->onDelete('cascade');
 
             // Assessment Information
+            // Add assessment_id foreign key (nullable for backward compatibility with assessment_name)
+            $table->foreignId('assessment_id')
+                  ->nullable()
+                  ->constrained('assessments')
+                  ->onDelete('set null');
+            
             $table->string('assessment_name', 255);
             $table->enum('assessment_type', [
                 'formative', 'summative', 'project', 'participation', 'homework', 'quiz', 'exam'
@@ -54,6 +60,9 @@ return new class extends Migration
             $table->index(['entered_by', 'entered_at']);
             $table->index(['tenant_id']);
             $table->index(['school_id', 'tenant_id']);
+            // Indexes for assessment_id (added in consolidated migration)
+            $table->index(['assessment_id', 'student_id']);
+            $table->index(['assessment_id', 'class_id']);
         });
     }
 

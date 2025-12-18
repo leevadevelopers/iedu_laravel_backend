@@ -399,13 +399,36 @@ class ScheduleController extends Controller
         }
 
         try {
-            $lessons = $this->scheduleService->generateLessonsForSchedule($schedule);
+            $result = $this->scheduleService->generateLessonsForSchedule($schedule);
+
+            $message = 'Lessons generated successfully';
+            if ($result['existing_lessons'] > 0) {
+                $message = sprintf(
+                    '%d %s criada%s, %d já existia%s',
+                    $result['created_lessons'],
+                    $result['created_lessons'] === 1 ? 'aula' : 'aulas',
+                    $result['created_lessons'] === 1 ? '' : 's',
+                    $result['existing_lessons'],
+                    $result['existing_lessons'] === 1 ? 'm' : 'm'
+                );
+            } elseif ($result['created_lessons'] > 0) {
+                $message = sprintf(
+                    '%d %s gerada%s com sucesso',
+                    $result['created_lessons'],
+                    $result['created_lessons'] === 1 ? 'aula' : 'aulas',
+                    $result['created_lessons'] === 1 ? '' : 's'
+                );
+            } else {
+                $message = 'Nenhuma nova aula gerada (todas já existem)';
+            }
 
             return response()->json([
-                'message' => 'Lessons generated successfully',
+                'message' => $message,
                 'data' => [
-                    'lessons_created' => count($lessons),
-                    'schedule' => new ScheduleResource($schedule)
+                    'lessons_created' => $result['created_lessons'],
+                    'lessons_existing' => $result['existing_lessons'],
+                    'lessons_total' => $result['total_lessons'],
+                    'schedule' => new ScheduleResource($schedule->fresh())
                 ]
             ]);
         } catch (\Exception $e) {

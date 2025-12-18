@@ -36,9 +36,12 @@ class AssessmentController extends BaseController
             });
         }
 
-        // Filter by term
+        // Filter by academic term (accept both term_id and academic_term_id for backward compatibility)
         if ($request->filled('term_id')) {
-            $query->where('term_id', $request->term_id);
+            $query->where('academic_term_id', $request->term_id);
+        }
+        if ($request->filled('academic_term_id')) {
+            $query->where('academic_term_id', $request->academic_term_id);
         }
 
         // Filter by subject

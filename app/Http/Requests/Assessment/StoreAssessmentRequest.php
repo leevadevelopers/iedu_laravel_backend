@@ -12,12 +12,32 @@ class StoreAssessmentRequest extends BaseAssessmentRequest
      */
     protected function prepareForValidation(): void
     {
+        // Convert term_id to academic_term_id for backward compatibility
+        if ($this->has('term_id') && !$this->has('academic_term_id')) {
+            $this->merge(['academic_term_id' => $this->term_id]);
+        }
+
         if ($this->has('teacher_id') && $this->teacher_id) {
             $tenantId = $this->getCurrentTenantIdOrNull();
 
             if ($tenantId) {
-                // Try to find teacher by ID first (in case user sends teacher.id instead of user_id)
-                $teacher = \App\Models\V1\Academic\Teacher::where('id', $this->teacher_id)
+                // Convert teacher_id to integer
+                $teacherIdValue = is_numeric($this->teacher_id) ? (int)$this->teacher_id : $this->teacher_id;
+                
+                // First, check if it's already a user_id by checking if a teacher exists with this user_id
+                $teacherByUserId = \App\Models\V1\Academic\Teacher::where('user_id', $teacherIdValue)
+                    ->where('tenant_id', $tenantId)
+                    ->where('status', 'active')
+                    ->first();
+
+                if ($teacherByUserId) {
+                    // It's already a user_id, use it as is
+                    $this->merge([
+                        'teacher_id' => $teacherByUserId->user_id
+                    ]);
+                } else {
+                    // Try to find teacher by ID (in case user sends teacher.id instead of user_id)
+                    $teacher = \App\Models\V1\Academic\Teacher::where('id', $teacherIdValue)
                     ->where('tenant_id', $tenantId)
                     ->where('status', 'active')
                     ->first();
@@ -27,6 +47,13 @@ class StoreAssessmentRequest extends BaseAssessmentRequest
                     $this->merge([
                         'teacher_id' => $teacher->user_id
                     ]);
+                    } else {
+                        // If teacher not found by id, try to use the value as user_id directly
+                        // The validation rule will check if it's valid
+                        $this->merge([
+                            'teacher_id' => $teacherIdValue
+                        ]);
+                    }
                 }
             }
         }
@@ -39,18 +66,27 @@ class StoreAssessmentRequest extends BaseAssessmentRequest
 
         return [
             'term_id' => [
-                'required',
+                'required_without:academic_term_id',
                 'integer',
                 function ($attribute, $value, $fail) use ($tenantId) {
-                    if ($tenantId) {
-                        $exists = \App\Models\Assessment\AssessmentTerm::where('id', $value)
+                    if ($value && $tenantId) {
+                        // Check if it's a valid academic term (preferred) or assessment term (backward compat)
+                        $academicTermExists = \App\Models\V1\SIS\School\AcademicTerm::where('id', $value)
+                            ->where('school_id', $this->getCurrentSchoolIdOrNull())
+                            ->exists();
+                        $assessmentTermExists = \App\Models\Assessment\AssessmentTerm::where('id', $value)
                             ->where('tenant_id', $tenantId)
                             ->exists();
-                        if (!$exists) {
+                        if (!$academicTermExists && !$assessmentTermExists) {
                             $fail('The selected term is invalid.');
                         }
                     }
                 },
+            ],
+            'academic_term_id' => [
+                'required_without:term_id',
+                'integer',
+                'exists:academic_terms,id',
             ],
             'subject_id' => [
                 'required',
@@ -85,23 +121,14 @@ class StoreAssessmentRequest extends BaseAssessmentRequest
                 'integer',
                 function ($attribute, $value, $fail) use ($tenantId) {
                     if ($value && $tenantId) {
-                        // Verify teacher belongs to tenant through teachers table
+                        // Verify teacher exists in teachers table with the given user_id
+                        // The teachers table has user_id column that references users table
                         $teacher = \App\Models\V1\Academic\Teacher::where('user_id', $value)
                             ->where('tenant_id', $tenantId)
                             ->where('status', 'active')
                             ->first();
 
                         if (!$teacher) {
-                            $fail('The selected teacher id is invalid.');
-                            return;
-                        }
-
-                        // Verify user exists and is a teacher
-                        $user = \App\Models\User::where('id', $value)
-                            ->where('user_type', 'teacher')
-                            ->first();
-
-                        if (!$user) {
                             $fail('The selected teacher id is invalid.');
                         }
                     }

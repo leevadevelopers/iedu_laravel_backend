@@ -78,9 +78,19 @@ class ScheduleService extends BaseScheduleService
         }
 
         // Check for conflicts (excluding current schedule)
+        // Only check conflicts if timing or teacher fields are being updated
         if (isset($data['teacher_id']) || isset($data['day_of_week']) ||
             isset($data['start_time']) || isset($data['end_time'])) {
-            $conflicts = $this->checkConflicts($data, $schedule->id);
+            // Merge existing schedule values for fields not being updated
+            $conflictCheckData = array_merge([
+                'teacher_id' => $schedule->teacher_id,
+                'day_of_week' => $schedule->day_of_week,
+                'start_time' => $schedule->start_time,
+                'end_time' => $schedule->end_time,
+                'classroom' => $schedule->classroom
+            ], $data);
+            
+            $conflicts = $this->checkConflicts($conflictCheckData, $schedule->id);
             if (!empty($conflicts)) {
                 throw new \Exception('Schedule conflicts detected: ' . implode(', ', $conflicts));
             }
@@ -195,12 +205,17 @@ class ScheduleService extends BaseScheduleService
         $tenantId = $this->getCurrentTenantId();
         $schoolId = $this->getCurrentSchoolId();
         $teacherId = $scheduleData['teacher_id'] ?? null;
-        $dayOfWeek = $scheduleData['day_of_week'];
-        $startTime = $scheduleData['start_time'];
-        $endTime = $scheduleData['end_time'];
+        $dayOfWeek = $scheduleData['day_of_week'] ?? null;
+        $startTime = $scheduleData['start_time'] ?? null;
+        $endTime = $scheduleData['end_time'] ?? null;
 
         // If no teacher is assigned, skip teacher conflict checks
         if (empty($teacherId)) {
+            return [];
+        }
+
+        // If required timing fields are missing, skip conflict checks
+        if (empty($dayOfWeek) || empty($startTime) || empty($endTime)) {
             return [];
         }
 
@@ -239,13 +254,43 @@ class ScheduleService extends BaseScheduleService
 
     public function generateLessonsForSchedule(Schedule $schedule): array
     {
-        $lessons = $schedule->generateLessons();
+        $allLessons = $schedule->generateLessons();
 
-        if (!empty($lessons)) {
-            DB::table('lessons')->insert($lessons);
+        if (empty($allLessons)) {
+            return [
+                'new_lessons' => [],
+                'total_lessons' => 0,
+                'existing_lessons' => 0,
+                'created_lessons' => 0
+            ];
         }
 
-        return $lessons;
+        // Filter out lessons that already exist (prevent duplicates)
+        $existingLessons = DB::table('lessons')
+            ->where('schedule_id', $schedule->id)
+            ->whereIn('lesson_date', array_column($allLessons, 'lesson_date'))
+            ->pluck('lesson_date')
+            ->toArray();
+
+        // Only insert lessons that don't already exist
+        $newLessons = array_filter($allLessons, function ($lesson) use ($existingLessons) {
+            return !in_array($lesson['lesson_date'], $existingLessons);
+        });
+
+        $createdCount = 0;
+        if (!empty($newLessons)) {
+            // Re-index array to ensure sequential keys for insert
+            $newLessons = array_values($newLessons);
+            DB::table('lessons')->insert($newLessons);
+            $createdCount = count($newLessons);
+        }
+
+        return [
+            'new_lessons' => $newLessons,
+            'total_lessons' => count($allLessons),
+            'existing_lessons' => count($existingLessons),
+            'created_lessons' => $createdCount
+        ];
     }
 
     public function detectAllConflicts(): Collection

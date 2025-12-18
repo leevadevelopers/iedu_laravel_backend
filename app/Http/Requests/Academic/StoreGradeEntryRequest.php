@@ -30,7 +30,12 @@ class StoreGradeEntryRequest extends BaseAcademicRequest
                 'integer',
                 'exists:academic_terms,id,school_id,' . $this->getCurrentSchoolId()
             ],
-            'assessment_name' => 'required|string|max:255',
+            'assessment_id' => [
+                'nullable',
+                'integer',
+                'exists:assessments,id'
+            ],
+            'assessment_name' => 'required_without:assessment_id|string|max:255',
             'assessment_type' => 'required|in:formative,summative,project,participation,homework,quiz,exam',
             'assessment_date' => 'required|date|before_or_equal:today',
             'raw_score' => 'nullable|numeric|min:0',
@@ -51,6 +56,20 @@ class StoreGradeEntryRequest extends BaseAcademicRequest
     public function withValidator($validator): void
     {
         $validator->after(function ($validator) {
+            // Either assessment_id or assessment_name must be provided
+            if (!$this->filled('assessment_id') && !$this->filled('assessment_name')) {
+                $validator->errors()->add('assessment_id', 'Either assessment_id or assessment_name must be provided.');
+            }
+
+            // If assessment_id is provided, validate it exists and optionally auto-fill assessment_name
+            if ($this->filled('assessment_id')) {
+                $assessment = \App\Models\Assessment\Assessment::find($this->assessment_id);
+                if ($assessment && !$this->filled('assessment_name')) {
+                    // Auto-fill assessment_name from assessment if not provided
+                    $this->merge(['assessment_name' => $assessment->title]);
+                }
+            }
+
             // At least one score type must be provided
             if (!$this->filled('raw_score') && !$this->filled('percentage_score') &&
                 !$this->filled('points_earned') && !$this->filled('letter_grade')) {

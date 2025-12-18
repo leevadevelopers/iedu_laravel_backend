@@ -22,7 +22,8 @@ class GradeEntry extends BaseModel
         'student_id',
         'class_id',
         'academic_term_id',
-        'assessment_name',
+        'assessment_id', // Foreign key to assessments table
+        'assessment_name', // Kept for backward compatibility
         'assessment_type',
         'assessment_date',
         'raw_score',
@@ -86,6 +87,14 @@ class GradeEntry extends BaseModel
     public function academicTerm(): BelongsTo
     {
         return $this->belongsTo(AcademicTerm::class);
+    }
+
+    /**
+     * Get the assessment this grade entry belongs to.
+     */
+    public function assessment(): BelongsTo
+    {
+        return $this->belongsTo(\App\Models\Assessment\Assessment::class, 'assessment_id');
     }
 
     public function enteredBy(): BelongsTo

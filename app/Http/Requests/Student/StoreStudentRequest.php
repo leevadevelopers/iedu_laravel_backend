@@ -75,9 +75,10 @@ class StoreStudentRequest extends FormRequest
                 'max:100'
             ],
             
-            // Contact Information
+            // Contact Information - At least one (email or phone) is required
             'email' => [
                 'nullable',
+                'required_without:phone',
                 'email',
                 'max:255',
                 Rule::unique('students')->where(function ($query) {
@@ -86,6 +87,7 @@ class StoreStudentRequest extends FormRequest
             ],
             'phone' => [
                 'nullable',
+                'required_without:email',
                 'string',
                 'max:20',
                 'regex:/^[\d\s\+\-\(\)]+$/'
@@ -216,8 +218,10 @@ class StoreStudentRequest extends FormRequest
             'expected_graduation_date.after' => 'Expected graduation date must be in the future',
             
             // Contact Information Messages
+            'email.required_without' => 'Email is required when phone is not provided',
             'email.email' => 'Please provide a valid email address',
             'email.unique' => 'This email address is already registered for another student',
+            'phone.required_without' => 'Phone is required when email is not provided',
             'phone.regex' => 'Phone number format is invalid',
             
             // Academic Information Messages
