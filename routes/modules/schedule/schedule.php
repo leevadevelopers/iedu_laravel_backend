@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\API\V1\Schedule\ScheduleController;
 use App\Http\Controllers\API\V1\Schedule\LessonController;
+use App\Http\Controllers\API\V1\Schedule\LessonSessionController;
 use App\Http\Controllers\API\V1\Schedule\AttendanceController;
 use Illuminate\Support\Facades\Route;
 
@@ -94,6 +95,32 @@ Route::middleware(['auth:api'])->group(function () {
             ->name('stats');
         Route::get('/stats/attendance', [LessonController::class, 'attendanceStats'])
             ->name('attendance-stats');
+    });
+
+    /*
+    |--------------------------------------------------------------------------
+    | Lesson Session Routes (Actual executed lessons)
+    |--------------------------------------------------------------------------
+    */
+
+    Route::prefix('lesson-sessions')->name('lesson-sessions.')->group(function () {
+        Route::get('/', [LessonSessionController::class, 'index'])->name('index');
+        Route::post('/', [LessonSessionController::class, 'store'])->name('store');
+        Route::get('/{lessonSession}', [LessonSessionController::class, 'show'])->name('show');
+        Route::put('/{lessonSession}', [LessonSessionController::class, 'update'])->name('update');
+        Route::post('/{lessonSession}/complete', [LessonSessionController::class, 'complete'])->name('complete');
+
+        // Attendance Management
+        Route::get('/{lessonSession}/attendance', [LessonSessionController::class, 'getAttendance'])->name('get-attendance');
+        Route::post('/{lessonSession}/attendance', [LessonSessionController::class, 'markAttendance'])->name('mark-attendance');
+
+        // Behavior Tracking
+        Route::post('/{lessonSession}/behavior', [LessonSessionController::class, 'addBehaviorPoint'])->name('add-behavior');
+        Route::get('/{lessonSession}/behavior', [LessonSessionController::class, 'getBehavior'])->name('get-behavior');
+
+        // Lesson Information
+        Route::post('/{lessonSession}/notes', [LessonSessionController::class, 'updateNote'])->name('update-note');
+        Route::put('/{lessonSession}/tags', [LessonSessionController::class, 'updateTags'])->name('update-tags');
     });
 
     /*
