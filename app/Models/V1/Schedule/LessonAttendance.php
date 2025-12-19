@@ -13,7 +13,7 @@ use Carbon\Carbon;
 class LessonAttendance extends BaseModel
 {
     protected $fillable = [
-        'school_id', 'lesson_id', 'student_id',
+        'school_id', 'lesson_id', 'lesson_session_id', 'student_id',
         'status', 'arrival_time', 'departure_time', 'minutes_late', 'minutes_present',
         'marked_by_method', 'notes', 'notified_parent', 'parent_notified_at',
         'check_in_latitude', 'check_in_longitude', 'device_info', 'ip_address',
@@ -61,6 +61,11 @@ class LessonAttendance extends BaseModel
     public function lesson(): BelongsTo
     {
         return $this->belongsTo(Lesson::class);
+    }
+
+    public function lessonSession(): BelongsTo
+    {
+        return $this->belongsTo(LessonSession::class);
     }
 
     public function student(): BelongsTo
