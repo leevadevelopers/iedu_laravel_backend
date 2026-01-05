@@ -4,6 +4,8 @@ use App\Http\Controllers\API\V1\Schedule\ScheduleController;
 use App\Http\Controllers\API\V1\Schedule\LessonController;
 use App\Http\Controllers\API\V1\Schedule\LessonSessionController;
 use App\Http\Controllers\API\V1\Schedule\AttendanceController;
+use App\Http\Controllers\API\V1\Schedule\LessonsHistoryController;
+use App\Http\Controllers\API\V1\Schedule\StudentsAttendanceHistoryController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -142,6 +144,32 @@ Route::middleware(['auth:api'])->group(function () {
     Route::prefix('attendance')->name('attendance.')->group(function () {
         Route::post('/bulk-mark', [AttendanceController::class, 'bulkMark'])->name('bulk-mark');
         Route::get('/class/{classId}/summary', [AttendanceController::class, 'classSummary'])->name('class-summary');
+    });
+
+    /*
+    |--------------------------------------------------------------------------
+    | Lessons History Routes
+    |--------------------------------------------------------------------------
+    */
+
+    Route::prefix('lessons-history')->name('lessons-history.')->group(function () {
+        Route::get('/', [LessonsHistoryController::class, 'index'])->name('index');
+        Route::get('/export/{format}', [LessonsHistoryController::class, 'export'])->name('export');
+        Route::get('/{lessonSessionId}', [LessonsHistoryController::class, 'show'])->name('show')->where('lessonSessionId', '[0-9]+');
+    });
+
+    /*
+    |--------------------------------------------------------------------------
+    | Students Attendance History Routes
+    |--------------------------------------------------------------------------
+    */
+
+    Route::prefix('students-attendance-history')->name('students-attendance-history.')->group(function () {
+        Route::get('/', [StudentsAttendanceHistoryController::class, 'index'])->name('index');
+        Route::get('/{studentId}', [StudentsAttendanceHistoryController::class, 'show'])->name('show');
+        Route::get('/{studentId}/stats', [StudentsAttendanceHistoryController::class, 'stats'])->name('stats');
+        Route::get('/{studentId}/calendar', [StudentsAttendanceHistoryController::class, 'calendar'])->name('calendar');
+        Route::get('/{studentId}/export/{format}', [StudentsAttendanceHistoryController::class, 'export'])->name('export');
     });
 
     /*

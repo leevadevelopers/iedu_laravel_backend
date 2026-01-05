@@ -27,7 +27,27 @@ class AssessmentTypeController extends BaseController
      */
     public function index(Request $request): JsonResponse
     {
+        // Get current tenant for logging
+        $user = Auth::user();
+        $tenantId = session('tenant_id') ?? $user->tenant_id ?? $user->current_tenant_id ?? null;
+        
+        \Log::info('[AssessmentTypeController] Listing assessment types', [
+            'tenant_id' => $tenantId,
+            'user_id' => $user->id ?? null,
+            'filters' => $request->all()
+        ]);
+
         $query = AssessmentType::query();
+        
+        // Log total count before filters
+        $totalBeforeFilters = AssessmentType::withoutGlobalScopes()->count();
+        \Log::info('[AssessmentTypeController] Total assessment types in database (without scopes):', ['count' => $totalBeforeFilters]);
+        
+        // Log count with tenant scope
+        if ($tenantId) {
+            $totalWithTenant = AssessmentType::withoutGlobalScopes()->where('tenant_id', $tenantId)->count();
+            \Log::info('[AssessmentTypeController] Total assessment types for tenant:', ['count' => $totalWithTenant, 'tenant_id' => $tenantId]);
+        }
 
         // Search
         if ($request->filled('search')) {
@@ -59,7 +79,19 @@ class AssessmentTypeController extends BaseController
         $sortOrder = $request->get('sort_order', 'asc');
         $query->orderBy($sortBy, $sortOrder);
 
+        // Log query before pagination
+        $countBeforePaginate = $query->count();
+        \Log::info('[AssessmentTypeController] Count before pagination:', ['count' => $countBeforePaginate]);
+
         $types = $query->paginate($request->get('per_page', 15));
+        
+        \Log::info('[AssessmentTypeController] Paginated results:', [
+            'total' => $types->total(),
+            'per_page' => $types->perPage(),
+            'current_page' => $types->currentPage(),
+            'last_page' => $types->lastPage(),
+            'items_count' => $types->count()
+        ]);
 
         // Get max_score from default grade scale for response metadata
         $defaultScale = $this->gradeScaleService->getDefaultGradeScale();

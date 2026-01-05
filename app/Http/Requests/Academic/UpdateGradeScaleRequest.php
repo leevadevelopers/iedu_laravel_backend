@@ -42,20 +42,46 @@ class UpdateGradeScaleRequest extends BaseAcademicRequest
                 return;
             }
 
-            // Get the grade scale
+            $currentSchoolId = $this->getCurrentSchoolId();
+            
+            // First check if grade scale exists at all
+            $gradeScaleExists = \App\Models\V1\Academic\GradeScale::where('id', $gradeScaleId)->exists();
+            
+            if (!$gradeScaleExists) {
+                \Log::warning('Grade scale update attempt: Grade scale not found', [
+                    'grade_scale_id' => $gradeScaleId,
+                    'school_id' => $currentSchoolId,
+                    'user_id' => auth('api')->id()
+                ]);
+                $validator->errors()->add('gradeScale', 'Grade scale not found');
+                return;
+            }
+
+            // Get the grade scale with school_id check
             $gradeScale = \App\Models\V1\Academic\GradeScale::where('id', $gradeScaleId)
-                ->where('school_id', $this->getCurrentSchoolId())
+                ->where('school_id', $currentSchoolId)
                 ->first();
 
             if (!$gradeScale) {
-                $validator->errors()->add('gradeScale', 'Grade scale not found');
+                // Grade scale exists but doesn't belong to current school
+                $actualSchoolId = \App\Models\V1\Academic\GradeScale::where('id', $gradeScaleId)
+                    ->value('school_id');
+                
+                \Log::warning('Grade scale update attempt: Access denied - wrong school', [
+                    'grade_scale_id' => $gradeScaleId,
+                    'requested_school_id' => $currentSchoolId,
+                    'actual_school_id' => $actualSchoolId,
+                    'user_id' => auth('api')->id()
+                ]);
+                
+                $validator->errors()->add('gradeScale', 'Grade scale not found or you do not have access to it');
                 return;
             }
 
             // Check for duplicate name within school
             if ($this->filled('name')) {
                 $existing = \App\Models\V1\Academic\GradeScale::where('name', $this->name)
-                    ->where('school_id', $this->getCurrentSchoolId())
+                    ->where('school_id', $currentSchoolId)
                     ->where('id', '!=', $gradeScale->id)
                     ->first();
 
