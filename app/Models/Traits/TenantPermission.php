@@ -68,7 +68,7 @@ trait TenantPermission
             $permissions = [$permissions];
         }
 
-        if ($this->isTenantOwner($tenantId) || $this->hasTenantRole(['super_admin', 'owner'], $tenantId)) {
+        if ($this->isTenantOwner($tenantId) || $this->hasTenantRole(['super_admin', 'school_owner'], $tenantId)) {
             return true;
         }
 
@@ -137,7 +137,7 @@ trait TenantPermission
     public function isTenantOwner($tenantId = null): bool
     {
         // logger()->debug('TenantPermission::isTenantOwner called', ['tenantId' => $tenantId]);
-        return $this->hasTenantRole('owner', $tenantId);
+        return $this->hasTenantRole('school_owner', $tenantId);
     }
 
     public function hasPermissionTo($permission, $guardName = null): bool

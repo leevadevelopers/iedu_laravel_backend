@@ -19,6 +19,8 @@ use Illuminate\Validation\ValidationException;
 use Illuminate\Validation\Rule;
 use App\Http\Resources\UserResource;
 use App\Http\Resources\TenantResource;
+use Illuminate\Support\Facades\Hash;
+use App\Events\TenantCreated;
 
 class AuthController extends Controller
 {
@@ -30,26 +32,26 @@ class AuthController extends Controller
 
     public function register(Request $request)
     {
-        $ownerRoleId = Role::where('name', 'owner')->value('id');
-        if (!$ownerRoleId) {
-            return response()->json(['error' => 'Owner role is not configured'], 500);
+        $schoolOwnerRole = Role::where('name', 'school_owner')->first();
+        if (!$schoolOwnerRole) {
+            return response()->json(['error' => 'school_owner role is not configured'], 500);
         }
 
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
             'identifier' => 'required|string|max:255|unique:users',
             'type' => 'required|in:email,phone',
-            'role_id' => 'required|int|exists:roles,id',
-            'tenant_id' => 'nullable|int|exists:tenants,id',
             'password' => 'required|string|min:8|confirmed',
             'organization_name' => [
-                Rule::requiredIf(function () use ($request, $ownerRoleId) {
-                    return (int) $request->input('role_id') === (int) $ownerRoleId;
-                }),
+                'required_without:school_name',
                 'nullable',
                 'string',
                 'max:255',
             ],
+            'school_name' => 'nullable|string|max:255',
+            'country_code' => 'nullable|string|max:2',
+            'timezone' => 'nullable|string|max:100',
+            'locale' => 'nullable|string|max:10',
         ]);
 
         // Validação condicional baseada no tipo de identifier
@@ -104,101 +106,78 @@ class AuthController extends Controller
         }
 
         $validatedData = $validator->validated();
-        $selectedRoleId = (int) $validatedData['role_id'];
-        $shouldCreateTenant = $selectedRoleId === (int) $ownerRoleId;
-        $providedTenantId = isset($validatedData['tenant_id']) ? (int) $validatedData['tenant_id'] : null;
+        $organizationName = trim((string)($validatedData['organization_name'] ?? $validatedData['school_name'] ?? ''));
+        if ($organizationName === '') {
+            return response()->json([
+                'errors' => [
+                    'organization_name' => ['O nome da escola é obrigatório.']
+                ]
+            ], 422);
+        }
 
-        DB::beginTransaction();
         try {
-            // Create the user first
-            $user = User::create([
-                'name' => $validatedData['name'],
-                'identifier' => $validatedData['identifier'],
-                'type' => $validatedData['type'],
-                'password' => bcrypt($validatedData['password']),
-                'role_id' => $selectedRoleId,
-                'tenant_id' => null,
-                // 'verified_at' => now(), // Uncomment if you want to auto-verify
-            ]);
-
-            // Ensure role assignment is persisted both in users table and Spatie mapping
-            $role = Role::find($selectedRoleId);
-            if (!$role) {
-                throw new \RuntimeException('Selected role could not be found.');
-            }
-
-            $tenant = null;
-            $tenantContext = null;
-            $tenantData = null;
-            $tenantIdForRoleAssignment = null;
-
-            if ($shouldCreateTenant) {
-                // Create the tenant (organization) with the user as owner
-                $tenant = Tenant::create([
-                    'name' => $validatedData['organization_name'],
-                    'slug' => Str::slug($validatedData['organization_name']),
-                    'owner_id' => $user->id, // Set the owner_id to the newly created user
-                    'is_active' => true,
-                    'settings' => [
-                        'timezone' => 'UTC',
-                        'currency' => 'USD',
-                        'language' => 'en',
-                        'features' => [],
-                    ],
-                    'created_by' => $user->id, // Set created_by to the user as well
+            $createdData = DB::transaction(function () use ($validatedData, $organizationName, $schoolOwnerRole) {
+                $user = User::create([
+                    'name' => $validatedData['name'],
+                    'identifier' => $validatedData['identifier'],
+                    'type' => $validatedData['type'],
+                    'password' => Hash::make($validatedData['password']),
+                    'role_id' => $schoolOwnerRole->id,
+                    'tenant_id' => null,
+                    'user_type' => 'admin',
                 ]);
 
-                $ownerPermissions = ['tenants.', 'users.', 'projects.', 'finance.'];
+                $tenant = Tenant::create([
+                    'name' => $organizationName,
+                    'slug' => $this->buildUniqueTenantSlug($organizationName),
+                    'owner_id' => $user->id,
+                    'is_active' => true,
+                    'settings' => [
+                        'timezone' => $validatedData['timezone'] ?? 'Africa/Maputo',
+                        'currency' => 'MZN',
+                        'language' => $validatedData['locale'] ?? 'pt-MZ',
+                        'country_code' => strtoupper($validatedData['country_code'] ?? 'MZ'),
+                        'features' => [],
+                    ],
+                    'created_by' => $user->id,
+                ]);
 
-                // Attach user to tenant as owner
                 $user->tenants()->attach($tenant->id, [
-                    'role_id' => $ownerRoleId,
-                    'permissions' => json_encode($ownerPermissions),
+                    'role_id' => $schoolOwnerRole->id,
+                    'permissions' => json_encode([
+                        'granted' => [],
+                        'denied' => [],
+                    ]),
                     'current_tenant' => true,
                     'joined_at' => now(),
                     'status' => 'active',
                 ]);
 
-                // Update user references to reflect ownership of the tenant
                 $user->update(['tenant_id' => $tenant->id]);
-                $user->refresh();
-                $tenantIdForRoleAssignment = $tenant->id;
 
-                $tenantContext = [
-                    'tenant_id' => $tenant->id,
-                    'role' => 'owner',
-                    'permissions' => $ownerPermissions,
-                    'is_owner' => true,
-                    'custom_permissions' => [
-                        'granted' => [],
-                        'denied' => [],
-                    ],
-                ];
-
-                $tenantData = [
-                    'id' => $tenant->id,
-                    'name' => $tenant->name,
-                    'slug' => $tenant->slug,
-                    'domain' => $tenant->domain,
-                    'is_active' => $tenant->is_active,
-                    'settings' => $tenant->settings,
-                    'features' => $tenant->getFeatures(),
-                    'created_at' => $tenant->created_at,
-                    'updated_at' => $tenant->updated_at,
-                ];
-            } elseif ($providedTenantId) {
-                $tenantIdForRoleAssignment = $providedTenantId;
-            }
-
-            if ($tenantIdForRoleAssignment) {
-                app(PermissionRegistrar::class)->setPermissionsTeamId($tenantIdForRoleAssignment);
-                $user->assignRole($role);
+                app(PermissionRegistrar::class)->setPermissionsTeamId($tenant->id);
+                $user->assignRole($schoolOwnerRole);
                 app(PermissionRegistrar::class)->setPermissionsTeamId(null);
-            }
+
+                return compact('user', 'tenant');
+            });
+
+            $user = $createdData['user'];
+            $tenant = $createdData['tenant'];
+
+            session(['tenant_id' => $tenant->id]);
+            $user->refresh();
 
             $token = auth('api')->login($user);
+            $tenantContext = $this->getTenantContext($user);
+            event(new TenantCreated($tenant, $user, [
+                'source' => 'public_signup',
+                'country_code' => $validatedData['country_code'] ?? 'MZ',
+                'locale' => $validatedData['locale'] ?? 'pt-MZ',
+            ]));
 
-            DB::commit();
+            $userPayload = (new UserResource($user))->resolve();
+            $userPayload['current_tenant_context'] = $tenantContext;
 
             // Send welcome email
             try {
@@ -210,22 +189,36 @@ class AuthController extends Controller
                 ]);
             }
 
-            // Prepare response
-            $userData = $user->toArray();
-            $userData['current_tenant_context'] = $tenantContext;
-
             return response()->json([
                 'access_token' => $token,
                 'token_type' => 'bearer',
                 'expires_in' => auth('api')->factory()->getTTL() * 60,
-                'user' => $userData,
-                'current_tenant' => $tenantData,
+                'user' => $userPayload,
+                'current_tenant' => new TenantResource($tenant),
+                'tenant_context' => $tenantContext,
                 'message' => 'Registration successful',
             ]);
         } catch (\Exception $e) {
-            DB::rollBack();
+            Log::error('Registration failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
             return response()->json(['error' => 'Registration failed', 'details' => $e->getMessage()], 500);
         }
+    }
+
+    private function buildUniqueTenantSlug(string $name): string
+    {
+        $baseSlug = Str::slug($name);
+        $slug = $baseSlug;
+        $counter = 1;
+
+        while (Tenant::withTrashed()->where('slug', $slug)->exists()) {
+            $slug = "{$baseSlug}-{$counter}";
+            $counter++;
+        }
+
+        return $slug;
     }
 
     public function login(Request $request): JsonResponse
@@ -518,9 +511,11 @@ class AuthController extends Controller
 
         // Get role name from role_id
         $role = null;
+        $isOwner = false;
         if ($tenantUser && $tenantUser->pivot->role_id) {
             $roleModel = Role::find($tenantUser->pivot->role_id);
             $role = $roleModel ? $roleModel->name : null;
+            $isOwner = $role === 'school_owner';
         }
 
         return [
@@ -528,7 +523,7 @@ class AuthController extends Controller
             'role' => $role,
             'role_id' => $tenantUser->pivot->role_id ?? null,
             'permissions' => json_decode($tenantUser->pivot->permissions, true) ?? [],
-            'is_owner' => $tenantUser->pivot->role_id === 1, // Assuming role_id 1 is owner
+            'is_owner' => $isOwner,
             'custom_permissions' => [
                 'granted' => [],
                 'denied' => [],

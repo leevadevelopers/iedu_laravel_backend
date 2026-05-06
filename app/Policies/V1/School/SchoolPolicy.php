@@ -310,7 +310,7 @@ class SchoolPolicy
      */
     private function isAdministrativeRole(User $user): bool
     {
-        return $user->hasAnyRole(['super_admin', 'admin', 'tenant_admin', 'owner']);
+        return $user->hasAnyRole(['super_admin', 'admin', 'tenant_admin', 'school_owner']);
     }
 }
 

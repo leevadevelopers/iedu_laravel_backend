@@ -695,7 +695,7 @@ class TenantController extends Controller
             
             // Also check by role name for additional safety
             if (!$isOwner && $targetUserContext && $targetUserContext['role']) {
-                $isOwner = in_array(strtolower($targetUserContext['role']), ['owner', 'proprietário da organização']);
+                $isOwner = in_array(strtolower($targetUserContext['role']), ['school_owner', 'proprietário da organização']);
             }
             
             if ($isOwner) {

@@ -41,7 +41,7 @@ class Tenant extends Model
     {
         return $this->users()
             ->wherePivot('role_id', function($query) {
-                $query->select('id')->from('roles')->where('name', 'owner')->limit(1);
+                $query->select('id')->from('roles')->where('name', 'school_owner')->limit(1);
             })
             ->first();
     }

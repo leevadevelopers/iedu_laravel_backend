@@ -121,6 +121,7 @@ class NotificationService
     {
         $roleNames = [
             'owner' => 'Proprietário da Organização',
+            'school_owner' => 'Dono da Escola',
             'admin' => 'Administrador',
             'project_manager' => 'Gerente de Projeto',
             'finance_manager' => 'Gerente Financeiro',

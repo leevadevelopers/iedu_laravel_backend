@@ -31,8 +31,8 @@ class TenantService
                 'created_by' => $creator->id,
             ]);
 
-            // Add creator as owner (always)
-            $this->addUserToTenant($tenant, $creator, 'owner', true);
+            // Add creator as school owner (always)
+            $this->addUserToTenant($tenant, $creator, 'school_owner', true);
 
             // Associate additional users if provided
             if (isset($data['users_to_associate']) && is_array($data['users_to_associate'])) {
@@ -103,10 +103,10 @@ class TenantService
         }
 
         $userRole = $user->getTenantRoleName($tenant->id);
-        if ($userRole === 'owner') {
+        if ($userRole === 'school_owner') {
             $ownerCount = $tenant->users()
                 ->wherePivot('role_id', function($query) {
-                    $query->select('id')->from('roles')->where('name', 'owner');
+                    $query->select('id')->from('roles')->where('name', 'school_owner');
                 })
                 ->wherePivot('status', 'active')
                 ->count();
@@ -139,10 +139,10 @@ class TenantService
         }
 
         $currentRole = $user->getTenantRoleName($tenant->id);
-        if ($currentRole === 'owner' && $newRoleName !== 'owner') {
+        if ($currentRole === 'school_owner' && $newRoleName !== 'school_owner') {
             $ownerCount = $tenant->users()
                 ->wherePivot('role_id', function($query) {
-                    $query->select('id')->from('roles')->where('name', 'owner');
+                    $query->select('id')->from('roles')->where('name', 'school_owner');
                 })
                 ->wherePivot('status', 'active')
                 ->count();
@@ -230,7 +230,7 @@ class TenantService
             'suspended_users' => $tenant->users()->wherePivot('status', 'suspended')->count(),
             'owners' => $tenant->users()
                 ->wherePivot('role_id', function($query) {
-                    $query->select('id')->from('roles')->where('name', 'owner');
+                    $query->select('id')->from('roles')->where('name', 'school_owner');
                 })
                 ->wherePivot('status', 'active')
                 ->count(),

@@ -24,7 +24,8 @@ use App\Http\Controllers\API\V1\Auth\PasswordController;
 // Auth routes with v1 prefix to be consistent with other modules
 Route::prefix('auth')->group(function () {
     Route::post('sign-in', [AuthController::class, 'login']);
-    Route::post('sign-up', [AuthController::class, 'register']);
+    Route::post('sign-up', [AuthController::class, 'register'])
+        ->middleware('throttle:5,1');
     Route::post('forgot-password', [PasswordController::class, 'forgotPassword'])
         ->middleware('throttle:5,1');
     Route::post('reset-password', [PasswordController::class, 'resetPassword'])

@@ -12,13 +12,20 @@ use Tymon\JWTAuth\Exceptions\TokenInvalidException;
 
 class TenantMiddleware
 {
+    private function debugLog(string $message, array $context = []): void
+    {
+        if (config('app.debug')) {
+            Log::info($message, $context);
+        }
+    }
+
     public function handle(Request $request, Closure $next)
     {
         try {
             // Extract token from Authorization header
             $token = $request->header('Authorization');
 
-            Log::info('TenantMiddleware: Starting request', [
+            $this->debugLog('TenantMiddleware: Starting request', [
                 'url' => $request->fullUrl(),
                 'method' => $request->method(),
                 'has_token' => !empty($token),
@@ -40,7 +47,7 @@ class TenantMiddleware
                 return response()->json(['error' => 'Unauthenticated'], 401);
             }
 
-            Log::info('TenantMiddleware: User authenticated', [
+            $this->debugLog('TenantMiddleware: User authenticated', [
                 'user_id' => $user->id,
                 'user_identifier' => $user->identifier,
                 'user_email' => $user->email ?? null,
@@ -59,7 +66,7 @@ class TenantMiddleware
             $tenantCount = $user->tenants()->count();
             $allTenantIds = $user->tenants()->pluck('tenants.id')->toArray();
             
-            Log::info('TenantMiddleware: Checking user tenants', [
+            $this->debugLog('TenantMiddleware: Checking user tenants', [
                 'user_id' => $user->id,
                 'tenant_count' => $tenantCount,
                 'tenant_ids' => $allTenantIds,
@@ -73,7 +80,7 @@ class TenantMiddleware
                 
                 if ($requestedTenantId) {
                     $requestedTenantId = (int) $requestedTenantId;
-                    Log::info('TenantMiddleware: X-Tenant-ID header found', [
+                    $this->debugLog('TenantMiddleware: X-Tenant-ID header found', [
                         'requested_tenant_id' => $requestedTenantId,
                         'user_belongs_to_tenant' => $user->belongsToTenant($requestedTenantId),
                     ]);
@@ -81,7 +88,7 @@ class TenantMiddleware
                     // Validate user has access to requested tenant
                     if ($user->belongsToTenant($requestedTenantId)) {
                         session(['tenant_id' => $requestedTenantId]);
-                        Log::info('TenantMiddleware: Set tenant from header', [
+                        $this->debugLog('TenantMiddleware: Set tenant from header', [
                             'tenant_id' => $requestedTenantId,
                         ]);
                     } else {
@@ -102,7 +109,7 @@ class TenantMiddleware
                     
                     $tenantId = $sessionTenantId ?? $currentTenantId ?? $firstTenantId;
                     
-                    Log::info('TenantMiddleware: Resolving tenant ID', [
+                    $this->debugLog('TenantMiddleware: Resolving tenant ID', [
                         'session_tenant_id' => $sessionTenantId,
                         'current_tenant_id' => $currentTenantId,
                         'first_tenant_id' => $firstTenantId,
@@ -111,7 +118,7 @@ class TenantMiddleware
                     
                     if ($tenantId) {
                         session(['tenant_id' => $tenantId]);
-                        Log::info('TenantMiddleware: Set tenant from fallback', [
+                        $this->debugLog('TenantMiddleware: Set tenant from fallback', [
                             'tenant_id' => $tenantId,
                             'source' => $sessionTenantId ? 'session' : ($currentTenantId ? 'current_tenant' : 'first_tenant'),
                         ]);
@@ -144,7 +151,7 @@ class TenantMiddleware
                     ->where('user_id', $user->id)
                     ->count();
                 
-                Log::info('TenantMiddleware: Direct pivot table check', [
+                $this->debugLog('TenantMiddleware: Direct pivot table check', [
                     'user_id' => $user->id,
                     'pivot_table_count' => $pivotCount,
                 ]);
@@ -155,7 +162,7 @@ class TenantMiddleware
                     // but it's not required - they can see everything
                     $headerTenantId = $request->header('X-Tenant-ID');
                     
-                    Log::info('TenantMiddleware: Super admin detected - no tenant required', [
+                    $this->debugLog('TenantMiddleware: Super admin detected - no tenant required', [
                         'user_id' => $user->id,
                         'header_tenant_id' => $headerTenantId,
                         'note' => 'Super admin works across all tenants',
@@ -170,7 +177,7 @@ class TenantMiddleware
                         
                         if ($tenantExists) {
                             session(['tenant_id' => $headerTenantId]);
-                            Log::info('TenantMiddleware: Super admin set optional tenant context', [
+                            $this->debugLog('TenantMiddleware: Super admin set optional tenant context', [
                                 'user_id' => $user->id,
                                 'tenant_id' => $headerTenantId,
                                 'note' => 'This is optional - super admin can still see all tenants',
@@ -195,7 +202,7 @@ class TenantMiddleware
             }
 
             // If we reach here, user has tenants and tenant_id is set
-            Log::info('TenantMiddleware: Request allowed to proceed', [
+            $this->debugLog('TenantMiddleware: Request allowed to proceed', [
                 'user_id' => $user->id,
                 'session_tenant_id' => session('tenant_id'),
             ]);

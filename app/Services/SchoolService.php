@@ -144,18 +144,12 @@ class SchoolService
                 // Try to get from authenticated user
                 $user = Auth::user();
                 if ($user) {
-                    // First: Try user's tenant_id field
-                    if ($user->tenant_id) {
-                        $tenantId = $user->tenant_id;
+                    // First: Try current tenant from pivot/session context (source of truth)
+                    $tenant = $user->getCurrentTenant();
+                    if ($tenant) {
+                        $tenantId = $tenant->id;
                     }
-                    // Second: Try getCurrentTenant method
-                    if (!$tenantId) {
-                        $tenant = $user->getCurrentTenant();
-                        if ($tenant) {
-                            $tenantId = $tenant->id;
-                        }
-                    }
-                    // Third: Try user's tenant relationship
+                    // Second: Try user's tenant relationship (current_tenant first, then first active)
                     if (!$tenantId) {
                         $tenant = $user->tenants()->withoutGlobalScope(\App\Models\Scopes\TenantScope::class)
                             ->wherePivot('current_tenant', true)->first();
@@ -168,6 +162,10 @@ class SchoolService
                                 $tenantId = $tenant->id;
                             }
                         }
+                    }
+                    // Third: Fallback to users.tenant_id legacy field
+                    if (!$tenantId && $user->tenant_id) {
+                        $tenantId = $user->tenant_id;
                     }
                 }
                 
@@ -576,7 +574,7 @@ class SchoolService
         }
 
         // Check if user has administrative role
-        if ($user->hasAnyRole(['super_admin', 'admin', 'tenant_admin', 'owner'])) {
+        if ($user->hasAnyRole(['super_admin', 'admin', 'tenant_admin', 'school_owner'])) {
             return true;
         }
 

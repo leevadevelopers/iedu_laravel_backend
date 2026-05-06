@@ -1247,7 +1247,7 @@ class SchoolController extends Controller
             return false;
         }
 
-        return $user->hasAnyRole(['super_admin', 'admin', 'tenant_admin', 'owner']);
+        return $user->hasAnyRole(['super_admin', 'admin', 'tenant_admin', 'school_owner']);
     }
 
     /**

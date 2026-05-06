@@ -46,7 +46,7 @@ class BookPolicy
 
         // Owners and super_admins of tenant have all permissions
         if ($tenantId && method_exists($user, 'isTenantOwner')) {
-            if ($user->isTenantOwner($tenantId) || $user->hasTenantRole(['super_admin', 'owner'], $tenantId)) {
+            if ($user->isTenantOwner($tenantId) || $user->hasTenantRole(['super_admin', 'school_owner'], $tenantId)) {
                 return true;
             }
         }
@@ -72,7 +72,7 @@ class BookPolicy
 
         // Owners and super_admins of tenant have all permissions
         if ($userTenantId && method_exists($user, 'isTenantOwner')) {
-            if ($user->isTenantOwner($userTenantId) || $user->hasTenantRole(['super_admin', 'owner'], $userTenantId)) {
+            if ($user->isTenantOwner($userTenantId) || $user->hasTenantRole(['super_admin', 'school_owner'], $userTenantId)) {
                 return true;
             }
         }
@@ -98,7 +98,7 @@ class BookPolicy
 
         // Owners and super_admins of tenant have all permissions
         if ($userTenantId && method_exists($user, 'isTenantOwner')) {
-            if ($user->isTenantOwner($userTenantId) || $user->hasTenantRole(['super_admin', 'owner'], $userTenantId)) {
+            if ($user->isTenantOwner($userTenantId) || $user->hasTenantRole(['super_admin', 'school_owner'], $userTenantId)) {
                 return true;
             }
         }
