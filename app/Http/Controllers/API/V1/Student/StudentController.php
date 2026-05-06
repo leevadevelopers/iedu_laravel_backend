@@ -1334,101 +1334,125 @@ class StudentController extends Controller
                 'preview_rows' => []
             ];
 
-            // Parse CSV file
             $filePath = $file->getRealPath();
-            $fileHandle = fopen($filePath, 'r');
-            
-            if (!$fileHandle) {
-                return $this->errorResponse('Failed to read CSV file', 500);
-            }
+            $ext = strtolower((string) $file->getClientOriginalExtension());
 
-            // Detect delimiter (semicolon for PT locales, comma for others)
-            $delimiter = $this->detectCsvDelimiter($filePath);
-            \Log::info('CSV Import - Detected delimiter', ['delimiter' => $delimiter]);
-            
-            // Read header row with detected delimiter
-            $headers = fgetcsv($fileHandle, 0, $delimiter);
-            \Log::info('CSV Import - Raw headers from file', ['headers' => $headers, 'count' => count($headers ?? [])]);
-            
-            if (!$headers) {
-                fclose($fileHandle);
-                \Log::error('CSV Import - No headers found in file');
-                return $this->errorResponse('CSV file is empty or invalid', 400);
-            }
+            $structuredRows = [];
+            $headers = [];
 
-            // Remove BOM (Byte Order Mark) from first header if present
-            if (!empty($headers[0])) {
-                // Remove UTF-8 BOM (\xEF\xBB\xBF) - use actual bytes, not Unicode escape
-                $headers[0] = ltrim($headers[0], "\xEF\xBB\xBF");
-                // Also remove using mb_ functions if available
-                if (function_exists('mb_substr') && mb_substr($headers[0], 0, 1) === "\xEF\xBB\xBF") {
-                    $headers[0] = mb_substr($headers[0], 1);
+            if (in_array($ext, ['xlsx', 'xls'], true)) {
+                try {
+                    $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($filePath);
+                } catch (\Throwable $e) {
+                    return $this->errorResponse('Ficheiro Excel inválido: ' . $e->getMessage(), 400);
                 }
+
+                $sheetData = $spreadsheet->getActiveSheet()->toArray();
+                if (empty($sheetData)) {
+                    return $this->errorResponse('A folha de cálculo está vazia', 400);
+                }
+
+                $rawHeaders = array_shift($sheetData);
+                $headers = array_map(function ($header) {
+                    $cleaned = ltrim((string) $header, "\xEF\xBB\xBF");
+
+                    return strtolower(trim(str_replace(' ', '_', $cleaned)));
+                }, $rawHeaders);
+
+                foreach ($sheetData as $idx => $cells) {
+                    $rowNumber = $idx + 2;
+                    $rowData = [];
+                    foreach ($headers as $i => $headerKey) {
+                        $rowData[$headerKey] = isset($cells[$i]) ? trim((string) $cells[$i]) : '';
+                    }
+                    if (empty(array_filter($rowData))) {
+                        continue;
+                    }
+                    $structuredRows[] = [$rowNumber, $rowData];
+                }
+            } else {
+                $fileHandle = fopen($filePath, 'r');
+
+                if (!$fileHandle) {
+                    return $this->errorResponse('Failed to read CSV file', 500);
+                }
+
+                $delimiter = $this->detectCsvDelimiter($filePath);
+                \Log::info('CSV Import - Detected delimiter', ['delimiter' => $delimiter]);
+
+                $rawHeaders = fgetcsv($fileHandle, 0, $delimiter);
+                \Log::info('CSV Import - Raw headers from file', ['headers' => $rawHeaders, 'count' => count($rawHeaders ?? [])]);
+
+                if (!$rawHeaders) {
+                    fclose($fileHandle);
+                    \Log::error('CSV Import - No headers found in file');
+
+                    return $this->errorResponse('CSV file is empty or invalid', 400);
+                }
+
+                if (!empty($rawHeaders[0])) {
+                    $rawHeaders[0] = ltrim($rawHeaders[0], "\xEF\xBB\xBF");
+                    if (function_exists('mb_substr') && mb_substr($rawHeaders[0], 0, 1) === "\xEF\xBB\xBF") {
+                        $rawHeaders[0] = mb_substr($rawHeaders[0], 1);
+                    }
+                }
+
+                $headers = array_map(function ($header) {
+                    $cleaned = ltrim($header, "\xEF\xBB\xBF");
+
+                    return strtolower(trim(str_replace(' ', '_', $cleaned)));
+                }, $rawHeaders);
+
+                $csvLine = 1;
+                while (($row = fgetcsv($fileHandle, 0, $delimiter)) !== false) {
+                    $csvLine++;
+                    $rowData = [];
+                    foreach ($headers as $index => $headerKey) {
+                        $rowData[$headerKey] = trim($row[$index] ?? '');
+                    }
+                    if (empty(array_filter($rowData))) {
+                        continue;
+                    }
+                    $structuredRows[] = [$csvLine, $rowData];
+                }
+
+                fclose($fileHandle);
             }
 
-            // Normalize headers (trim, lowercase, replace spaces with underscores)
-            $normalizedHeaders = array_map(function($header) {
-                // Remove UTF-8 BOM bytes (\xEF\xBB\xBF) from beginning
-                $cleaned = ltrim($header, "\xEF\xBB\xBF");
-                // Normalize: lowercase, trim, replace spaces with underscores
-                return strtolower(trim(str_replace(' ', '_', $cleaned)));
-            }, $headers);
-            
-            \Log::info('CSV Import - Normalized headers', [
-                'original' => $headers,
-                'normalized' => $normalizedHeaders,
-                'count' => count($normalizedHeaders)
+            \Log::info('Student Import - Normalized headers', [
+                'normalized' => $headers,
+                'count' => count($headers),
+                'format' => $ext,
             ]);
 
             // Required columns
             $requiredColumns = ['first_name', 'last_name', 'date_of_birth', 'gender'];
-            $missingColumns = array_diff($requiredColumns, $normalizedHeaders);
-            
+            $missingColumns = array_diff($requiredColumns, $headers);
+
             \Log::info('CSV Import - Column validation', [
                 'required' => $requiredColumns,
-                'found' => $normalizedHeaders,
+                'found' => $headers,
                 'missing' => $missingColumns,
-                'all_headers' => $normalizedHeaders
+                'all_headers' => $headers,
             ]);
-            
+
             if (!empty($missingColumns)) {
-                fclose($fileHandle);
-                \Log::error('CSV Import - Missing required columns', [
+                \Log::error('Student Import - Missing required columns', [
                     'missing' => $missingColumns,
-                    'found_headers' => $normalizedHeaders,
-                    'delimiter_used' => $delimiter
+                    'found_headers' => $headers,
                 ]);
+
                 return $this->errorResponse(
                     'Missing required columns: ' . implode(', ', $missingColumns),
                     400
                 );
             }
-            
-            // Update headers variable for use in rest of function
-            $headers = $normalizedHeaders;
 
-            $rowNumber = 1; // Start from 1 (header is row 0)
             $previewLimit = 50; // Limit preview to first 50 rows
-            $totalRows = 0;
+            $totalRows = count($structuredRows);
 
-            // Process each row with detected delimiter
-            while (($row = fgetcsv($fileHandle, 0, $delimiter)) !== false) {
-                $rowNumber++;
-                $totalRows++;
-                
+            foreach ($structuredRows as [$rowNumber, $rowData]) {
                 try {
-                    // Map row data to associative array
-                    $rowData = [];
-                    foreach ($headers as $index => $header) {
-                        $rowData[$header] = trim($row[$index] ?? '');
-                    }
-
-                    // Skip empty rows
-                    if (empty(array_filter($rowData))) {
-                        $rowNumber--; // Adjust row number for empty rows
-                        $totalRows--;
-                        continue;
-                    }
 
                     // Validate required fields
                     $validationErrors = $this->validateStudentRow($rowData, $rowNumber);
@@ -1510,8 +1534,6 @@ class StudentController extends Controller
                     ]);
                 }
             }
-
-            fclose($fileHandle);
 
             // Add summary for preview mode
             if ($previewOnly) {

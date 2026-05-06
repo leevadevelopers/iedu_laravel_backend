@@ -25,8 +25,10 @@ use App\Http\Controllers\API\V1\Auth\PasswordController;
 Route::prefix('auth')->group(function () {
     Route::post('sign-in', [AuthController::class, 'login']);
     Route::post('sign-up', [AuthController::class, 'register']);
-    Route::post('forgot-password', [PasswordController::class, 'forgotPassword']);
-    Route::post('reset-password', [PasswordController::class, 'reset']);
+    Route::post('forgot-password', [PasswordController::class, 'forgotPassword'])
+        ->middleware('throttle:5,1');
+    Route::post('reset-password', [PasswordController::class, 'resetPassword'])
+        ->middleware('throttle:10,1');
     Route::post('validate-token', [AuthController::class, 'validateToken']);
 
     Route::middleware('auth:api')->group(function () {

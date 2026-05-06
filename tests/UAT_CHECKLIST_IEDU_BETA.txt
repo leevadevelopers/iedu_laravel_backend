@@ -1,0 +1,27 @@
+iEDU beta — UAT checklist (escola piloto)
+
+Autenticação
+1) Esqueci palavra-passe com email válido: resposta genérica 200; email recebido (mailer log ou SMTP).
+2) Link reset com token+identifier: definir nova password; login com nova password.
+3) Token expirado ou inválido: mensagem clara 422.
+
+Pagamentos
+4) /finance/payments/create abre wizard (não detalhe).
+5) Seleccionar aluno: listar faturas em rascunho/emitidas conforme regras; criar pagamento com método carteira móvel mapeado para API.
+
+RBAC
+6) Conta professor: acesso directo a URL /users ou API users → 403 / redirecionamento dashboard.
+7) Admin: acesso normal a utilizadores e finanças.
+
+Equipa / professores
+8) Editar função membro; remover membro (não-owner); reenviar convite pendente.
+9) Criar dois professores com mesmo telefone de contacto mas emails distintos: sucesso.
+
+Faturas em massa
+10) Seleccionar várias faturas em rascunho; Emitir; ver sucesso e lista de falhas se houver.
+
+Importação alunos
+11) Importar mesmo ficheiro em CSV e XLSX (mesmas colunas): resultados equivalentes.
+
+Apagar professor bloqueado
+12) Professor com turma activa: erro com código teacher_has_active_classes e texto útil na UI.

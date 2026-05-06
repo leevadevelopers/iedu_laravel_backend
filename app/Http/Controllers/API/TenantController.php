@@ -765,11 +765,11 @@ class TenantController extends Controller
 
         try {
             $targetUser = \App\Models\User::findOrFail($userId);
-            
-            // Update user role in tenant
-            $tenant->users()->updateExistingPivot($userId, [
-                'role_id' => $request->get('role')
-            ]);
+            app(\App\Services\TenantService::class)->updateUserRole(
+                $tenant,
+                $targetUser,
+                $request->string('role')->toString()
+            );
 
             return response()->json([
                 'message' => 'User role updated successfully'

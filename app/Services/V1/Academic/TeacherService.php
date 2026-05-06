@@ -2,6 +2,7 @@
 
 namespace App\Services\V1\Academic;
 
+use App\Exceptions\TeacherDeletionBlockedException;
 use App\Models\V1\Academic\AcademicClass;
 use App\Models\V1\Academic\Teacher;
 use App\Models\V1\SIS\School\SchoolUser;
@@ -170,12 +171,18 @@ class TeacherService extends BaseAcademicService
 
         // Check for active classes
         if ($teacher->classes()->where('status', 'active')->exists()) {
-            throw new \Exception('Cannot delete teacher with active classes');
+            throw new TeacherDeletionBlockedException(
+                'teacher_has_active_classes',
+                'Não é possível remover o professor enquanto estiver associado a turmas activas. Remova-o das turmas ou desactive as turmas primeiro.'
+            );
         }
 
         // Check for grade entries
         if ($teacher->gradeEntries()->exists()) {
-            throw new \Exception('Cannot delete teacher with grade entries');
+            throw new TeacherDeletionBlockedException(
+                'teacher_has_grade_entries',
+                'Não é possível remover o professor porque existem lançamentos de notas associados. Arquive ou transfira as notas antes de continuar.'
+            );
         }
 
         DB::beginTransaction();
@@ -540,19 +547,25 @@ class TeacherService extends BaseAcademicService
         $tenantId = $user->tenant_id ?? null;
         $schoolId = $data['school_id'] ?? $this->getCurrentSchoolId();
 
-        // Determine identifier (email or phone)
-        $identifier = $data['email'] ?? $data['phone'] ?? $data['employee_id'] ?? null;
-        $userType = isset($data['email']) ? 'email' : 'phone';
+        // Login identifier is globally unique: prefer email when present so several staff can share a contact phone.
+        $email = isset($data['email']) ? trim((string) $data['email']) : '';
+        $phone = isset($data['phone']) ? trim((string) $data['phone']) : '';
 
-        if (!$identifier) {
-            throw new \Exception('Email or phone is required to create user account');
+        if ($email !== '') {
+            $identifier = $email;
+            $userType = 'email';
+        } elseif ($phone !== '') {
+            $identifier = $phone;
+            $userType = 'phone';
+        } else {
+            throw new \Exception('Email ou telefone é obrigatório para criar a conta de utilizador.');
         }
 
         $userData = [
             'name' => trim(($data['first_name'] ?? '') . ' ' . ($data['last_name'] ?? '')),
             'identifier' => $identifier,
             'type' => $userType,
-            'phone' => $data['phone'] ?? null,
+            'phone' => $phone !== '' ? $phone : null,
             'profile_photo_path' => $data['profile_photo_path'] ?? null,
             'user_type' => 'teacher'
         ];
@@ -566,6 +579,7 @@ class TeacherService extends BaseAcademicService
             return $existingUser;
         }
 
+        try {
         // Create new user
         $employeeId = $data['employee_id'] ?? 'TEMP_' . uniqid();
         $temporaryPassword = '@ProfessorIedu';
@@ -594,6 +608,18 @@ class TeacherService extends BaseAcademicService
         $newUser->temporary_password = $temporaryPassword;
 
         return $newUser;
+        } catch (\Illuminate\Database\QueryException $e) {
+            if (str_contains(strtolower($e->getMessage()), 'duplicate')) {
+                throw new \RuntimeException(
+                    $userType === 'email'
+                        ? 'Já existe um utilizador com este email (login). Utilize outro email ou associe um utilizador existente.'
+                        : 'Este telefone já está a ser usado como login de outro utilizador. Forneça um email único para o login ou outro número.',
+                    0,
+                    $e
+                );
+            }
+            throw $e;
+        }
     }
 
 

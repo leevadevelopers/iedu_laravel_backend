@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\API\V1\Academic;
 
+use App\Exceptions\TeacherDeletionBlockedException;
 use App\Http\Controllers\Controller;
 use App\Models\V1\Academic\Teacher;
 use App\Models\V1\SIS\School\SchoolUser;
@@ -357,6 +358,14 @@ class TeacherController extends Controller
                 'status' => 'success',
                 'message' => 'Teacher terminated successfully'
             ]);
+        } catch (TeacherDeletionBlockedException $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+                'code' => $e->errorCode,
+            ], 422);
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json([

@@ -28,7 +28,7 @@ class ImportStudentsRequest extends FormRequest
             'file' => [
                 'required',
                 'file',
-                'mimes:csv,txt',
+                'mimes:csv,txt,xlsx,xls',
                 'max:10240' // 10MB
             ],
             'skip_duplicates' => 'nullable|boolean',
@@ -48,7 +48,7 @@ class ImportStudentsRequest extends FormRequest
         return [
             'file.required' => 'CSV file is required',
             'file.file' => 'Uploaded file must be a valid file',
-            'file.mimes' => 'File must be a CSV file',
+            'file.mimes' => 'File must be CSV or Excel (.xlsx, .xls)',
             'file.max' => 'File size must not exceed 10MB',
             'tenant_id.exists' => 'Selected tenant does not exist',
             'school_id.exists' => 'Selected school does not exist'

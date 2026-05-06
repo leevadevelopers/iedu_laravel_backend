@@ -24,30 +24,41 @@ Route::middleware(['auth:api', 'tenant'])->group(function () {
 
     Route::prefix('users')->group(function () {
 
-        // User Lookup & Utilities (specific routes first)
-        Route::get('/lookup', [UserController::class, 'lookup'])->name('users.lookup');
-        Route::get('/active', [UserController::class, 'active'])->name('users.active');
+        Route::middleware(['permission:users.view|users.manage'])->group(function () {
+            // User Lookup & Utilities (specific routes first)
+            Route::get('/lookup', [UserController::class, 'lookup'])->name('users.lookup');
+            Route::get('/active', [UserController::class, 'active'])->name('users.active');
 
-        // User Search & Filters
-        Route::get('/search', [UserController::class, 'index'])->name('users.search');
-        Route::get('/filters', function () {
-            return response()->json([
-                'data' => [
-                    'statuses' => ['active', 'inactive', 'pending'],
-                    'roles' => ['admin', 'manager', 'team_member', 'viewer']
-                ]
-            ]);
-        })->name('users.filters');
+            // User Search & Filters
+            Route::get('/search', [UserController::class, 'index'])->name('users.search');
+            Route::get('/filters', function () {
+                return response()->json([
+                    'data' => [
+                        'statuses' => ['active', 'inactive', 'pending'],
+                        'roles' => ['admin', 'manager', 'team_member', 'viewer']
+                    ]
+                ]);
+            })->name('users.filters');
 
-        // Activity Logs (specific route before catch-all)
-        Route::get('/activity-logs', [ActivityLogController::class, 'index'])->name('users.activity-logs');
+            // Activity Logs (specific route before catch-all)
+            Route::get('/activity-logs', [ActivityLogController::class, 'index'])->name('users.activity-logs');
 
-        // Core User CRUD (catch-all routes last)
-        Route::get('/', [UserController::class, 'index'])->name('users.index');
-        Route::post('/', [UserController::class, 'store'])->name('users.store');
-        Route::get('/{id}', [UserController::class, 'show'])->name('users.show');
-        Route::put('/{id}', [UserController::class, 'update'])->name('users.update');
-        Route::delete('/{id}', [UserController::class, 'destroy'])->name('users.destroy');
+            // Core User read (catch-all {id} last among GET)
+            Route::get('/', [UserController::class, 'index'])->name('users.index');
+            Route::get('/{id}', [UserController::class, 'show'])->name('users.show');
+        });
+
+        Route::middleware(['permission:users.create|users.manage'])->group(function () {
+            Route::post('/', [UserController::class, 'store'])->name('users.store');
+        });
+
+        Route::middleware(['permission:users.edit|users.manage'])->group(function () {
+            Route::put('/{id}', [UserController::class, 'update'])->name('users.update');
+        });
+
+        Route::middleware(['permission:users.delete|users.manage'])->group(function () {
+            Route::delete('/{id}', [UserController::class, 'destroy'])->name('users.destroy');
+        });
     });
 
     // ====================================================================
@@ -67,7 +78,7 @@ Route::middleware(['auth:api', 'tenant'])->group(function () {
     // USER ANALYTICS ROUTES
     // ====================================================================
 
-    Route::prefix('users-analytics')->group(function () {
+    Route::prefix('users-analytics')->middleware(['permission:users.view|users.manage'])->group(function () {
 
         // User Statistics
         Route::get('/statistics', function () {

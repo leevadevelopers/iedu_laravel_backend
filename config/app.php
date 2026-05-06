@@ -123,6 +123,6 @@ return [
         'store' => env('APP_MAINTENANCE_STORE', 'database'),
     ],
 
-
+    'frontend_url' => rtrim(env('FRONTEND_URL', 'http://localhost:4200'), '/'),
 
 ];

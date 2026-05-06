@@ -13,6 +13,7 @@
         "laravel/tinker": "^2.10.1",
         "owen-it/laravel-auditing": "^14.0",
         "php-http/guzzle7-adapter": "^1.1",
+        "phpoffice/phpspreadsheet": "^5.7",
         "pusher/pusher-php-server": "^7.2",
         "spatie/laravel-activitylog": "^4.10",
         "spatie/laravel-permission": "*",

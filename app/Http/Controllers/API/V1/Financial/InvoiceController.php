@@ -9,6 +9,7 @@ use App\Models\V1\Financial\Invoice;
 use App\Models\V1\Financial\InvoiceItem;
 use App\Events\Financial\InvoiceIssued;
 use App\Http\Resources\Financial\InvoiceResource;
+use App\Services\SchoolContextService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -26,7 +27,16 @@ class InvoiceController extends BaseController
     {
         $query = Invoice::with(['billable', 'items', 'payments']);
 
-        if ($request->filled('status')) {
+        if ($request->filled('status_in')) {
+            $raw = $request->input('status_in');
+            $statuses = is_array($raw)
+                ? $raw
+                : array_map('trim', explode(',', (string) $raw));
+            $statuses = array_values(array_filter($statuses));
+            if ($statuses !== []) {
+                $query->whereIn('status', $statuses);
+            }
+        } elseif ($request->filled('status')) {
             $query->where('status', $request->status);
         }
 
@@ -167,6 +177,60 @@ class InvoiceController extends BaseController
             new InvoiceResource($invoice),
             'Invoice issued successfully'
         );
+    }
+
+    public function bulkIssue(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'invoice_ids' => 'required|array|min:1|max:200',
+            'invoice_ids.*' => 'integer|exists:invoices,id',
+        ]);
+
+        $user = auth('api')->user();
+        $tenantId = $user->tenant_id ?? null;
+        $schoolId = app(SchoolContextService::class)->getCurrentSchoolId();
+
+        $succeeded = [];
+        $failed = [];
+
+        foreach ($validated['invoice_ids'] as $id) {
+            $invoice = Invoice::query()->find($id);
+            if (!$invoice) {
+                $failed[] = ['id' => $id, 'code' => 'not_found', 'message' => 'Invoice not found'];
+                continue;
+            }
+            if ($tenantId !== null && (int) $invoice->tenant_id !== (int) $tenantId) {
+                $failed[] = ['id' => $id, 'code' => 'forbidden', 'message' => 'Invoice does not belong to your tenant'];
+                continue;
+            }
+            if ($schoolId !== null && (int) $invoice->school_id !== (int) $schoolId) {
+                $failed[] = ['id' => $id, 'code' => 'forbidden', 'message' => 'Invoice does not belong to your school'];
+                continue;
+            }
+            if ($invoice->status !== 'draft') {
+                $failed[] = [
+                    'id' => $id,
+                    'code' => 'not_draft',
+                    'message' => 'Only draft invoices can be issued (current: ' . $invoice->status . ')',
+                ];
+                continue;
+            }
+            try {
+                $invoice->update([
+                    'status' => 'issued',
+                    'issued_at' => now(),
+                ]);
+                event(new InvoiceIssued($invoice));
+                $succeeded[] = $id;
+            } catch (\Throwable $e) {
+                $failed[] = ['id' => $id, 'code' => 'error', 'message' => $e->getMessage()];
+            }
+        }
+
+        return $this->successResponse([
+            'succeeded' => $succeeded,
+            'failed' => $failed,
+        ], 'Bulk issue completed');
     }
 
     public function destroy(Invoice $invoice): JsonResponse

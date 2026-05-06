@@ -36,6 +36,7 @@ Route::prefix('finance')->name('finance.')->group(function () {
     Route::prefix('invoices')->name('invoices.')->group(function () {
         Route::get('/', [InvoiceController::class, 'index'])->name('index');
         Route::post('/', [InvoiceController::class, 'store'])->name('store');
+        Route::post('/bulk-issue', [InvoiceController::class, 'bulkIssue'])->name('bulk-issue');
         Route::get('/my-invoices', [InvoiceController::class, 'myInvoices'])->name('my-invoices');
         Route::get('/overdue', [InvoiceController::class, 'overdue'])->name('overdue');
         Route::get('/{invoice}', [InvoiceController::class, 'show'])->name('show');

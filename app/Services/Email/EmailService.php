@@ -2,6 +2,7 @@
 
 namespace App\Services\Email;
 
+use App\Mail\PasswordResetMail;
 use App\Mail\UserWelcomeMail;
 use App\Mail\StudentWelcomeMail;
 use App\Mail\TeacherWelcomeMail;
@@ -160,6 +161,42 @@ class EmailService
                 'error' => $e->getMessage(),
             ]);
             return $sentCount;
+        }
+    }
+
+    /**
+     * Send password reset link (email channel only; identifier must be an email).
+     */
+    public function sendPasswordResetEmail(User $user, string $plainToken): bool
+    {
+        try {
+            if (!$this->hasEmail($user)) {
+                Log::info('Password reset email skipped - identifier is not an email', [
+                    'user_id' => $user->id,
+                ]);
+
+                return false;
+            }
+
+            $base = rtrim(config('app.frontend_url', env('FRONTEND_URL', 'http://localhost:4200')), '/');
+            $identifier = rawurlencode($user->identifier);
+            $token = rawurlencode($plainToken);
+            $resetUrl = "{$base}/auth/reset-password?token={$token}&identifier={$identifier}";
+
+            Mail::to($user->identifier)->send(new PasswordResetMail($user, $resetUrl));
+
+            Log::info('Password reset email sent', [
+                'user_id' => $user->id,
+            ]);
+
+            return true;
+        } catch (\Exception $e) {
+            Log::error('Failed to send password reset email', [
+                'user_id' => $user->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return false;
         }
     }
 

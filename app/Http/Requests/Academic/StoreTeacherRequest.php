@@ -31,11 +31,12 @@ class StoreTeacherRequest extends BaseAcademicRequest
             'nationality' => 'nullable|string|max:50',
             'phone' => [
                 'nullable',
+                'required_without:email',
                 'string',
                 'max:20',
                 'regex:/^\+?[0-9\s\-\(\)]+$/'
             ],
-            'email' => 'nullable|email|max:255',
+            'email' => 'nullable|required_without:phone|email|max:255',
 
             // Address information
             'address_json' => 'nullable|array',
@@ -176,6 +177,8 @@ class StoreTeacherRequest extends BaseAcademicRequest
             'hire_date.before_or_equal' => 'Hire date cannot be in the future.',
             'termination_date.after' => 'Termination date must be after hire date.',
             'phone.regex' => 'The phone number format is invalid.',
+            'email.required_without' => 'Indique email ou telefone. O email é preferido como identificador de login único.',
+            'phone.required_without' => 'Indique email ou telefone. O email é preferido como identificador de login único.',
             'schedule_json.*.available_times.*.regex' => 'Time format must be HH:MM (24-hour format).',
             'education_json.*.gpa.max' => 'GPA cannot exceed 4.0.',
             'certifications_json.*.expiry_date.after' => 'Expiry date must be after issue date.',
