@@ -169,24 +169,11 @@ class TeacherService extends BaseAcademicService
     {
         $this->validateSchoolOwnership($teacher);
 
-        // Check for active classes
-        if ($teacher->classes()->where('status', 'active')->exists()) {
-            throw new TeacherDeletionBlockedException(
-                'teacher_has_active_classes',
-                'Não é possível remover o professor enquanto estiver associado a turmas activas. Remova-o das turmas ou desactive as turmas primeiro.'
-            );
-        }
-
-        // Check for grade entries
-        if ($teacher->gradeEntries()->exists()) {
-            throw new TeacherDeletionBlockedException(
-                'teacher_has_grade_entries',
-                'Não é possível remover o professor porque existem lançamentos de notas associados. Arquive ou transfira as notas antes de continuar.'
-            );
-        }
-
         DB::beginTransaction();
         try {
+            // Detach from active classes instead of blocking termination.
+            $this->detachTeacherFromActiveClasses($teacher);
+
             // Remove SchoolUser association
             if ($teacher->user_id && $teacher->school_id) {
                 SchoolUser::where('user_id', $teacher->user_id)
@@ -207,6 +194,46 @@ class TeacherService extends BaseAcademicService
         } catch (\Exception $e) {
             DB::rollBack();
             throw $e;
+        }
+    }
+
+    /**
+     * Remove teacher assignments from active classes.
+     */
+    private function detachTeacherFromActiveClasses(Teacher $teacher): void
+    {
+        $activeClasses = AcademicClass::query()
+            ->where('tenant_id', $teacher->tenant_id)
+            ->where('school_id', $teacher->school_id)
+            ->where('status', 'active')
+            ->where(function ($query) use ($teacher) {
+                $query->where('primary_teacher_id', $teacher->id)
+                    ->orWhereJsonContains('additional_teachers_json', $teacher->id)
+                    ->orWhereJsonContains('additional_teachers_json', (string) $teacher->id);
+            })
+            ->get();
+
+        foreach ($activeClasses as $class) {
+            $dirty = false;
+
+            if ((int) $class->primary_teacher_id === (int) $teacher->id) {
+                $class->primary_teacher_id = null;
+                $dirty = true;
+            }
+
+            $additionalTeachers = collect($class->additional_teachers_json ?? [])
+                ->filter(fn ($id) => (string) $id !== (string) $teacher->id)
+                ->values()
+                ->all();
+
+            if (($class->additional_teachers_json ?? []) !== $additionalTeachers) {
+                $class->additional_teachers_json = $additionalTeachers;
+                $dirty = true;
+            }
+
+            if ($dirty) {
+                $class->save();
+            }
         }
     }
 

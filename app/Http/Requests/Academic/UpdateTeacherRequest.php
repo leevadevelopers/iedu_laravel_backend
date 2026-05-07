@@ -14,7 +14,8 @@ class UpdateTeacherRequest extends BaseAcademicRequest
      */
     public function rules(): array
     {
-        $teacherId = $this->route('teacher') ? $this->route('teacher')->id : null;
+        $routeTeacher = $this->route('teacher');
+        $teacherId = is_object($routeTeacher) ? $routeTeacher->id : ($routeTeacher ?: $this->route('id'));
 
         return [
             // Optional fields for updates
