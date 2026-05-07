@@ -920,6 +920,95 @@ class StudentController extends Controller
     }
 
     /**
+     * Remove multiple students in one request.
+     */
+    public function bulkDelete(Request $request): JsonResponse
+    {
+        $validator = Validator::make($request->all(), [
+            'student_ids' => 'required|array|min:1',
+            'student_ids.*' => 'integer|exists:students,id',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $userSchoolId = $this->getCurrentSchoolId();
+        if (!$userSchoolId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'User is not associated with any school',
+            ], 403);
+        }
+
+        $studentIds = array_map('intval', (array) $request->input('student_ids', []));
+        $students = Student::whereIn('id', $studentIds)
+            ->where('school_id', $userSchoolId)
+            ->get();
+
+        $allowedIds = $students->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $forbiddenOrMissing = array_values(array_diff($studentIds, $allowedIds));
+
+        $deleted = 0;
+        $failedIds = [];
+
+        foreach ($students as $student) {
+            try {
+                DB::beginTransaction();
+
+                if ($student->user_id && $student->school_id) {
+                    SchoolUser::where('user_id', $student->user_id)
+                        ->where('school_id', $student->school_id)
+                        ->delete();
+                }
+
+                if ($student->user_id && $student->tenant_id && $student->user) {
+                    // Detach tenant membership only if this is the user's last student in this tenant.
+                    $remainingInTenant = Student::where('tenant_id', $student->tenant_id)
+                        ->where('user_id', $student->user_id)
+                        ->where('id', '!=', $student->id)
+                        ->count();
+
+                    if ($remainingInTenant === 0) {
+                        $student->user->tenants()->detach($student->tenant_id);
+                    }
+                }
+
+                $student->documents()->delete();
+                $student->delete();
+
+                DB::commit();
+                $deleted++;
+            } catch (\Exception $e) {
+                DB::rollBack();
+                $failedIds[] = (int) $student->id;
+                Log::error('Bulk delete student failed', [
+                    'student_id' => $student->id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
+
+        if (!empty($forbiddenOrMissing)) {
+            $failedIds = array_values(array_unique(array_merge($failedIds, $forbiddenOrMissing)));
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Bulk delete completed',
+            'data' => [
+                'deleted' => $deleted,
+                'failed' => count($failedIds),
+                'failed_ids' => array_map('strval', $failedIds),
+            ],
+        ]);
+    }
+
+    /**
      * Get student academic summary
      */
     public function academicSummary(Student $student): JsonResponse
@@ -1453,6 +1542,7 @@ class StudentController extends Controller
 
             foreach ($structuredRows as [$rowNumber, $rowData]) {
                 try {
+                    $rowData = $this->normalizeImportRow($rowData);
 
                     // Validate required fields
                     $validationErrors = $this->validateStudentRow($rowData, $rowNumber);
@@ -1772,29 +1862,77 @@ class StudentController extends Controller
      */
     private function findDuplicateStudent(array $rowData, int $schoolId): ?Student
     {
-        $query = Student::where('school_id', $schoolId);
+        $email = !empty($rowData['email']) ? strtolower(trim((string) $rowData['email'])) : null;
+        $studentNumber = !empty($rowData['student_number']) ? trim((string) $rowData['student_number']) : null;
+        $firstName = !empty($rowData['first_name']) ? strtolower(trim((string) $rowData['first_name'])) : null;
+        $lastName = !empty($rowData['last_name']) ? strtolower(trim((string) $rowData['last_name'])) : null;
+        $dob = null;
 
-        if (!empty($rowData['email'])) {
-            $query->where('email', $rowData['email']);
-        } elseif (!empty($rowData['student_number'])) {
-            $query->where('student_number', $rowData['student_number']);
-        } else {
-            // Try to match by first_name, last_name, and date_of_birth
-            if (!empty($rowData['first_name']) && !empty($rowData['last_name']) && !empty($rowData['date_of_birth'])) {
-                try {
-                    $dob = \Carbon\Carbon::parse($rowData['date_of_birth'])->format('Y-m-d');
-                    $query->where('first_name', $rowData['first_name'])
-                          ->where('last_name', $rowData['last_name'])
-                          ->whereDate('date_of_birth', $dob);
-                } catch (\Exception $e) {
-                    return null;
-                }
-            } else {
-                return null;
+        if (!empty($rowData['date_of_birth'])) {
+            try {
+                $dob = \Carbon\Carbon::parse($rowData['date_of_birth'])->format('Y-m-d');
+            } catch (\Exception $e) {
+                $dob = null;
             }
         }
 
-        return $query->first();
+        if (!$email && !$studentNumber && !($firstName && $lastName && $dob)) {
+            return null;
+        }
+
+        return Student::where('school_id', $schoolId)
+            ->where(function ($query) use ($email, $studentNumber, $firstName, $lastName, $dob) {
+                if ($email) {
+                    $query->orWhereRaw('LOWER(email) = ?', [$email]);
+                    $query->orWhereHas('user', function ($userQuery) use ($email) {
+                        $userQuery->whereRaw('LOWER(identifier) = ?', [$email]);
+                    });
+                }
+
+                if ($studentNumber) {
+                    $query->orWhere('student_number', $studentNumber);
+                }
+
+                if ($firstName && $lastName && $dob) {
+                    $query->orWhere(function ($personQuery) use ($firstName, $lastName, $dob) {
+                        $personQuery
+                            ->whereRaw('LOWER(first_name) = ?', [$firstName])
+                            ->whereRaw('LOWER(last_name) = ?', [$lastName])
+                            ->whereDate('date_of_birth', $dob);
+                    });
+                }
+            })
+            ->first();
+    }
+
+    /**
+     * Normalize imported row values for consistent validation and duplicate checks.
+     */
+    private function normalizeImportRow(array $rowData): array
+    {
+        $normalized = [];
+
+        foreach ($rowData as $key => $value) {
+            $normalized[$key] = is_string($value) ? trim($value) : $value;
+        }
+
+        if (!empty($normalized['email'])) {
+            $normalized['email'] = strtolower((string) $normalized['email']);
+        }
+
+        if (!empty($normalized['first_name'])) {
+            $normalized['first_name'] = preg_replace('/\s+/', ' ', (string) $normalized['first_name']);
+        }
+
+        if (!empty($normalized['last_name'])) {
+            $normalized['last_name'] = preg_replace('/\s+/', ' ', (string) $normalized['last_name']);
+        }
+
+        if (!empty($normalized['student_number'])) {
+            $normalized['student_number'] = strtoupper((string) $normalized['student_number']);
+        }
+
+        return $normalized;
     }
 
     /**

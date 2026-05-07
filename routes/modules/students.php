@@ -44,6 +44,8 @@ Route::middleware(['auth:api'])->group(function () {
         Route::prefix('bulk')->group(function () {
             Route::post('promote', [\App\Http\Controllers\API\V1\Student\StudentController::class, 'bulkPromote'])
                 ->name('students.bulk.promote');
+            Route::post('delete', [\App\Http\Controllers\API\V1\Student\StudentController::class, 'bulkDelete'])
+                ->name('students.bulk.delete');
         });
 
         // Analytics and Reporting
