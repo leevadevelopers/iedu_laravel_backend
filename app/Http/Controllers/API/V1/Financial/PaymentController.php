@@ -60,9 +60,14 @@ class PaymentController extends BaseController
             'amount' => $request->validated()['amount'],
             'method' => $request->validated()['method'],
             'status' => 'completed',
-            'paid_at' => now(),
+            'paid_at' => $request->validated()['paid_at'] ?? now(),
             'transaction_id' => $request->validated()['transaction_id'] ?? null,
             'notes' => $request->validated()['notes'] ?? null,
+            'metadata' => [
+                'payment_plan' => $request->validated()['payment_plan'] ?? 'monthly',
+                'reference_month' => $request->validated()['reference_month'] ?? null,
+                'reference_months' => $request->validated()['reference_months'] ?? [],
+            ],
         ]);
 
         // Update invoice status
@@ -133,6 +138,7 @@ class PaymentController extends BaseController
                 'paid_at' => $payment->paid_at?->toISOString(),
                 'transaction_id' => $payment->transaction_id,
                 'notes' => $payment->notes,
+                'metadata' => $payment->metadata,
             ],
             'invoice' => $payment->invoice ? [
                 'id' => $payment->invoice->id,

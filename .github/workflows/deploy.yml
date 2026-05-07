@@ -1,4 +1,4 @@
-name: Deploy Laravel to A2 Hosting
+name: Deploy Angular Frontend to A2 Hosting
 
 on:
   push:
@@ -8,41 +8,67 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-# adicionando isso para testar o deploy
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
 
-      - name: Deploy Laravel to A2 Hosting
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: "18"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Angular app
+        run: npm run build -- --configuration production
+        env:
+          NODE_ENV: production
+
+      - name: Verify build output
+        run: |
+          if [ ! -d "dist/fuse/browser" ]; then
+            echo "Build failed: dist/fuse/browser not found"
+            exit 1
+          fi
+
+          if [ ! -f "dist/fuse/browser/index.html" ]; then
+            echo "Build failed: index.html not found"
+            exit 1
+          fi
+
+      - name: Deploy to A2 Hosting
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: ./
-          server-dir: ./
+          local-dir: ./dist/fuse/browser/
+          server-dir: ${{ secrets.FTP_SERVER_DIR }}
           dangerous-clean-slate: false
           exclude: |
-            **/.git/**
+            **/.git*
+            **/.git*/**
             **/node_modules/**
+            **/.angular/**
             **/.github/**
             **/.vscode/**
             **/README.md
-            **/.env.example
-            **/tests/**
-            **/sh files/**
-            **/*.md
-            **/TWILIO_SETUP.md
-            **/FORM_ENGINE_COMPLIANCE_REPORT.md
-            **/DOCUMENTACAO_ESTRUTURA_SISTEMA.md
-            **/documentacao_api_v1.md
-            **/.htaccess.sample
-            **/.env.example
-            **/.env.production
-            **/.env.development
-            **/.env.staging
-            **/.env.testing
-            **/.env.local
+            **/.editorconfig
+            **/.prettierrc
+            **/tsconfig*.json
+            **/angular.json
+            **/package*.json
+            **/.npmrc
+            **/.nvmrc
+
+      - name: Verify deployment
+        run: |
+          echo "Deployment completed. Verify your frontend URL."
 
 
 

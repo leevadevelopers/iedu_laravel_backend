@@ -11,6 +11,7 @@ use App\Services\SchoolContextService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Password;
 
 class MessagingController extends BaseController
 {
@@ -32,13 +33,21 @@ class MessagingController extends BaseController
         try {
             $schoolId = $this->getCurrentSchoolId();
             $senderId = auth('api')->id();
+            $body = $request->message;
+
+            if ($request->boolean('include_invite_link') && !empty($request->recipients)) {
+                $firstRecipient = \App\Models\User::find($request->recipients[0]);
+                if ($firstRecipient) {
+                    $body .= "\n\n" . 'Convite: ' . $this->buildInviteLink($firstRecipient);
+                }
+            }
 
             DB::beginTransaction();
 
             $message = Message::create([
                 'sender_id' => $senderId,
                 'subject' => $request->subject,
-                'message' => $request->message,
+                'message' => $body,
                 'thread_id' => $request->thread_id,
                 'class_id' => $request->class_id,
                 'recipient_ids' => $request->recipients,
@@ -220,6 +229,15 @@ class MessagingController extends BaseController
         } catch (\Exception $e) {
             return null;
         }
+    }
+
+    protected function buildInviteLink(\App\Models\User $recipient): string
+    {
+        $token = Password::broker()->createToken($recipient);
+        $base = rtrim(config('app.frontend_url', config('app.url')), '/');
+        $email = urlencode($recipient->email);
+
+        return "{$base}/reset-password?token={$token}&email={$email}";
     }
 }
 

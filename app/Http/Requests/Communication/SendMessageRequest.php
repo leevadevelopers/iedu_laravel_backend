@@ -25,6 +25,7 @@ class SendMessageRequest extends FormRequest
             'students' => 'nullable|array',
             'students.*' => 'exists:students,id',
             'thread_id' => 'nullable|exists:messages,id',
+            'include_invite_link' => 'nullable|boolean',
         ];
     }
 

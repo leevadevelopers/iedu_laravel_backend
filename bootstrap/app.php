@@ -3,6 +3,7 @@
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Middleware\HandleCors;
 use App\Http\Middleware\TenantMiddleware;
 
 return Application::configure(basePath: dirname(__DIR__))
@@ -13,7 +14,8 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        // Ensure API preflight requests get proper CORS headers.
+        $middleware->append(HandleCors::class);
         $middleware->alias([
             'tenant' => TenantMiddleware::class,
 

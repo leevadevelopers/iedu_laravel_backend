@@ -39,6 +39,10 @@ class StorePaymentRequest extends FormRequest
             'method' => 'required|in:card,bank_transfer,cash,mpesa,other',
             'transaction_id' => 'nullable|string',
             'notes' => 'nullable|string',
+            'payment_plan' => 'nullable|in:monthly,quarterly,yearly',
+            'reference_month' => 'nullable|date_format:Y-m',
+            'reference_months' => 'nullable|array',
+            'reference_months.*' => 'date_format:Y-m',
         ];
     }
 
