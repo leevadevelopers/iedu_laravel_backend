@@ -2,12 +2,12 @@
 
 namespace Database\Seeders;
 
-use Database\Seeders\Permissions\AcademicPermissionsSeeder;
-use Database\Seeders\Permissions\AssessmentPermissionsSeeder;
-use Database\Seeders\Permissions\FinancialPermissionsSeeder;
-use Database\Seeders\Permissions\FormPermissionSeeder;
-use Database\Seeders\Permissions\LibraryPermissionsSeeder;
-use Database\Seeders\Permissions\TransportPermissionsSeeder;
+use Database\Seeders\permissions\AcademicPermissionsSeeder;
+use Database\Seeders\permissions\AssessmentPermissionsSeeder;
+use Database\Seeders\permissions\FinancialPermissionsSeeder;
+use Database\Seeders\permissions\FormPermissionSeeder;
+use Database\Seeders\permissions\LibraryPermissionsSeeder;
+use Database\Seeders\permissions\TransportPermissionsSeeder;
 use Illuminate\Database\Seeder;
 
 class DatabaseSeeder extends Seeder
