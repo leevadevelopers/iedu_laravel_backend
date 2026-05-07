@@ -2,7 +2,7 @@ name: Deploy Angular Frontend to A2 Hosting
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
