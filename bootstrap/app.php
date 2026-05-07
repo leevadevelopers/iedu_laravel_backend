@@ -14,8 +14,8 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        // Ensure API preflight requests get proper CORS headers.
-        $middleware->append(HandleCors::class);
+        // Ensure API preflight requests get proper CORS headers as early as possible.
+        $middleware->prepend(HandleCors::class);
         $middleware->alias([
             'tenant' => TenantMiddleware::class,
 
