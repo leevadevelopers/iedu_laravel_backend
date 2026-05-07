@@ -4,7 +4,7 @@ $allowedOrigins = array_filter(array_map(
     static fn ($origin) => trim($origin),
     explode(',', env(
         'CORS_ALLOWED_ORIGINS',
-        'http://localhost:4200,http://127.0.0.1:4200,https://iedu.digital,https://www.iedu.digital'
+        'http://localhost:4200,http://127.0.0.1:4200,https://iedu.digital,https://www.iedu.digital,https://app.iedu.digital'
     ))
 ));
 
