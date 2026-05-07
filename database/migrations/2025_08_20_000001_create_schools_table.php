@@ -93,8 +93,10 @@ class CreateSchoolsTable extends Migration
             $table->index('status');
             $table->index(['grade_range_min', 'grade_range_max']);
 
-            // Full-text search
-            $table->fullText(['official_name', 'display_name', 'short_name']);
+            // Full-text search (skipped on sqlite — used in PHPUnit :memory:)
+            if (\Illuminate\Support\Facades\DB::connection()->getDriverName() !== 'sqlite') {
+                $table->fullText(['official_name', 'display_name', 'short_name']);
+            }
         });
 
         // Add foreign key for users.school_id after schools table is created

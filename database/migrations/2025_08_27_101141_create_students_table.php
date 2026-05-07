@@ -71,8 +71,9 @@ return new class extends Migration
             $table->index('status');
             $table->index(['last_name', 'first_name']);
 
-            // Full-text search
-            $table->fullText(['first_name', 'last_name', 'student_number']);
+            if (\Illuminate\Support\Facades\DB::connection()->getDriverName() !== 'sqlite') {
+                $table->fullText(['first_name', 'last_name', 'student_number']);
+            }
         });
     }
 

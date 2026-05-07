@@ -8,25 +8,25 @@ use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Support\Facades\Validator;
-use App\Models\Settings\Tenant;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
-use Spatie\Permission\PermissionRegistrar;
 use App\Services\ActivityLogService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Validation\ValidationException;
-use Illuminate\Validation\Rule;
 use App\Http\Resources\UserResource;
 use App\Http\Resources\TenantResource;
-use Illuminate\Support\Facades\Hash;
 use App\Events\TenantCreated;
+use App\Services\Auth\SignupIdempotencyService;
+use App\Services\Auth\SchoolRegistrationService;
+use Illuminate\Support\Facades\Cache;
 
 class AuthController extends Controller
 {
 
-    public function __construct(private ActivityLogService $activityLogService)
-    {
+    public function __construct(
+        private ActivityLogService $activityLogService,
+        private SignupIdempotencyService $signupIdempotencyService,
+        private SchoolRegistrationService $schoolRegistrationService
+    ) {
         $this->middleware('auth:api', ['except' => ['login', 'register']]);
     }
 
@@ -37,6 +37,44 @@ class AuthController extends Controller
             return response()->json(['error' => 'school_owner role is not configured'], 500);
         }
 
+        $idempotencyKey = $request->header('Idempotency-Key');
+        if ($idempotencyKey) {
+            $invalidKeyResponse = $this->signupIdempotencyService->validateKeyFormat($idempotencyKey);
+            if ($invalidKeyResponse) {
+                return $invalidKeyResponse;
+            }
+
+            $payloadHash = $this->signupIdempotencyService->hashSignupPayload($request);
+
+            return Cache::lock($this->signupIdempotencyService->lockKey($idempotencyKey), 30)->block(10, function () use ($request, $schoolOwnerRole, $idempotencyKey, $payloadHash) {
+                $cached = $this->signupIdempotencyService->getCachedEntry($idempotencyKey);
+                if ($cached) {
+                    if ($cached['payload_hash'] === $payloadHash) {
+                        $decoded = json_decode($cached['body'], true);
+
+                        return response()->json($decoded, $cached['status']);
+                    }
+
+                    return response()->json([
+                        'error' => 'idempotency_conflict',
+                        'message' => 'Idempotency-Key was already used with a different request body.',
+                    ], 409);
+                }
+
+                $response = $this->executeSchoolRegistration($request, $schoolOwnerRole);
+                if ($response->getStatusCode() === 200) {
+                    $this->signupIdempotencyService->rememberSuccess($idempotencyKey, $payloadHash, $response);
+                }
+
+                return $response;
+            });
+        }
+
+        return $this->executeSchoolRegistration($request, $schoolOwnerRole);
+    }
+
+    private function executeSchoolRegistration(Request $request, Role $schoolOwnerRole): JsonResponse
+    {
         $validator = Validator::make($request->all(), [
             'name' => 'required|string|max:255',
             'identifier' => 'required|string|max:255|unique:users',
@@ -116,51 +154,11 @@ class AuthController extends Controller
         }
 
         try {
-            $createdData = DB::transaction(function () use ($validatedData, $organizationName, $schoolOwnerRole) {
-                $user = User::create([
-                    'name' => $validatedData['name'],
-                    'identifier' => $validatedData['identifier'],
-                    'type' => $validatedData['type'],
-                    'password' => Hash::make($validatedData['password']),
-                    'role_id' => $schoolOwnerRole->id,
-                    'tenant_id' => null,
-                    'user_type' => 'admin',
-                ]);
-
-                $tenant = Tenant::create([
-                    'name' => $organizationName,
-                    'slug' => $this->buildUniqueTenantSlug($organizationName),
-                    'owner_id' => $user->id,
-                    'is_active' => true,
-                    'settings' => [
-                        'timezone' => $validatedData['timezone'] ?? 'Africa/Maputo',
-                        'currency' => 'MZN',
-                        'language' => $validatedData['locale'] ?? 'pt-MZ',
-                        'country_code' => strtoupper($validatedData['country_code'] ?? 'MZ'),
-                        'features' => [],
-                    ],
-                    'created_by' => $user->id,
-                ]);
-
-                $user->tenants()->attach($tenant->id, [
-                    'role_id' => $schoolOwnerRole->id,
-                    'permissions' => json_encode([
-                        'granted' => [],
-                        'denied' => [],
-                    ]),
-                    'current_tenant' => true,
-                    'joined_at' => now(),
-                    'status' => 'active',
-                ]);
-
-                $user->update(['tenant_id' => $tenant->id]);
-
-                app(PermissionRegistrar::class)->setPermissionsTeamId($tenant->id);
-                $user->assignRole($schoolOwnerRole);
-                app(PermissionRegistrar::class)->setPermissionsTeamId(null);
-
-                return compact('user', 'tenant');
-            });
+            $createdData = $this->schoolRegistrationService->provisionSchoolOwner(
+                $validatedData,
+                $organizationName,
+                $schoolOwnerRole
+            );
 
             $user = $createdData['user'];
             $tenant = $createdData['tenant'];
@@ -205,20 +203,6 @@ class AuthController extends Controller
             ]);
             return response()->json(['error' => 'Registration failed', 'details' => $e->getMessage()], 500);
         }
-    }
-
-    private function buildUniqueTenantSlug(string $name): string
-    {
-        $baseSlug = Str::slug($name);
-        $slug = $baseSlug;
-        $counter = 1;
-
-        while (Tenant::withTrashed()->where('slug', $slug)->exists()) {
-            $slug = "{$baseSlug}-{$counter}";
-            $counter++;
-        }
-
-        return $slug;
     }
 
     public function login(Request $request): JsonResponse

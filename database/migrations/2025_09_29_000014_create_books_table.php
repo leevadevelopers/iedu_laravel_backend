@@ -30,7 +30,9 @@ return new class extends Migration
 
             $table->index(['tenant_id', 'visibility']);
             $table->index('isbn');
-            $table->fullText(['title', 'summary']);
+            if (\Illuminate\Support\Facades\DB::connection()->getDriverName() !== 'sqlite') {
+                $table->fullText(['title', 'summary']);
+            }
         });
     }
 
